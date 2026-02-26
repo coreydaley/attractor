@@ -154,8 +154,8 @@ object Stylesheet {
      * Only sets properties the node doesn't already have explicitly.
      */
     fun applyToNode(node: DotNode, rules: List<StyleRule>) {
-        // Sort by specificity ascending so higher specificity overrides lower
-        val sorted = rules.sortedBy { it.selector.specificity }
+        // Sort by specificity descending so higher specificity runs first and wins
+        val sorted = rules.sortedByDescending { it.selector.specificity }
         for (rule in sorted) {
             if (rule.selector.matches(node)) {
                 for ((prop, value) in rule.properties) {
