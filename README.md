@@ -51,17 +51,13 @@ The output jar is written to `build/libs/coreys-attractor-1.0.0.jar`.
 ## Run
 
 ```
-java -jar build/libs/coreys-attractor-1.0.0.jar [pipeline.dot] [options]
+java -jar build/libs/coreys-attractor-1.0.0.jar [options]
 ```
 
 ### Options
 
 | Flag | Description |
 |------|-------------|
-| `pipeline.dot` | Path to a DOT pipeline file to submit immediately (optional) |
-| `--simulate` | Simulate LLM calls — no API requests are made |
-| `--auto-approve` | Skip interactive human-gate prompts |
-| `--resume` | Resume from the last checkpoint in `--logs-root` |
 | `--logs-root <dir>` | Directory for logs and artifacts (default: `logs/<name>-<timestamp>`) |
 | `--web-port <n>` | Web interface port (default: `7070`) |
 
@@ -77,20 +73,14 @@ java -jar build/libs/coreys-attractor-1.0.0.jar [pipeline.dot] [options]
 ### Examples
 
 ```bash
-# Start the web interface only
+# Start the web interface
 java -jar build/libs/coreys-attractor-1.0.0.jar
 
-# Submit a pipeline and open the dashboard
-java -jar build/libs/coreys-attractor-1.0.0.jar examples/simple.dot
+# Use a non-default port
+java -jar build/libs/coreys-attractor-1.0.0.jar --web-port 8080
 
-# Dry-run with no LLM calls
-java -jar build/libs/coreys-attractor-1.0.0.jar examples/simple.dot --simulate
-
-# Skip human-review gates
-java -jar build/libs/coreys-attractor-1.0.0.jar examples/human-review.dot --auto-approve
-
-# Use a non-default web port
-java -jar build/libs/coreys-attractor-1.0.0.jar examples/simple.dot --web-port 8080
+# Use a custom logs directory
+java -jar build/libs/coreys-attractor-1.0.0.jar --logs-root /tmp/my-runs
 ```
 
 Then open `http://localhost:7070` (or your chosen port) in a browser to watch the pipeline execute.
