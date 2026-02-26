@@ -9,7 +9,7 @@ data class StageRecord(
     val index: Int,
     val name: String,
     val nodeId: String = "",  // node.id — used to locate log files on disk
-    val status: String,       // "running" | "completed" | "failed" | "retrying"
+    val status: String,       // "running" | "completed" | "failed" | "retrying" | "diagnosing" | "repairing"
     val startedAt: Long? = null,
     val durationMs: Long? = null,
     val error: String? = null
@@ -24,9 +24,10 @@ class PipelineState {
     val finishedAt   = AtomicReference<Long>(0L)
     val stages       = CopyOnWriteArrayList<StageRecord>()
     val recentLogs   = CopyOnWriteArrayList<String>()
-    val cancelToken  = java.util.concurrent.atomic.AtomicBoolean(false)
-    val pauseToken   = java.util.concurrent.atomic.AtomicBoolean(false)
-    val archived     = java.util.concurrent.atomic.AtomicBoolean(false)
+    val cancelToken       = java.util.concurrent.atomic.AtomicBoolean(false)
+    val pauseToken        = java.util.concurrent.atomic.AtomicBoolean(false)
+    val archived          = java.util.concurrent.atomic.AtomicBoolean(false)
+    val hasFailureReport  = java.util.concurrent.atomic.AtomicBoolean(false)
 
     fun update(event: PipelineEvent) {
         when (event) {
@@ -84,6 +85,30 @@ class PipelineState {
             }
             is PipelineEvent.CheckpointSaved ->
                 log("Checkpoint → ${event.nodeId}")
+            is PipelineEvent.DiagnosticsStarted -> {
+                val idx = stages.indexOfLast { it.nodeId == event.nodeId }
+                if (idx >= 0) stages[idx] = stages[idx].copy(status = "diagnosing")
+                log("[${event.stageIndex}] \uD83D\uDD0D Diagnosing failure: ${event.stageName}")
+            }
+            is PipelineEvent.DiagnosticsCompleted -> {
+                val fixable = if (event.recoverable) "fixable" else "unrecoverable"
+                log("[${event.stageIndex}] \uD83D\uDCCB Diagnosis: $fixable — ${event.strategy}: ${event.explanation.take(120)}")
+            }
+            is PipelineEvent.RepairAttempted -> {
+                val idx = stages.indexOfLast { it.name == event.stageName }
+                if (idx >= 0) stages[idx] = stages[idx].copy(status = "repairing")
+                log("[${event.stageIndex}] \uD83D\uDD27 Repair attempt: ${event.stageName}")
+            }
+            is PipelineEvent.RepairSucceeded -> {
+                val idx = stages.indexOfLast { it.name == event.stageName }
+                if (idx >= 0) stages[idx] = stages[idx].copy(status = "completed", durationMs = event.durationMs)
+                log("[${event.stageIndex}] ✓ Repair succeeded: ${event.stageName} (${event.durationMs}ms)")
+            }
+            is PipelineEvent.RepairFailed -> {
+                val idx = stages.indexOfLast { it.name == event.stageName }
+                if (idx >= 0) stages[idx] = stages[idx].copy(status = "failed", error = event.reason)
+                log("[${event.stageIndex}] ✗ Repair failed: ${event.stageName}: ${event.reason}")
+            }
             is PipelineEvent.InterviewStarted ->
                 log("Human gate: ${event.questionText}")
             is PipelineEvent.InterviewCompleted ->
@@ -120,6 +145,7 @@ class PipelineState {
         cancelToken.set(false)
         pauseToken.set(false)
         archived.set(false)
+        hasFailureReport.set(false)
     }
 
     private fun log(msg: String) {
@@ -136,6 +162,7 @@ class PipelineState {
         sb.append("\"currentNode\":${js(currentNode.get())},")
         sb.append("\"status\":${js(status.get())},")
         sb.append("\"archived\":${archived.get()},")
+        sb.append("\"hasFailureReport\":${hasFailureReport.get()},")
         sb.append("\"startedAt\":${startedAt.get()},")
         sb.append("\"finishedAt\":${finishedAt.get()},")
         sb.append("\"stages\":[")

@@ -27,7 +27,8 @@ data class EngineConfig(
         StylesheetApplicationTransform()
     ),
     val cancelCheck: () -> Boolean = { false },
-    val pauseCheck: () -> Boolean = { false }
+    val pauseCheck: () -> Boolean = { false },
+    val diagnoser: FailureDiagnoser = NullFailureDiagnoser()
 )
 
 class Engine(
@@ -210,8 +211,63 @@ class Engine(
                             stageIndex++
                             continue
                         }
-                        eventBus.emit(PipelineEvent.PipelineFailed(outcome.failureReason, elapsed()))
-                        return outcome
+                        // Intelligent failure diagnosis (Section 7)
+                        val diagnosis = diagnoseStageFail(node, outcome, context, stageIndex)
+                        when (FixStrategy.valueOf(diagnosis.strategy)) {
+                            FixStrategy.RETRY_WITH_HINT -> {
+                                context.set("repair.hint", diagnosis.repairHint ?: "")
+                                context.set("repair.explanation", diagnosis.explanation)
+                                context.set("repair.attempt", "1")
+                                eventBus.emit(PipelineEvent.RepairAttempted(node.label, stageIndex))
+                                val repairLogsRoot = "${config.logsRoot}/${node.id}_repair"
+                                val repairStart = System.currentTimeMillis()
+                                val repairOutcome = executeSingleRepairAttempt(node, context, graph, repairLogsRoot)
+                                val repairDuration = System.currentTimeMillis() - repairStart
+                                if (repairOutcome.status.isSuccess) {
+                                    eventBus.emit(PipelineEvent.RepairSucceeded(node.label, stageIndex, repairDuration))
+                                    completedNodes.add(node.id)
+                                    nodeOutcomes[node.id] = repairOutcome
+                                    nodeDurations[node.id] = repairDuration
+                                    context.applyUpdates(repairOutcome.contextUpdates)
+                                    context.set("outcome", repairOutcome.status.toString())
+                                    if (repairOutcome.preferredLabel.isNotBlank()) {
+                                        context.set("preferred_label", repairOutcome.preferredLabel)
+                                    }
+                                    val repairCheckpoint = Checkpoint.create(context, node.id, completedNodes.toList(), nodeDurations.toMap())
+                                    repairCheckpoint.save(config.logsRoot)
+                                    eventBus.emit(PipelineEvent.CheckpointSaved(node.id))
+                                    lastOutcome = repairOutcome
+                                    val repairEdge = EdgeSelector.select(node, repairOutcome, context, graph)
+                                    if (repairEdge == null) break
+                                    else { currentNodeId = repairEdge.to; stageIndex++; continue }
+                                } else {
+                                    eventBus.emit(PipelineEvent.RepairFailed(node.label, stageIndex, repairOutcome.failureReason))
+                                    writeFailureReport(node, repairOutcome, diagnosis, repairAttempted = true)
+                                    eventBus.emit(PipelineEvent.PipelineFailed("Repair failed: ${repairOutcome.failureReason}", elapsed()))
+                                    return repairOutcome
+                                }
+                            }
+                            FixStrategy.SKIP -> {
+                                val skipOutcome = Outcome.partial(notes = "Skipped by diagnoser: ${diagnosis.explanation}")
+                                completedNodes.add(node.id)
+                                nodeOutcomes[node.id] = skipOutcome
+                                nodeDurations[node.id] = 0L
+                                lastOutcome = skipOutcome
+                                val skipCheckpoint = Checkpoint.create(context, node.id, completedNodes.toList(), nodeDurations.toMap())
+                                skipCheckpoint.save(config.logsRoot)
+                                eventBus.emit(PipelineEvent.CheckpointSaved(node.id))
+                                val skipEdge = EdgeSelector.select(node, skipOutcome, context, graph)
+                                if (skipEdge == null) break
+                                else { currentNodeId = skipEdge.to; stageIndex++; continue }
+                            }
+                            FixStrategy.ABORT -> {
+                                writeFailureReport(node, outcome, diagnosis, repairAttempted = false)
+                                eventBus.emit(PipelineEvent.PipelineFailed(
+                                    diagnosis.explanation.ifBlank { outcome.failureReason }, elapsed()
+                                ))
+                                return outcome
+                            }
+                        }
                     }
                     break
                 }
@@ -371,6 +427,100 @@ class Engine(
                 }
             )
         )
+    }
+
+    private fun diagnoseStageFail(
+        node: attractor.dot.DotNode,
+        outcome: Outcome,
+        context: Context,
+        stageIndex: Int
+    ): DiagnosisResult {
+        if (node.attrOrDefault("failure_diagnosis_disabled", "false") == "true") {
+            return NullFailureDiagnoser("diagnosis disabled for this node").analyze(
+                FailureContext(node.id, node.label, stageIndex, outcome.failureReason, config.logsRoot, context.snapshot())
+            )
+        }
+        val ctx = FailureContext(
+            nodeId = node.id,
+            stageName = node.label,
+            stageIndex = stageIndex,
+            failureReason = outcome.failureReason,
+            logsRoot = config.logsRoot,
+            contextSnapshot = context.snapshot()
+        )
+        eventBus.emit(PipelineEvent.DiagnosticsStarted(node.id, node.label, stageIndex))
+        val result = config.diagnoser.analyze(ctx)
+        val finalResult = if (result.strategy == "SKIP" &&
+            node.attrOrDefault("failure_diagnosis_allow_skip", "false") != "true") {
+            result.copy(strategy = "ABORT", explanation = "SKIP not permitted for this node (failure_diagnosis_allow_skip not set)")
+        } else {
+            result
+        }
+        eventBus.emit(PipelineEvent.DiagnosticsCompleted(
+            node.id, node.label, stageIndex,
+            finalResult.recoverable, finalResult.strategy, finalResult.explanation
+        ))
+        return finalResult
+    }
+
+    private fun writeFailureReport(
+        node: attractor.dot.DotNode,
+        outcome: Outcome,
+        diagnosis: DiagnosisResult,
+        repairAttempted: Boolean
+    ) {
+        try {
+            val repairFailureReason = if (repairAttempted) outcome.failureReason else null
+            val json = kotlinx.serialization.json.Json { prettyPrint = true }
+            val obj = kotlinx.serialization.json.buildJsonObject {
+                put("failedNode", kotlinx.serialization.json.JsonPrimitive(node.id))
+                put("failureReason", kotlinx.serialization.json.JsonPrimitive(outcome.failureReason))
+                put("diagnosisStrategy", kotlinx.serialization.json.JsonPrimitive(diagnosis.strategy))
+                put("diagnosisExplanation", kotlinx.serialization.json.JsonPrimitive(diagnosis.explanation))
+                put("repairAttempted", kotlinx.serialization.json.JsonPrimitive(repairAttempted))
+                if (repairFailureReason != null) {
+                    put("repairFailureReason", kotlinx.serialization.json.JsonPrimitive(repairFailureReason))
+                } else {
+                    put("repairFailureReason", kotlinx.serialization.json.JsonNull)
+                }
+                put("timestamp", kotlinx.serialization.json.JsonPrimitive(Instant.now().toString()))
+            }
+            File(config.logsRoot, "failure_report.json").writeText(
+                json.encodeToString(kotlinx.serialization.json.JsonObject.serializer(), obj)
+            )
+        } catch (e: Exception) {
+            System.err.println("[attractor] Warning: failed to write failure_report.json: ${e.message}")
+        }
+    }
+
+    private fun executeSingleRepairAttempt(
+        node: attractor.dot.DotNode,
+        context: Context,
+        graph: DotGraph,
+        repairLogsRoot: String
+    ): Outcome {
+        File(repairLogsRoot).mkdirs()
+        return try {
+            val handler = registry.resolve(node)
+            if (node.timeoutMillis > 0) {
+                val future = CompletableFuture.supplyAsync {
+                    handler.execute(node, context, graph, repairLogsRoot)
+                }
+                try {
+                    future.get(node.timeoutMillis, TimeUnit.MILLISECONDS)
+                } catch (e: TimeoutException) {
+                    future.cancel(true)
+                    Outcome.fail("Repair timed out after ${node.timeoutMillis}ms")
+                }
+            } else {
+                handler.execute(node, context, graph, repairLogsRoot)
+            }
+        } catch (e: InterruptedException) {
+            Thread.currentThread().interrupt()
+            throw e
+        } catch (e: Exception) {
+            Outcome.fail(e.message ?: "repair exception")
+        }
     }
 
     private fun elapsed(): Long = System.currentTimeMillis() - startTime

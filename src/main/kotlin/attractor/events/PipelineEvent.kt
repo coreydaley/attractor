@@ -127,6 +127,45 @@ sealed class PipelineEvent {
         val nodeId: String,
         override val timestamp: Instant = Instant.now()
     ) : PipelineEvent()
+
+    // ── Failure diagnosis and repair ─────────────────────────────────────────
+
+    data class DiagnosticsStarted(
+        val nodeId: String,
+        val stageName: String,
+        val stageIndex: Int,
+        override val timestamp: Instant = Instant.now()
+    ) : PipelineEvent()
+
+    data class DiagnosticsCompleted(
+        val nodeId: String,
+        val stageName: String,
+        val stageIndex: Int,
+        val recoverable: Boolean,
+        val strategy: String,
+        val explanation: String,
+        override val timestamp: Instant = Instant.now()
+    ) : PipelineEvent()
+
+    data class RepairAttempted(
+        val stageName: String,
+        val stageIndex: Int,
+        override val timestamp: Instant = Instant.now()
+    ) : PipelineEvent()
+
+    data class RepairSucceeded(
+        val stageName: String,
+        val stageIndex: Int,
+        val durationMs: Long,
+        override val timestamp: Instant = Instant.now()
+    ) : PipelineEvent()
+
+    data class RepairFailed(
+        val stageName: String,
+        val stageIndex: Int,
+        val reason: String,
+        override val timestamp: Instant = Instant.now()
+    ) : PipelineEvent()
 }
 
 /**

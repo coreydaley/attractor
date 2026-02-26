@@ -4,6 +4,9 @@ import attractor.db.RunStore
 import attractor.dot.Parser
 import attractor.engine.Engine
 import attractor.engine.EngineConfig
+import attractor.engine.FailureDiagnoser
+import attractor.engine.LlmFailureDiagnoser
+import attractor.engine.NullFailureDiagnoser
 import attractor.events.PipelineEvent
 import attractor.handlers.CodergenHandler
 import attractor.state.Checkpoint
@@ -101,12 +104,19 @@ object PipelineRunner {
         try {
             val graph = Parser.parse(dotSource)
 
+            val hasKey = listOf("ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GEMINI_API_KEY", "GOOGLE_API_KEY")
+                .any { !System.getenv(it).isNullOrBlank() }
+
             val backend = if (options.simulate) {
                 SimulationBackend
             } else {
-                val hasKey = listOf("ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GEMINI_API_KEY", "GOOGLE_API_KEY")
-                    .any { !System.getenv(it).isNullOrBlank() }
                 if (hasKey) LlmCodergenBackend(Client.fromEnv()) else SimulationBackend
+            }
+
+            val diagnoser: FailureDiagnoser = when {
+                options.simulate -> NullFailureDiagnoser("simulation mode: diagnosis skipped")
+                hasKey           -> LlmFailureDiagnoser(Client.fromEnv())
+                else             -> NullFailureDiagnoser()
             }
 
             val interviewer = AutoApproveInterviewer()
@@ -132,7 +142,8 @@ object PipelineRunner {
                 resume = resume,
                 transforms = listOf(VariableExpansionTransform(), StylesheetApplicationTransform()),
                 cancelCheck = { state.cancelToken.get() },
-                pauseCheck  = { state.pauseToken.get() }
+                pauseCheck  = { state.pauseToken.get() },
+                diagnoser = diagnoser
             )
 
             val engine = Engine(handlerRegistry, config)
@@ -151,7 +162,15 @@ object PipelineRunner {
                 // Persist terminal statuses and full log to the database
                 when (event) {
                     is PipelineEvent.PipelineCompleted -> { store.updateStatus(id, "completed"); store.updateLog(id, state.recentLogs.joinToString("\n")); store.updateFinishedAt(id, state.finishedAt.get()) }
-                    is PipelineEvent.PipelineFailed    -> { store.updateStatus(id, "failed");    store.updateLog(id, state.recentLogs.joinToString("\n")); store.updateFinishedAt(id, state.finishedAt.get()) }
+                    is PipelineEvent.PipelineFailed    -> {
+                        store.updateStatus(id, "failed")
+                        store.updateLog(id, state.recentLogs.joinToString("\n"))
+                        store.updateFinishedAt(id, state.finishedAt.get())
+                        val lr = registry.get(id)?.logsRoot ?: ""
+                        if (lr.isNotBlank() && java.io.File(lr, "failure_report.json").exists()) {
+                            state.hasFailureReport.set(true)
+                        }
+                    }
                     is PipelineEvent.PipelineCancelled -> { store.updateStatus(id, "cancelled"); store.updateLog(id, state.recentLogs.joinToString("\n")); store.updateFinishedAt(id, state.finishedAt.get()) }
                     is PipelineEvent.PipelinePaused    -> { store.updateStatus(id, "paused");    store.updateLog(id, state.recentLogs.joinToString("\n")); store.updateFinishedAt(id, state.finishedAt.get()) }
                     else -> {}

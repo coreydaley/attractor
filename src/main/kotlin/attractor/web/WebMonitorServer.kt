@@ -1328,7 +1328,9 @@ main { max-width: 1200px; margin: 0 auto; padding: 20px; display: grid; grid-tem
 .stage.running   { border-color: #f78166; }
 .stage.completed { border-color: #238636; }
 .stage.failed    { border-color: #da3633; }
-.stage.retrying  { border-color: #d29922; }
+.stage.retrying   { border-color: #d29922; }
+.stage.diagnosing { border-color: #e3b341; }
+.stage.repairing  { border-color: #58a6ff; }
 .stage-row { display: flex; align-items: center; gap: 10px; padding: 9px 13px; }
 .stage-icon { font-size: 0.95rem; width: 20px; text-align: center; flex-shrink: 0; }
 .stage-name { flex: 1; font-size: 0.88rem; }
@@ -1583,7 +1585,9 @@ input:checked + .toggle-slider:before { transform:translateX(20px); }
 [data-theme="light"] .stage.running   { border-color: #ea580c; }
 [data-theme="light"] .stage.completed { border-color: #16a34a; }
 [data-theme="light"] .stage.failed    { border-color: #dc2626; }
-[data-theme="light"] .stage.retrying  { border-color: #d97706; }
+[data-theme="light"] .stage.retrying   { border-color: #d97706; }
+[data-theme="light"] .stage.diagnosing { border-color: #d97706; }
+[data-theme="light"] .stage.repairing  { border-color: #1f6feb; }
 [data-theme="light"] .stage-log-btn.active { background: #ede9fe; border-color: #4f46e566; color: #4338ca; }
 [data-theme="light"] .log-line { border-bottom-color: rgba(0,0,0,0.05); }
 [data-theme="light"] .conn-dot.live { background: #16a34a; }
@@ -1764,7 +1768,7 @@ var stageLogContent = '';   // last fetched log text for the expanded stage
 var graphSigFor = {};       // id -> last stage-status signature used to render the graph
 var graphRenderGen = {};    // id -> render generation; stale in-flight responses are discarded
 
-var ICONS = { running: '&#9889;', completed: '&#10003;', failed: '&#10007;', retrying: '&#8635;', pending: '&middot;' };
+var ICONS = { running: '&#9889;', completed: '&#10003;', failed: '&#10007;', retrying: '&#8635;', diagnosing: '&#9203;', repairing: '&#9874;', pending: '&middot;' };
 
 // ── Utility ────────────────────────────────────────────────────────────────
 function esc(s) {
@@ -2033,6 +2037,7 @@ function buildPanel(id) {
     +   '</div>'
     +   '<div class="action-bar-secondary">'
     +     '<button class="btn-download" id="downloadBtn" style="display:none;" onclick="downloadArtifacts()">&#8659;&ensp;Download Artifacts</button>'
+    +     '<button class="btn-download" id="failureReportBtn" style="display:none;" onclick="openArtifacts(selectedId,\'Failure Report\')">&#128203;&ensp;View Failure Report</button>'
     +     '<button class="btn-download" id="exportBtn" style="display:none;" onclick="exportRun()">&#8599;&ensp;Export</button>'
     +     '<button class="btn-archive" id="archiveBtn" style="display:none;" onclick="archivePipeline()">&#8595;&ensp;Archive</button>'
     +     '<button class="btn-unarchive" id="unarchiveBtn" style="display:none;" onclick="unarchivePipeline()">&#8617;&ensp;Unarchive</button>'
@@ -2197,6 +2202,11 @@ function updatePanel(id) {
     if (isTerminal) { deleteBtn.disabled = false; deleteBtn.innerHTML = '&#10005;&ensp;Delete'; }
   }
 
+  var failureReportBtn = document.getElementById('failureReportBtn');
+  if (failureReportBtn) {
+    failureReportBtn.style.display = d.hasFailureReport ? 'inline-block' : 'none';
+  }
+
   // Read-only gating: hide mutating controls for on-demand hydrated view-only runs
   var viewOnly = !!(p.isHydratedViewOnly);
   if (viewOnly) {
@@ -2233,7 +2243,7 @@ function updatePanel(id) {
         var isLogOpen = !!(stageLogNodeId && s.nodeId === stageLogNodeId);
         html += '<div class="stage ' + esc(s.status) + (isLogOpen ? ' log-open' : '') + '" data-node-id="' + esc(s.nodeId) + '">'
           + '<div class="stage-row">'
-          + '<span class="stage-icon ' + (s.status === 'running' ? 'pulse' : '') + '">' + icon + '</span>'
+          + '<span class="stage-icon ' + (s.status === 'running' || s.status === 'diagnosing' || s.status === 'repairing' ? 'pulse' : '') + '">' + icon + '</span>'
           + '<span class="stage-name">' + esc(s.name) + '</span>';
         if (s.error) {
           html += '<button class="stage-err-btn" title="Click for full error details" data-pos="' + i + '">&#9888;</button>';
@@ -3141,7 +3151,7 @@ function pollStageLog() {
       if (p && p.state && p.state.stages) {
         for (var i = 0; i < p.state.stages.length; i++) {
           var s = p.state.stages[i];
-          if (s.nodeId === stageLogNodeId && s.status !== 'running' && s.status !== 'retrying') {
+          if (s.nodeId === stageLogNodeId && s.status !== 'running' && s.status !== 'retrying' && s.status !== 'diagnosing' && s.status !== 'repairing') {
             clearInterval(stageLogTimer);
             stageLogTimer = null;
             break;
@@ -3214,7 +3224,9 @@ function renderPipelineGraph(id) {
     if      (s.status === 'running')   { fill = '#e3b341'; font = '#0d1117'; penwidth = 3; }
     else if (s.status === 'completed') { fill = '#238636'; font = '#f0f6fc'; penwidth = 2; }
     else if (s.status === 'failed')    { fill = '#da3633'; font = '#f0f6fc'; penwidth = 2; }
-    else if (s.status === 'retrying')  { fill = '#9e6a03'; font = '#f0f6fc'; penwidth = 2; }
+    else if (s.status === 'retrying')   { fill = '#9e6a03'; font = '#f0f6fc'; penwidth = 2; }
+    else if (s.status === 'diagnosing') { fill = '#e3b341'; font = '#0d1117'; penwidth = 3; }
+    else if (s.status === 'repairing')  { fill = '#58a6ff'; font = '#0d1117'; penwidth = 3; }
     else continue;
     var safeId = s.nodeId.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
     colorLines += '\n  "' + safeId + '" [style=filled fillcolor="' + fill + '" fontcolor="' + font + '" penwidth=' + penwidth + ']';
