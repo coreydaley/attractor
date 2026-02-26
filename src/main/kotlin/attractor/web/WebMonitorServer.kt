@@ -1323,6 +1323,9 @@ main { max-width: 1200px; margin: 0 auto; padding: 20px; display: grid; grid-tem
 .action-bar-primary { display: flex; gap: 8px; align-items: center; }
 .action-bar-secondary { display: flex; gap: 8px; align-items: center; }
 .action-bar button { line-height: 1; }
+.pipeline-desc-block { background: var(--surface-muted); border: 1px solid var(--border); border-radius: 6px; padding: 10px 14px; margin-bottom: 10px; }
+.pipeline-desc-label { font-size: 0.75rem; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.07em; margin-bottom: 6px; }
+.pipeline-desc-block #pipelineDescText { font-size: 0.8rem; color: var(--text); line-height: 1.6; white-space: pre-wrap; word-break: break-word; cursor: default; user-select: text; }
 .stage-list { display: flex; flex-direction: column; gap: 6px; }
 .stage { display: flex; flex-direction: column; align-items: stretch; gap: 0; border-radius: 6px; background: var(--surface-raised); border: 1px solid var(--border); }
 .stage.running   { border-color: #f78166; }
@@ -2044,6 +2047,7 @@ function buildPanel(id) {
     +     '<button class="btn-delete" id="deleteBtn" style="display:none;" onclick="showDeleteConfirm(selectedId)">&#10005;&ensp;Delete</button>'
     +   '</div>'
     + '</div>'
+    + '<div id="pipelineDesc" style="display:none;" class="pipeline-desc-block"><div class="pipeline-desc-label">Prompt</div><div id="pipelineDescText"></div></div>'
     + '<div class="card"><h2>Stages</h2><div class="stage-list" id="stageList"><div class="empty-note">No stages yet.</div></div></div>'
     + '<div class="version-history" id="versionHistory" style="display:none;">'
     +   '<button class="vh-header" onclick="toggleVersionHistory()">'
@@ -2231,6 +2235,14 @@ function updatePanel(id) {
     }
   }
 
+  // Pipeline description (originalPrompt)
+  var descEl = document.getElementById('pipelineDesc');
+  if (descEl) {
+    var desc = (p && p.originalPrompt) ? p.originalPrompt.trim() : '';
+    if (desc) { var t = document.getElementById('pipelineDescText'); if (t) t.textContent = desc; descEl.style.display = ''; }
+    else { descEl.style.display = 'none'; }
+  }
+
   // Stages — replace inner html (small list, safe to rebuild)
   var stageList = document.getElementById('stageList');
   if (stageList) {
@@ -2373,12 +2385,16 @@ function renderVersionHistory(currentRunId, members) {
   var listEl  = document.getElementById('vhList');
   var label   = document.getElementById('vhLabel');
   if (!section || !listEl || !label) return;
-  if (!members || members.length < 2) {
+  // Show if 2+ members, or if 1 member and this run is an iterated version (familyId ≠ runId)
+  var p = pipelines[currentRunId];
+  var isIterateMember = p && p.familyId && p.familyId !== currentRunId;
+  if (!members || members.length < 1 || (members.length < 2 && !isIterateMember)) {
     section.style.display = 'none';
     return;
   }
   section.style.display = '';
-  label.textContent = 'Version History (' + members.length + ' versions)';
+  var vCount = members.length;
+  label.textContent = 'Version History (' + vCount + (vCount === 1 ? ' version' : ' versions') + ')';
   if (!vhExpanded) {
     listEl.style.display = 'none';
     return;
