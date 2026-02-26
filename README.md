@@ -83,7 +83,7 @@ java -jar build/libs/coreys-attractor-1.0.0.jar --web-port 8080
 java -jar build/libs/coreys-attractor-1.0.0.jar --logs-root /tmp/my-runs
 ```
 
-Then open `http://localhost:7070` (or your chosen port) in a browser to watch the pipeline execute.
+Once running, open `http://localhost:7070` (or your chosen port) in a browser to start creating and executing pipelines. From the web interface you can describe a pipeline goal in natural language, review the generated DOT graph, and run it — all without touching the command line.
 
 ## Pipeline Format
 
