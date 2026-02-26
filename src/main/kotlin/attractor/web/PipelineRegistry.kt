@@ -122,8 +122,13 @@ class PipelineRegistry(private val store: RunStore) {
         if (run.finishedAt > 0L) state.finishedAt.set(run.finishedAt)
 
         if (run.pipelineLog.isNotBlank()) {
-            run.pipelineLog.split("\n").filter { it.isNotBlank() }.forEach { state.recentLogs.add(it) }
+            run.pipelineLog.split("\n").filter { it.isNotBlank() }.forEach {
+                state.recentLogs.addLast(it)
+                state.recentLogsSize.incrementAndGet()
+            }
         }
+
+        if (run.logsRoot.isNotBlank()) state.logsRoot = run.logsRoot
 
         if (run.logsRoot.isNotBlank()) {
             val checkpoint = Checkpoint.load(run.logsRoot)
@@ -133,7 +138,9 @@ class PipelineRegistry(private val store: RunStore) {
                     graph.nodes.values.forEachIndexed { idx, node ->
                         val nodeStatus = if (node.id in checkpoint.completedNodes) "completed" else "pending"
                         val durationMs = checkpoint.stageDurations[node.id]
-                        state.stages.add(StageRecord(idx, node.label, node.id, nodeStatus, durationMs = durationMs))
+                        val hLog = run.logsRoot.isNotBlank() &&
+                            java.io.File(run.logsRoot, "${node.id}/live.log").let { it.exists() && it.length() > 0 }
+                        state.stages.add(StageRecord(idx, node.label, node.id, nodeStatus, durationMs = durationMs, hasLog = hLog))
                     }
                 } catch (_: Exception) {}
                 // Derive total duration from sum of step durations so the displayed

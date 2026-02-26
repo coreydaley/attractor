@@ -26,7 +26,7 @@ class Checkpoint(
     val logs: List<String> = emptyList(),
     val stageDurations: Map<String, Long> = emptyMap()
 ) {
-    private val json = Json { prettyPrint = true }
+    private val json = Json { prettyPrint = false }
 
     fun save(logsRoot: String) {
         val dir = File(logsRoot)

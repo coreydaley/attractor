@@ -2,7 +2,9 @@ package attractor.web
 
 import attractor.events.PipelineEvent
 import java.time.Instant
+import java.util.concurrent.ConcurrentLinkedDeque
 import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
 
 data class StageRecord(
@@ -12,7 +14,8 @@ data class StageRecord(
     val status: String,       // "running" | "completed" | "failed" | "retrying" | "diagnosing" | "repairing"
     val startedAt: Long? = null,
     val durationMs: Long? = null,
-    val error: String? = null
+    val error: String? = null,
+    val hasLog: Boolean = false
 )
 
 class PipelineState {
@@ -23,11 +26,20 @@ class PipelineState {
     val startedAt    = AtomicReference<Long>(0L)
     val finishedAt   = AtomicReference<Long>(0L)
     val stages       = CopyOnWriteArrayList<StageRecord>()
-    val recentLogs   = CopyOnWriteArrayList<String>()
+    val recentLogs   = ConcurrentLinkedDeque<String>()
+    internal val recentLogsSize = AtomicInteger(0)
     val cancelToken       = java.util.concurrent.atomic.AtomicBoolean(false)
     val pauseToken        = java.util.concurrent.atomic.AtomicBoolean(false)
     val archived          = java.util.concurrent.atomic.AtomicBoolean(false)
     val hasFailureReport  = java.util.concurrent.atomic.AtomicBoolean(false)
+
+    @Volatile var logsRoot: String = ""
+
+    private fun checkHasLog(nodeId: String): Boolean {
+        val lr = logsRoot
+        return lr.isNotBlank() && nodeId.isNotBlank() &&
+            java.io.File(lr, "$nodeId/live.log").let { it.exists() && it.length() > 0 }
+    }
 
     fun update(event: PipelineEvent) {
         when (event) {
@@ -39,6 +51,7 @@ class PipelineState {
                 finishedAt.set(0L)
                 stages.clear()
                 recentLogs.clear()
+                recentLogsSize.set(0)
                 log("Pipeline started: ${event.name} [${event.id}]")
             }
             is PipelineEvent.StageStarted -> {
@@ -47,12 +60,12 @@ class PipelineState {
                 log("[${event.index}] ▶ ${event.name}")
             }
             is PipelineEvent.StageCompleted -> {
-                updateStage(event.name, "running") { it.copy(status = "completed", durationMs = event.durationMs) }
+                updateStage(event.name, "running") { it.copy(status = "completed", durationMs = event.durationMs, hasLog = checkHasLog(it.nodeId)) }
                 log("[${event.index}] ✓ ${event.name} (${event.durationMs}ms)")
             }
             is PipelineEvent.StageFailed -> {
                 // Stage may be "running" or "retrying" when the final failure fires
-                val updated = updateStageAny(event.name) { it.copy(status = "failed", error = event.error) }
+                val updated = updateStageAny(event.name) { it.copy(status = "failed", error = event.error, hasLog = checkHasLog(it.nodeId)) }
                 if (!updated) stages.add(StageRecord(event.index, event.name, status = "failed", error = event.error))
                 log("[${event.index}] ✗ ${event.name}: ${event.error}")
             }
@@ -106,7 +119,7 @@ class PipelineState {
             }
             is PipelineEvent.RepairFailed -> {
                 val idx = stages.indexOfLast { it.name == event.stageName }
-                if (idx >= 0) stages[idx] = stages[idx].copy(status = "failed", error = event.reason)
+                if (idx >= 0) stages[idx] = stages[idx].copy(status = "failed", error = event.reason, hasLog = checkHasLog(stages[idx].nodeId))
                 log("[${event.stageIndex}] ✗ Repair failed: ${event.stageName}: ${event.reason}")
             }
             is PipelineEvent.InterviewStarted ->
@@ -142,6 +155,7 @@ class PipelineState {
         finishedAt.set(0L)
         stages.clear()
         recentLogs.clear()
+        recentLogsSize.set(0)
         cancelToken.set(false)
         pauseToken.set(false)
         archived.set(false)
@@ -149,12 +163,14 @@ class PipelineState {
     }
 
     private fun log(msg: String) {
-        val entry = "[${Instant.now()}] $msg"
-        recentLogs.add(entry)
-        while (recentLogs.size > 200) recentLogs.removeAt(0)
+        recentLogs.addLast("[${Instant.now()}] $msg")
+        if (recentLogsSize.incrementAndGet() > 200) {
+            recentLogs.pollFirst()
+            recentLogsSize.decrementAndGet()
+        }
     }
 
-    fun toJson(logsRoot: String = ""): String {
+    fun toJson(): String {
         val sb = StringBuilder()
         sb.append("{")
         sb.append("\"pipeline\":${js(pipelineName.get())},")
@@ -168,16 +184,16 @@ class PipelineState {
         sb.append("\"stages\":[")
         stages.forEachIndexed { i, s ->
             if (i > 0) sb.append(",")
-            val hasLog = logsRoot.isNotBlank() && s.nodeId.isNotBlank() &&
-                java.io.File(logsRoot, "${s.nodeId}/live.log").let { it.exists() && it.length() > 0 }
-            sb.append("{\"index\":${s.index},\"name\":${js(s.name)},\"nodeId\":${js(s.nodeId)},\"status\":${js(s.status)},\"hasLog\":$hasLog")
+            sb.append("{\"index\":${s.index},\"name\":${js(s.name)},\"nodeId\":${js(s.nodeId)},\"status\":${js(s.status)},\"hasLog\":${s.hasLog}")
             if (s.startedAt != null) sb.append(",\"startedAt\":${s.startedAt}")
             if (s.durationMs != null) sb.append(",\"durationMs\":${s.durationMs}")
             if (s.error != null) sb.append(",\"error\":${js(s.error)}")
             sb.append("}")
         }
         sb.append("],\"logs\":[")
-        recentLogs.takeLast(50).forEachIndexed { i, l ->
+        val logList = recentLogs.toList()
+        val logsToShow = if (logList.size > 50) logList.subList(logList.size - 50, logList.size) else logList
+        logsToShow.forEachIndexed { i, l ->
             if (i > 0) sb.append(",")
             sb.append(js(l))
         }

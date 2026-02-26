@@ -26,7 +26,9 @@ data class RunOptions(
 )
 
 object PipelineRunner {
-    private val executor = Executors.newCachedThreadPool()
+    private val executor = Executors.newFixedThreadPool(
+        (Runtime.getRuntime().availableProcessors() * 2).coerceAtLeast(4)
+    )
     private val counter = AtomicLong(0)
 
     fun submit(
@@ -126,6 +128,7 @@ object PipelineRunner {
             val logsRoot = registry.get(id)?.logsRoot?.takeIf { it.isNotBlank() }
                 ?: "logs/${graph.id}-$id"
             registry.setLogsRoot(id, logsRoot)
+            registry.get(id)?.state?.logsRoot = logsRoot
 
             // On resume: snapshot completed stages (excluding checkpoint.currentNode, which the
             // engine will re-run) so we can restore them after PipelineStarted clears the list.
@@ -175,7 +178,10 @@ object PipelineRunner {
                     is PipelineEvent.PipelinePaused    -> { store.updateStatus(id, "paused");    store.updateLog(id, state.recentLogs.joinToString("\n")); store.updateFinishedAt(id, state.finishedAt.get()) }
                     else -> {}
                 }
-                onUpdate()
+                when (event) {
+                    is PipelineEvent.CheckpointSaved -> { /* state updated; no broadcast needed */ }
+                    else -> onUpdate()
+                }
             }
 
             val preparedGraph = engine.prepare(graph)

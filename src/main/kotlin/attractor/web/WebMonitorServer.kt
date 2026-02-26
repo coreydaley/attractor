@@ -16,6 +16,12 @@ import kotlinx.serialization.json.jsonPrimitive
 
 class WebMonitorServer(private val port: Int, private val registry: PipelineRegistry, private val store: RunStore) {
 
+    private companion object {
+        val dotSanitizePass1 = Regex("""(?s),?\s*\b(prompt|goal|goal_gate)\s*=\s*"(?:[^"\\]|\\.)*"""")
+        val dotSanitizePass2 = Regex("""(?s),?\s*\b(prompt|goal|goal_gate)\s*=\s*"[^"]*\z""")
+        val dotSanitizePass3 = Regex("""\[\s*,\s*""")
+    }
+
     private val httpServer = HttpServer.create(InetSocketAddress(port), 0)
     private val sseClients = CopyOnWriteArrayList<SseClient>()
 
@@ -74,7 +80,7 @@ class WebMonitorServer(private val port: Int, private val registry: PipelineRegi
                 ex.sendResponseHeaders(404, err.size.toLong()); ex.responseBody.use { it.write(err) }
                 return@createContext
             }
-            val body = "{\"id\":${js(entry.id)},\"fileName\":${js(entry.fileName)},\"dotSource\":${js(entry.dotSource)},\"originalPrompt\":${js(entry.originalPrompt)},\"familyId\":${js(entry.familyId)},\"simulate\":${entry.options.simulate},\"isHydratedViewOnly\":${entry.isHydratedViewOnly},\"state\":${entry.state.toJson(entry.logsRoot)}}".toByteArray()
+            val body = "{\"id\":${js(entry.id)},\"fileName\":${js(entry.fileName)},\"dotSource\":${js(entry.dotSource)},\"originalPrompt\":${js(entry.originalPrompt)},\"familyId\":${js(entry.familyId)},\"simulate\":${entry.options.simulate},\"isHydratedViewOnly\":${entry.isHydratedViewOnly},\"state\":${entry.state.toJson()}}".toByteArray()
             ex.responseHeaders.add("Content-Type", "application/json")
             ex.sendResponseHeaders(200, body.size.toLong()); ex.responseBody.use { it.write(body) }
         }
@@ -1151,7 +1157,7 @@ class WebMonitorServer(private val port: Int, private val registry: PipelineRegi
         val all = registry.getAll()
         all.forEachIndexed { i, entry ->
             if (i > 0) sb.append(",")
-            sb.append("{\"id\":${js(entry.id)},\"fileName\":${js(entry.fileName)},\"dotSource\":${js(entry.dotSource)},\"originalPrompt\":${js(entry.originalPrompt)},\"familyId\":${js(entry.familyId)},\"simulate\":${entry.options.simulate},\"isHydratedViewOnly\":${entry.isHydratedViewOnly},\"state\":${entry.state.toJson(entry.logsRoot)}}")
+            sb.append("{\"id\":${js(entry.id)},\"fileName\":${js(entry.fileName)},\"dotSource\":${js(entry.dotSource)},\"originalPrompt\":${js(entry.originalPrompt)},\"familyId\":${js(entry.familyId)},\"simulate\":${entry.options.simulate},\"isHydratedViewOnly\":${entry.isHydratedViewOnly},\"state\":${entry.state.toJson()}}")
         }
         sb.append("]}")
         return sb.toString()
@@ -1192,20 +1198,13 @@ class WebMonitorServer(private val port: Int, private val registry: PipelineRegi
      *     the regex looks for the attribute opening and consumes everything to end-of-input.
      */
     private fun sanitizeDotForRender(dot: String): String {
-        val attrs = "(prompt|goal|goal_gate)"
         // Pass 1: well-formed value — stops at the closing unescaped "
-        var result = dot.replace(
-            Regex("""(?s),?\s*\b$attrs\s*=\s*"(?:[^"\\]|\\.)*""""),
-            ""
-        )
+        var result = dot.replace(dotSanitizePass1, "")
         // Pass 2: unterminated value — consumes from the opening " to end of string
-        result = result.replace(
-            Regex("""(?s),?\s*\b$attrs\s*=\s*"[^"]*\z"""),
-            ""
-        )
+        result = result.replace(dotSanitizePass2, "")
         // Pass 3: clean up leading commas left when the removed attribute was first in the list
         // e.g. [goal="...", label="x"] → [, label="x"] → [label="x"]
-        result = result.replace(Regex("""\[\s*,\s*"""), "[")
+        result = result.replace(dotSanitizePass3, "[")
         return result
     }
 
@@ -1347,7 +1346,7 @@ main { max-width: 1200px; margin: 0 auto; padding: 20px; display: grid; grid-tem
 [data-theme="light"] .stage-log-btn.active { background: #e1f0f5; border-color: #2dadca88; color: #006876; }
 .stage-log-inline { border-top: 1px solid var(--surface-muted); }
 .stage-log-pre { margin: 0; background: var(--code-bg); color: var(--code-text); font-family: 'Consolas','Cascadia Code','Courier New',monospace; font-size: 0.72rem; line-height: 1.6; max-height: 320px; overflow-y: auto; white-space: pre-wrap; word-break: break-all; padding: 10px 13px; border-radius: 0 0 5px 5px; }
-.log-panel  { font-family: 'Consolas', 'Cascadia Code', 'Courier New', monospace; font-size: 0.72rem; line-height: 1.7; height: 500px; overflow-y: auto; background: var(--code-bg); border-radius: 4px; padding: 12px; }
+.log-panel  { font-family: 'Consolas', 'Cascadia Code', 'Courier New', monospace; font-size: 0.72rem; line-height: 1.7; flex: 1; min-height: 0; overflow-y: auto; background: var(--code-bg); border-radius: 4px; padding: 12px; }
 .log-line   { color: var(--text-faint); border-bottom: 1px solid rgba(33,38,45,0.2); padding: 1px 0; word-break: break-all; }
 .log-line:last-child { color: var(--text); border-bottom: none; }
 .empty-note { color: var(--text-faint); font-size: 0.82rem; padding: 4px 0; }
@@ -1551,7 +1550,8 @@ main { max-width: 1200px; margin: 0 auto; padding: 20px; display: grid; grid-tem
 .right-tab-btn.active { background: var(--surface-muted); color: var(--text-strong); }
 
 /* Pipeline graph panel (monitor view) */
-.pipeline-graph-view { overflow: auto; min-height: 120px; max-height: 500px; background: var(--graph-bg); border-radius: 4px; }
+.pipeline-graph-view { overflow: auto; flex: 1; min-height: 0; background: var(--graph-bg); border-radius: 4px; }
+#rightPanel { display: flex; flex-direction: column; }
 .pipeline-graph-view > div { width: 100%; }
 .pipeline-graph-view svg { display: block; width: 100%; height: auto; }
 .pipeline-graph-placeholder { color: var(--text-faint); font-size: 0.78rem; padding: 20px; text-align: center; width: 100%; }
@@ -1605,8 +1605,8 @@ input:checked + .toggle-slider:before { transform:translateX(20px); }
   <nav style="display:flex;gap:3px;">
     <button class="nav-btn active" id="navMonitor" onclick="showView('monitor')">Monitor</button>
     <button class="nav-btn" id="navCreate" onclick="showView('create')">&#10024; Create</button>
-    <button class="nav-btn" id="navArchived" onclick="showView('archived')">&#8595; Archived</button>
-    <button class="nav-btn" onclick="openImportModal()">&#8599; Import</button>
+    <button class="nav-btn" id="navArchived" onclick="showView('archived')">&#128193; Archived</button>
+    <button class="nav-btn" onclick="openImportModal()">&#128229; Import</button>
     <button class="nav-btn" id="navSettings" onclick="showView('settings')">&#9881; Settings</button>
   </nav>
   <button class="theme-toggle-btn" id="themeToggle" onclick="toggleTheme()" aria-label="Switch to light theme" title="Switch to light theme">&#9728;</button>
@@ -1741,7 +1741,7 @@ input:checked + .toggle-slider:before { transform:translateX(20px); }
 <!-- Import run modal -->
 <div class="modal-overlay hidden" id="importModal" onclick="closeImportModal()">
   <div class="modal" onclick="event.stopPropagation()">
-    <h2>&#8599;&ensp;Import Pipeline</h2>
+    <h2>&#128229;&ensp;Import Pipeline</h2>
     <p style="color:#8b949e;font-size:0.82rem;margin-bottom:16px;line-height:1.5;">Select an exported pipeline ZIP to start a new run from its definition.</p>
     <div class="field">
       <label style="display:block;font-size:0.8rem;color:#8b949e;margin-bottom:6px;">Pipeline ZIP file</label>
@@ -1771,7 +1771,7 @@ var stageLogContent = '';   // last fetched log text for the expanded stage
 var graphSigFor = {};       // id -> last stage-status signature used to render the graph
 var graphRenderGen = {};    // id -> render generation; stale in-flight responses are discarded
 
-var ICONS = { running: '&#9889;', completed: '&#10003;', failed: '&#10007;', retrying: '&#8635;', diagnosing: '&#9203;', repairing: '&#9874;', pending: '&middot;' };
+var ICONS = { running: '&#9889;', completed: '&#10003;', failed: '&#10007;', retrying: '&#8635;', diagnosing: '&#128269;', repairing: '&#9874;', pending: '&middot;' };
 
 // ── Utility ────────────────────────────────────────────────────────────────
 function esc(s) {
@@ -2043,7 +2043,7 @@ function buildPanel(id) {
     +     '<button class="btn-download" id="failureReportBtn" style="display:none;" onclick="openArtifacts(selectedId,\'Failure Report\')">&#128203;&ensp;View Failure Report</button>'
     +     '<button class="btn-download" id="exportBtn" style="display:none;" onclick="exportRun()">&#8599;&ensp;Export</button>'
     +     '<button class="btn-archive" id="archiveBtn" style="display:none;" onclick="archivePipeline()">&#8595;&ensp;Archive</button>'
-    +     '<button class="btn-unarchive" id="unarchiveBtn" style="display:none;" onclick="unarchivePipeline()">&#8617;&ensp;Unarchive</button>'
+    +     '<button class="btn-unarchive" id="unarchiveBtn" style="display:none;" onclick="unarchivePipeline()">&#8593;&ensp;Unarchive</button>'
     +     '<button class="btn-delete" id="deleteBtn" style="display:none;" onclick="showDeleteConfirm(selectedId)">&#10005;&ensp;Delete</button>'
     +   '</div>'
     + '</div>'
@@ -2057,7 +2057,7 @@ function buildPanel(id) {
     +   '<div class="vh-list" id="vhList" style="display:none;"></div>'
     + '</div>'
     + '</div>'
-    + '<div class="card">'
+    + '<div class="card" id="rightPanel">'
     +   '<div class="right-panel-tabs">'
     +     '<button class="right-tab-btn" id="rightTabLog" onclick="switchRightPanel(\'log\')">Live Log</button>'
     +     '<button class="right-tab-btn active" id="rightTabGraph" onclick="switchRightPanel(\'graph\')">Graph</button>'
@@ -2197,7 +2197,7 @@ function updatePanel(id) {
   var unarchiveBtn = document.getElementById('unarchiveBtn');
   if (unarchiveBtn) {
     unarchiveBtn.style.display = isArchived ? 'inline-block' : 'none';
-    if (isArchived) { unarchiveBtn.disabled = false; unarchiveBtn.innerHTML = '&#8617;&ensp;Unarchive'; }
+    if (isArchived) { unarchiveBtn.disabled = false; unarchiveBtn.innerHTML = '&#8593;&ensp;Unarchive'; }
   }
 
   var deleteBtn = document.getElementById('deleteBtn');
@@ -3502,12 +3502,12 @@ function unarchivePipeline() {
       kickPoll();
     } else {
       btn.disabled = false;
-      btn.innerHTML = '&#8617;&ensp;Unarchive';
+      btn.innerHTML = '&#8593;&ensp;Unarchive';
     }
   })
   .catch(function() {
     btn.disabled = false;
-    btn.innerHTML = '&#8617;&ensp;Unarchive';
+    btn.innerHTML = '&#8593;&ensp;Unarchive';
   });
 }
 

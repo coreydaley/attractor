@@ -24,6 +24,13 @@ class RunStore(dbPath: String) {
 
     init {
         conn.createStatement().use { stmt ->
+            stmt.execute("PRAGMA journal_mode=WAL")
+            stmt.execute("PRAGMA synchronous=NORMAL")
+            stmt.execute("PRAGMA cache_size=-32000")   // 32 MB (negative = KB)
+            stmt.execute("PRAGMA busy_timeout=5000")
+            stmt.execute("PRAGMA temp_store=MEMORY")
+        }
+        conn.createStatement().use { stmt ->
             stmt.execute("""
                 CREATE TABLE IF NOT EXISTS pipeline_runs (
                     id             TEXT    PRIMARY KEY,
