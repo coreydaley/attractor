@@ -1,0 +1,16 @@
+digraph Review {
+    graph [goal="Review and ship a change"]
+    rankdir=LR
+
+    start [shape=Mdiamond, label="Start"]
+    exit  [shape=Msquare,  label="Exit"]
+
+    generate [shape=box,     label="Generate", prompt="Generate code changes for: $goal"]
+    review   [shape=hexagon, label="Review Changes", type="wait.human"]
+    fix      [shape=box,     label="Fix Issues", prompt="Fix the issues found in review"]
+
+    start -> generate -> review
+    review -> exit [label="[A] Approve"]
+    review -> fix  [label="[F] Fix Issues"]
+    fix -> review
+}

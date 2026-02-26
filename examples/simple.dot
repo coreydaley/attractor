@@ -1,0 +1,13 @@
+digraph Simple {
+    graph [goal="Run tests and report results", label="Simple Pipeline"]
+    rankdir=LR
+
+    start  [shape=Mdiamond, label="Start"]
+    exit   [shape=Msquare,  label="Done"]
+
+    plan     [label="Plan",     prompt="Plan the implementation for: $goal"]
+    implement [label="Implement", prompt="Implement the plan for: $goal"]
+    test     [label="Test",     prompt="Run tests and verify the implementation"]
+
+    start -> plan -> implement -> test -> exit
+}
