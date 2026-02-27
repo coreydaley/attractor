@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+# Attractor CLI wrapper script
+# Usage: attractor [options] <resource> <verb> [args]
+#
+# This script finds the attractor-cli-*.jar in the build/libs directory
+# relative to the project root and invokes it with java -jar.
+#
+# To install: copy this script and the JAR to a directory on your PATH,
+# or add the project's bin/ directory to your PATH.
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+LIBS_DIR="$PROJECT_ROOT/build/libs"
+
+# Find the most recently built CLI JAR (devel or release)
+JAR=$(ls -t "$LIBS_DIR"/coreys-attractor-cli-*.jar 2>/dev/null | head -1)
+
+if [ -z "$JAR" ]; then
+    echo "Error: coreys-attractor-cli JAR not found in $LIBS_DIR" >&2
+    echo "Run 'make cli-jar' from the project root to build it." >&2
+    exit 1
+fi
+
+exec java -jar "$JAR" "$@"
