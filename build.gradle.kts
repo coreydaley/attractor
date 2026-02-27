@@ -63,6 +63,21 @@ tasks.test {
     useJUnitPlatform()
 }
 
+distributions {
+    main {
+        contents {
+            from("README.md")
+            from("LICENSE")
+            from("docs/api") { into("docs/api") }
+            from("examples")  { into("examples") }
+        }
+    }
+}
+
+tasks.named("assemble") {
+    dependsOn("cliJar")
+}
+
 tasks.jar {
     archiveBaseName.set("coreys-attractor-server-devel")
     archiveVersion.set("")
