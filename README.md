@@ -1,6 +1,6 @@
 # Corey's Attractor
 
-[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
+[![CI](https://github.com/coreydaley/coreys-attractor/actions/workflows/ci.yml/badge.svg)](https://github.com/coreydaley/coreys-attractor/actions/workflows/ci.yml) [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 
 > **Based on the fantastic work from [StrongDM's Software Factory](https://factory.strongdm.ai/) and the [Attractor project](https://github.com/strongdm/attractor).**
 >
@@ -27,28 +27,68 @@ A DOT-based pipeline runner that orchestrates multi-stage AI workflows. You defi
 
 - **Java 21** (Gradle 8.7 is incompatible with Java 25+)
 - Gradle 8.7 (wrapper included, or use the system Gradle)
+- GNU Make (included on macOS and most Linux distros)
+
+## Quick Start
+
+```bash
+make install-deps   # install Java 21 and git (interactive, detects OS/package manager)
+make build          # compile and assemble
+make run            # start the web interface on port 7070
+```
+
+## Make Targets
+
+| Target | Description |
+|--------|-------------|
+| `make help` | List all available targets and options |
+| `make build` | Compile and assemble the application |
+| `make jar` | Build only the fat JAR (`build/libs/coreys-attractor-*.jar`) |
+| `make run` | Run via Gradle — picks up source changes without rebuilding the JAR |
+| `make run-jar` | Build the fat JAR (if needed) and run it directly (faster startup) |
+| `make test` | Run the test suite |
+| `make check` | Run tests and all static checks |
+| `make clean` | Delete all build output |
+| `make dist` | Build distribution archives (`.tar` and `.zip`) |
+| `make install-deps` | Interactively install Java 21 and git using your OS package manager |
+
+### Make Options
+
+Pass these on the command line to override defaults:
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `WEB_PORT=<n>` | `7070` | Web UI port |
+| `JAVA_HOME=<path>` | `/opt/homebrew/opt/openjdk@21/…` | Path to JDK 21 |
+
+```bash
+make run WEB_PORT=8080
+make run-jar JAVA_HOME=/usr/lib/jvm/java-21-openjdk
+```
 
 ## Build
 
-Set Java 21 as the active JDK:
+```bash
+make build
+```
+
+Or manually (Java 21 must be active):
 
 ```bash
 export JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home
-```
-
-Build the fat jar:
-
-```bash
-# Using the system Gradle (recommended)
-~/.gradle/wrapper/dists/gradle-8.7-bin/*/gradle-8.7/bin/gradle -p . jar
-
-# Or using the wrapper (requires Java 21)
 ./gradlew jar
 ```
 
-The output jar is written to `build/libs/coreys-attractor-1.0.0.jar`.
+The output jar is written to `build/libs/coreys-attractor-*.jar`.
 
 ## Run
+
+```bash
+make run           # via Gradle (auto-reloads classpath changes)
+make run-jar       # via the pre-built fat JAR (faster startup)
+```
+
+Or directly:
 
 ```
 java -jar build/libs/coreys-attractor-1.0.0.jar [options]
@@ -69,19 +109,6 @@ java -jar build/libs/coreys-attractor-1.0.0.jar [options]
 | `OPENAI_API_KEY` | API key for OpenAI GPT |
 | `GEMINI_API_KEY` | API key for Google Gemini |
 | `ATTRACTOR_DEBUG` | Set to any value to enable debug output and stack traces |
-
-### Examples
-
-```bash
-# Start the web interface
-java -jar build/libs/coreys-attractor-1.0.0.jar
-
-# Use a non-default port
-java -jar build/libs/coreys-attractor-1.0.0.jar --web-port 8080
-
-# Use a custom logs directory
-java -jar build/libs/coreys-attractor-1.0.0.jar --logs-root /tmp/my-runs
-```
 
 Once running, open `http://localhost:7070` (or your chosen port) in a browser to start creating and executing pipelines. From the web interface you can describe a pipeline goal in natural language, review the generated DOT graph, and run it — all without touching the command line.
 
@@ -191,6 +218,13 @@ examples/                    # Sample .dot pipelines
 ```
 
 ## Running Tests
+
+```bash
+make test     # run the test suite
+make check    # run tests and all static checks
+```
+
+Or directly:
 
 ```bash
 export JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home

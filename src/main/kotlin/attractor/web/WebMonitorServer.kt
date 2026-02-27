@@ -24,6 +24,7 @@ class WebMonitorServer(private val port: Int, private val registry: PipelineRegi
 
     private val httpServer = HttpServer.create(InetSocketAddress(port), 0)
     private val sseClients = CopyOnWriteArrayList<SseClient>()
+    internal val restSseClients = CopyOnWriteArrayList<RestApiRouter.RestSseClient>()
 
     private inner class SseClient(val ex: HttpExchange) {
         val queue = LinkedBlockingQueue<String>(512)
@@ -1130,6 +1131,9 @@ class WebMonitorServer(private val port: Int, private val registry: PipelineRegi
                 runCatching { ex.responseBody.close() }
             }
         }
+
+        val restApi = RestApiRouter(registry, store, { broadcastUpdate() }, { allPipelinesJson() }, restSseClients)
+        httpServer.createContext("/api/v1/") { ex -> restApi.handle(ex) }
     }
 
     fun broadcastUpdate() {
@@ -1139,6 +1143,11 @@ class WebMonitorServer(private val port: Int, private val registry: PipelineRegi
             if (!client.alive) dead.add(client) else client.offer(json)
         }
         sseClients.removeAll(dead.toSet())
+        val deadRest = mutableListOf<RestApiRouter.RestSseClient>()
+        for (client in restSseClients) {
+            if (!client.alive) deadRest.add(client) else client.offer(json)
+        }
+        restSseClients.removeAll(deadRest.toSet())
     }
 
     fun start() {
