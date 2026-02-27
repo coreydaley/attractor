@@ -2725,6 +2725,7 @@ function modifyDot(changes, baseDot) {
             var evt = JSON.parse(line.slice(6));
             if (evt.delta) {
               dotPreview.value += evt.delta;
+              dotPreview.scrollTop = dotPreview.scrollHeight;
             } else if (evt.done && evt.dotSource) {
               dotPreview.value = evt.dotSource;
               setGenStatus('ok', 'Modified \u2014 review and run.');
@@ -2910,6 +2911,7 @@ function fixDotAndRerender(brokenDot, errorMsg) {
             var evt = JSON.parse(line.slice(6));
             if (evt.delta !== undefined) {
               preview.value += evt.delta;
+              preview.scrollTop = preview.scrollHeight;
             } else if (evt.done) {
               finished = true;
               preview.value = evt.dotSource;
@@ -3071,6 +3073,7 @@ function generateDot(prompt) {
             var evt = JSON.parse(line.slice(6));
             if (evt.delta !== undefined) {
               preview.value += evt.delta;
+              preview.scrollTop = preview.scrollHeight;
             } else if (evt.done) {
               finished = true;
               preview.value = evt.dotSource;
@@ -3279,7 +3282,7 @@ function renderPipelineGraph(id) {
 // ── Graph zoom ───────────────────────────────────────────────────────────────
 var createZoom = 1.0;
 var monitorZoom = 1.0;
-var ZOOM_STEP = 0.25;
+var ZOOM_STEP = 0.10;
 var ZOOM_MIN = 0.25;
 var ZOOM_MAX = 4.0;
 
