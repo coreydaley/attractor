@@ -2572,16 +2572,28 @@ function closeArtifacts() {
 // ── Data update ─────────────────────────────────────────────────────────────
 function applyUpdate(data) {
   if (!data.pipelines) return;
+  var incoming = {};
   for (var i = 0; i < data.pipelines.length; i++) {
     var p = data.pipelines[i];
     var isNew = !pipelines[p.id];
     var prevStatus = pipelines[p.id] && pipelines[p.id].state && pipelines[p.id].state.status;
     pipelines[p.id] = p;
+    incoming[p.id] = true;
     if (isNew && selectedId === DASHBOARD_TAB_ID && _storedTab === null) selectedId = p.id;
     // Fireworks when the viewed pipeline transitions to completed
     if (!isNew && prevStatus !== 'completed' && p.state && p.state.status === 'completed' && p.id === selectedId) {
       var monitorView = document.getElementById('viewMonitor');
       if (monitorView && monitorView.style.display !== 'none' && appSettings.fireworks_enabled !== false) triggerFireworks();
+    }
+  }
+  // Remove any local entries no longer reported by the server (e.g. deleted runs).
+  for (var existingId in pipelines) {
+    if (!incoming[existingId]) {
+      delete pipelines[existingId];
+      if (selectedId === existingId) {
+        selectedId = DASHBOARD_TAB_ID;
+        panelBuiltFor = null;
+      }
     }
   }
   renderTabs();
