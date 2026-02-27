@@ -1,0 +1,21 @@
+# CODEOWNERS defines who is responsible for reviewing and approving changes
+# to specific files or directories in this repository. GitHub automatically
+# requests reviews from the listed owners when a pull request modifies
+# matching paths. Rules are evaluated in order, with the last matching rule
+# taking precedence.
+
+# Default owner for everything not matched by a more specific rule
+* @coreydaley
+
+# Source code
+src/ @coreydaley
+
+# Build configuration
+build.gradle.kts @coreydaley
+settings.gradle.kts @coreydaley
+
+# GitHub configuration and workflows
+.github/ @coreydaley
+
+# Examples
+examples/ @coreydaley

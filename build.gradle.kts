@@ -16,9 +16,14 @@ fun gitVersion(): String {
         proc.waitFor() to out
     } catch (_: Exception) { -1 to "" }
 
+    fun isDirty(): Boolean = cmd("git", "status", "--porcelain").second.isNotEmpty()
+
     val (tagExit, tagOut) = cmd("git", "describe", "--tags", "--exact-match", "HEAD")
-    return if (tagExit == 0) tagOut
-           else cmd("git", "rev-parse", "--short", "HEAD").second.ifEmpty { "unknown" }
+    if (tagExit == 0 && tagOut.isNotEmpty()) {
+        return if (isDirty()) "$tagOut-dirty" else tagOut
+    }
+    val sha = cmd("git", "rev-parse", "--short", "HEAD").second.ifEmpty { "unknown" }
+    return if (isDirty()) "$sha-dirty" else sha
 }
 
 version = gitVersion()
@@ -59,9 +64,48 @@ tasks.test {
 }
 
 tasks.jar {
+    archiveBaseName.set("coreys-attractor-server-devel")
+    archiveVersion.set("")
     manifest {
         attributes["Main-Class"] = "attractor.MainKt"
+        attributes["Implementation-Version"] = version
     }
     from(configurations.runtimeClasspath.get().map { if (it.isDirectory) it else zipTree(it) })
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+}
+
+tasks.register<Jar>("cliJar") {
+    archiveBaseName.set("coreys-attractor-cli-devel")
+    archiveVersion.set("")
+    manifest {
+        attributes["Main-Class"] = "attractor.cli.CliMainKt"
+        attributes["Implementation-Version"] = version
+    }
+    from(configurations.runtimeClasspath.get().map { if (it.isDirectory) it else zipTree(it) })
+    from(sourceSets.main.get().output)
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+}
+
+tasks.register<Jar>("releaseJar") {
+    archiveBaseName.set("coreys-attractor-server")
+    archiveVersion.set(version.toString())
+    manifest {
+        attributes["Main-Class"] = "attractor.MainKt"
+        attributes["Implementation-Version"] = version
+    }
+    from(configurations.runtimeClasspath.get().map { if (it.isDirectory) it else zipTree(it) })
+    from(sourceSets.main.get().output)
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+}
+
+tasks.register<Jar>("releaseCliJar") {
+    archiveBaseName.set("coreys-attractor-cli")
+    archiveVersion.set(version.toString())
+    manifest {
+        attributes["Main-Class"] = "attractor.cli.CliMainKt"
+        attributes["Implementation-Version"] = version
+    }
+    from(configurations.runtimeClasspath.get().map { if (it.isDirectory) it else zipTree(it) })
+    from(sourceSets.main.get().output)
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
 }

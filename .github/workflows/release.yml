@@ -1,0 +1,59 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build-and-release:
+    name: Build & Release
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Java 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+
+      - name: Cache Gradle packages
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle.kts', 'gradle/wrapper/gradle-wrapper.properties') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      - name: Build release JARs
+        run: ./gradlew releaseJar releaseCliJar --no-daemon
+
+      - name: Find server JAR
+        id: find-server-jar
+        run: echo "jar_path=$(find build/libs -name 'coreys-attractor-server-*.jar' | grep -v devel | head -1)" >> "$GITHUB_OUTPUT"
+
+      - name: Find CLI JAR
+        id: find-cli-jar
+        run: echo "jar_path=$(find build/libs -name 'coreys-attractor-cli-*.jar' | grep -v devel | head -1)" >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: ${{ github.ref_name }}
+          generate_release_notes: true
+          files: |
+            ${{ steps.find-server-jar.outputs.jar_path }}
+            ${{ steps.find-cli-jar.outputs.jar_path }}

@@ -13,12 +13,10 @@ JAVA_HOME ?= /opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home
 export JAVA_HOME
 
 GRADLEW   := ./gradlew
-# Resolved lazily so it picks up the jar after 'make jar' builds it.
-# Sorted by modification time — newest first — so stale jars are never picked.
-JAR        = $(shell ls -t build/libs/coreys-attractor-*.jar 2>/dev/null | head -1)
+JAR        = build/libs/coreys-attractor-server-devel.jar
 WEB_PORT  ?= 7070
 
-.PHONY: help build test clean run run-jar jar dist check install-deps openapi
+.PHONY: help build test clean run run-jar jar cli-jar release dist check install-deps openapi
 
 # Default target — show available targets
 help:
@@ -30,7 +28,9 @@ help:
 	@echo "  make clean          Delete all build output"
 	@echo "  make run            Run via Gradle (auto-reloads classpath)"
 	@echo "  make run-jar        Run the pre-built fat JAR directly"
-	@echo "  make jar            Build only the fat JAR"
+	@echo "  make jar            Build server devel JAR  (coreys-attractor-server-devel.jar)"
+	@echo "  make cli-jar        Build CLI devel JAR     (coreys-attractor-cli-devel.jar)"
+	@echo "  make release        Build versioned server + CLI JARs (git tag or SHA[-dirty])"
 	@echo "  make dist           Build distribution archives (tar + zip)"
 	@echo "  make check          Run tests and static checks"
 	@echo "  make openapi        Generate OpenAPI 3.0 specs (JSON + YAML)"
@@ -62,6 +62,17 @@ run-jar: jar
 
 jar:
 	$(GRADLEW) jar
+
+cli-jar:
+	$(GRADLEW) cliJar
+
+release:
+	$(GRADLEW) releaseJar releaseCliJar
+	@echo ""
+	@echo "  Release artifacts:"
+	@ls build/libs/coreys-attractor-server-*.jar build/libs/coreys-attractor-cli-*.jar 2>/dev/null \
+	  | grep -v -- '-devel' | sed 's/^/    /' || true
+	@echo ""
 
 dist:
 	$(GRADLEW) distTar distZip

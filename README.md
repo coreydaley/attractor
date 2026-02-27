@@ -50,6 +50,8 @@ make run            # start the web interface on port 7070
 | `make check` | Run tests and all static checks |
 | `make clean` | Delete all build output |
 | `make dist` | Build distribution archives (`.tar` and `.zip`) |
+| `make cli-jar` | Build the CLI fat JAR (`build/libs/coreys-attractor-cli-devel.jar`) |
+| `make release` | Build versioned server + CLI JARs for distribution |
 | `make install-deps` | Interactively install Java 21 and git using your OS package manager |
 
 ### Make Options
@@ -199,6 +201,140 @@ The dashboard exposes a small HTTP API for programmatic use:
 | `POST` | `/api/pause` | Pause a running pipeline — body: `{id}` |
 | `POST` | `/api/resume` | Resume a paused pipeline — body: `{id}` |
 | `GET` | `/events` | SSE stream of all pipeline state updates |
+
+## CLI
+
+The `attractor` CLI lets you manage pipelines, artifacts, DOT graphs, settings, and models from the command line.
+
+### Build
+
+```bash
+make cli-jar
+```
+
+This produces `build/libs/coreys-attractor-cli-devel.jar`. For a versioned release artifact:
+
+```bash
+make release
+```
+
+### Run
+
+```bash
+# Via the built JAR directly
+java -jar build/libs/coreys-attractor-cli-devel.jar --help
+
+# Via the bin/ wrapper (auto-locates the latest CLI JAR)
+bin/attractor --help
+```
+
+Add `bin/` to your `$PATH` to use `attractor` as a bare command anywhere.
+
+### Global Flags
+
+| Flag | Description |
+|------|-------------|
+| `--host <url>` | Server base URL (default: `http://localhost:7070`) |
+| `--output json` | Output raw JSON instead of formatted tables |
+| `--help`, `-h` | Show usage information |
+| `--version` | Print version and exit |
+
+### Commands
+
+#### Pipeline management
+
+```bash
+attractor pipeline list
+attractor pipeline get <id>
+attractor pipeline create --file pipeline.dot [--name "My Pipeline"] [--simulate] [--no-auto-approve] [--prompt "text"]
+attractor pipeline update <id> [--file pipeline.dot] [--prompt "text"]
+attractor pipeline delete <id>
+
+# Lifecycle
+attractor pipeline rerun <id>
+attractor pipeline pause <id>
+attractor pipeline resume <id>
+attractor pipeline cancel <id>
+attractor pipeline archive <id>
+attractor pipeline unarchive <id>
+
+# Inspection
+attractor pipeline stages <id>
+attractor pipeline family <id>
+
+# Polling
+attractor pipeline watch <id> [--interval-ms 2000] [--timeout-ms 60000]
+
+# Versioning
+attractor pipeline iterate <id> --file updated.dot [--prompt "text"]
+```
+
+#### Artifacts
+
+```bash
+attractor artifact list <pipeline-id>
+attractor artifact get <pipeline-id> <node-id>
+attractor artifact download-zip <pipeline-id> [--output out.zip]
+attractor artifact stage-log <pipeline-id> <node-id> [--output node.log]
+attractor artifact failure-report <pipeline-id> [--output report.json]
+attractor artifact export <pipeline-id> [--output export.zip]
+attractor artifact import --file export.zip
+```
+
+#### DOT graph tools
+
+```bash
+attractor dot generate --prompt "Build and test a Go app" [--model <id>] [--output pipeline.dot]
+attractor dot generate-stream --prompt "..." [--model <id>]       # streaming output
+attractor dot validate --file pipeline.dot
+attractor dot render --file pipeline.dot [--output pipeline.png]
+attractor dot fix --file pipeline.dot [--error "message"] [--model <id>] [--output fixed.dot]
+attractor dot fix-stream --file pipeline.dot [--error "message"] [--model <id>]
+attractor dot iterate --file pipeline.dot --prompt "Add a test stage" [--model <id>] [--output next.dot]
+attractor dot iterate-stream --file pipeline.dot --prompt "..." [--model <id>]
+```
+
+#### Settings
+
+```bash
+attractor settings list
+attractor settings get <key>
+attractor settings set <key> <value>
+```
+
+#### Models
+
+```bash
+attractor models list
+```
+
+#### Events (SSE stream)
+
+```bash
+attractor events              # stream all pipeline events
+attractor events <pipeline-id> # stream events for one pipeline until terminal state
+```
+
+### Examples
+
+```bash
+# Create and watch a pipeline
+attractor pipeline create --file my.dot --name "My Pipeline"
+attractor pipeline watch <id>
+
+# Generate a DOT file from a prompt, then run it
+attractor dot generate --prompt "Deploy a container image" --output deploy.dot
+attractor pipeline create --file deploy.dot
+attractor pipeline watch <id>
+
+# Export all artifacts from a completed pipeline
+attractor artifact export <id> --output artifacts.zip
+
+# Use JSON output for scripting
+attractor pipeline list --output json | jq '.[0].id'
+```
+
+For the full REST API reference, see [`docs/api/rest-v1.md`](docs/api/rest-v1.md).
 
 ## Project Structure
 
