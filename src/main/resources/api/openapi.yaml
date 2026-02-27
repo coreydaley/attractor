@@ -1,0 +1,1838 @@
+openapi: 3.0.3
+info:
+  title: Corey's Attractor REST API
+  description: 'Full-featured REST API for the Corey''s Attractor pipeline orchestration system. All endpoints are under `/api/v1/`.
+    Existing browser-facing `/api/*` routes continue to work unchanged.
+
+
+    **Authentication**: none (auth is out of scope for v1 — routes are structured to allow middleware insertion in a future
+    sprint).
+
+
+    **Error envelope**: all error responses use `{"error":"...","code":"..."}`.'
+  version: 1.0.0
+  contact:
+    name: Corey's Attractor
+    url: https://github.com/coreydaley/coreys-attractor
+  license:
+    name: Apache 2.0
+    url: https://www.apache.org/licenses/LICENSE-2.0
+servers:
+- url: /api/v1
+  description: REST API v1 (relative to server root)
+tags:
+- name: pipelines
+  description: Pipeline run CRUD and metadata
+- name: lifecycle
+  description: Pipeline lifecycle actions (rerun, pause, resume, cancel, archive)
+- name: artifacts
+  description: Artifact files, logs, failure reports, export/import
+- name: dot
+  description: DOT graph tooling — validate, render, generate, fix, iterate
+- name: settings
+  description: Application settings
+- name: models
+  description: LLM model catalog
+- name: events
+  description: Server-Sent Events streams
+- name: docs
+  description: API documentation endpoints
+paths:
+  /pipelines:
+    get:
+      operationId: listPipelines
+      summary: List all pipeline runs
+      description: Returns all runs ordered by creation time. The `dotSource` field is omitted from list responses; use `GET
+        /pipelines/{id}` to retrieve it.
+      tags:
+      - pipelines
+      responses:
+        '200':
+          description: Array of pipeline run summaries
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/PipelineListItem'
+    post:
+      operationId: createPipeline
+      summary: Submit and run a new pipeline
+      tags:
+      - pipelines
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PipelineCreateRequest'
+      responses:
+        '201':
+          description: Pipeline submitted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PipelineCreateResponse'
+        '400':
+          description: Bad request — missing or invalid field
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Resource not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /pipelines/import:
+    post:
+      operationId: importPipeline
+      summary: Import a pipeline from a ZIP archive
+      description: 'Accepts a raw `application/zip` request body containing a `pipeline-meta.json` entry. Query param `onConflict`
+        controls behaviour when the run ID already exists: `skip` (default), `overwrite`, or `rename`.'
+      tags:
+      - pipelines
+      parameters:
+      - name: onConflict
+        in: query
+        schema:
+          type: string
+          enum:
+          - skip
+          - overwrite
+          - rename
+          default: skip
+      requestBody:
+        required: true
+        content:
+          application/zip:
+            schema:
+              type: string
+              format: binary
+      responses:
+        '200':
+          description: Import result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  imported:
+                    type: boolean
+                  id:
+                    type: string
+                  action:
+                    type: string
+                    enum:
+                    - imported
+                    - skipped
+                    - overwritten
+                    - renamed
+        '400':
+          description: Bad request — missing or invalid field
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Resource not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /pipelines/{id}:
+    get:
+      operationId: getPipeline
+      summary: Get a single pipeline run (includes dotSource)
+      tags:
+      - pipelines
+      parameters:
+      - &id001
+        name: id
+        in: path
+        required: true
+        description: Pipeline run ID
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Pipeline'
+        '400':
+          description: Bad request — missing or invalid field
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Resource not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    patch:
+      operationId: patchPipeline
+      summary: Update mutable pipeline metadata
+      description: Allowed on idle, completed, or failed pipelines only. Running or paused pipelines return 409.
+      tags:
+      - pipelines
+      parameters:
+      - *id001
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PipelinePatchRequest'
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Pipeline'
+        '400':
+          description: Bad request — missing or invalid field
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Resource not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: Conflict — invalid state transition
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    delete:
+      operationId: deletePipeline
+      summary: Permanently delete a pipeline run
+      description: Removes the run from memory, database, and deletes its log directory. Returns 409 if the run is running
+        or paused.
+      tags:
+      - pipelines
+      parameters:
+      - *id001
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeleteResponse'
+        '400':
+          description: Bad request — missing or invalid field
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Resource not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: Conflict — invalid state transition
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /pipelines/{id}/rerun:
+    post:
+      operationId: rerunPipeline
+      summary: Re-run a completed, failed, or cancelled pipeline
+      tags:
+      - pipelines
+      - lifecycle
+      parameters:
+      - *id001
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PipelineCreateResponse'
+        '400':
+          description: Bad request — missing or invalid field
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Resource not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: Conflict — invalid state transition
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /pipelines/{id}/pause:
+    post:
+      operationId: pausePipeline
+      summary: Pause a running pipeline
+      tags:
+      - pipelines
+      - lifecycle
+      parameters:
+      - *id001
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ActionResponse'
+        '400':
+          description: Bad request — missing or invalid field
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Resource not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: Conflict — invalid state transition
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /pipelines/{id}/resume:
+    post:
+      operationId: resumePipeline
+      summary: Resume a paused pipeline
+      tags:
+      - pipelines
+      - lifecycle
+      parameters:
+      - *id001
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ActionResponse'
+        '400':
+          description: Bad request — missing or invalid field
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Resource not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: Conflict — invalid state transition
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /pipelines/{id}/cancel:
+    post:
+      operationId: cancelPipeline
+      summary: Cancel a running or paused pipeline
+      tags:
+      - pipelines
+      - lifecycle
+      parameters:
+      - *id001
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ActionResponse'
+        '400':
+          description: Bad request — missing or invalid field
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Resource not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: Conflict — invalid state transition
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /pipelines/{id}/archive:
+    post:
+      operationId: archivePipeline
+      summary: Archive a pipeline run
+      tags:
+      - pipelines
+      - lifecycle
+      parameters:
+      - *id001
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ActionResponse'
+        '400':
+          description: Bad request — missing or invalid field
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Resource not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /pipelines/{id}/unarchive:
+    post:
+      operationId: unarchivePipeline
+      summary: Unarchive a pipeline run
+      tags:
+      - pipelines
+      - lifecycle
+      parameters:
+      - *id001
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ActionResponse'
+        '400':
+          description: Bad request — missing or invalid field
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Resource not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /pipelines/{id}/iterations:
+    post:
+      operationId: createIteration
+      summary: Create a new iteration in the same family
+      description: Submits a new pipeline run that shares the parent's familyId.
+      tags:
+      - pipelines
+      - lifecycle
+      parameters:
+      - *id001
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IterationCreateRequest'
+      responses:
+        '201':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IterationCreateResponse'
+        '400':
+          description: Bad request — missing or invalid field
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Resource not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /pipelines/{id}/family:
+    get:
+      operationId: getPipelineFamily
+      summary: List all runs in the same family (lineage)
+      tags:
+      - pipelines
+      parameters:
+      - *id001
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FamilyResponse'
+        '400':
+          description: Bad request — missing or invalid field
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Resource not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /pipelines/{id}/artifacts:
+    get:
+      operationId: listArtifacts
+      summary: List artifact files for a pipeline run
+      tags:
+      - artifacts
+      parameters:
+      - *id001
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ArtifactListResponse'
+        '400':
+          description: Bad request — missing or invalid field
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Resource not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /pipelines/{id}/artifacts/{path}:
+    get:
+      operationId: getArtifact
+      summary: Download a single artifact file
+      description: Serves the file with `text/plain` for text extensions or `application/octet-stream` otherwise. Path traversal
+        attempts return 404.
+      tags:
+      - artifacts
+      parameters:
+      - *id001
+      - name: path
+        in: path
+        required: true
+        description: Relative path within the artifacts directory
+        schema:
+          type: string
+      responses:
+        '200':
+          description: File content
+          content:
+            text/plain:
+              schema:
+                type: string
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        '400':
+          description: Bad request — missing or invalid field
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Resource not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /pipelines/{id}/artifacts.zip:
+    get:
+      operationId: downloadArtifactsZip
+      summary: Download all artifacts as a ZIP archive
+      tags:
+      - artifacts
+      parameters:
+      - *id001
+      responses:
+        '200':
+          description: ZIP archive
+          content:
+            application/zip:
+              schema:
+                type: string
+                format: binary
+        '400':
+          description: Bad request — missing or invalid field
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Resource not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /pipelines/{id}/export:
+    get:
+      operationId: exportPipeline
+      summary: Export a pipeline as a ZIP (pipeline-meta.json)
+      tags:
+      - artifacts
+      parameters:
+      - *id001
+      responses:
+        '200':
+          description: ZIP archive containing pipeline-meta.json
+          content:
+            application/zip:
+              schema:
+                type: string
+                format: binary
+        '400':
+          description: Bad request — missing or invalid field
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Resource not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /pipelines/{id}/failure-report:
+    get:
+      operationId: getFailureReport
+      summary: Retrieve the LLM failure diagnosis report
+      tags:
+      - artifacts
+      parameters:
+      - *id001
+      responses:
+        '200':
+          description: failure_report.json content
+          content:
+            application/json:
+              schema:
+                type: object
+        '400':
+          description: Bad request — missing or invalid field
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Resource not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /pipelines/{id}/stages:
+    get:
+      operationId: getStages
+      summary: List stage records for a pipeline run
+      tags:
+      - pipelines
+      parameters:
+      - *id001
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StagesResponse'
+        '400':
+          description: Bad request — missing or invalid field
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Resource not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /pipelines/{id}/stages/{nodeId}/log:
+    get:
+      operationId: getStageLog
+      summary: Retrieve the live log for a specific stage
+      tags:
+      - pipelines
+      parameters:
+      - *id001
+      - name: nodeId
+        in: path
+        required: true
+        description: DOT node ID
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Log content as plain text
+          content:
+            text/plain:
+              schema:
+                type: string
+        '400':
+          description: Bad request — missing or invalid field
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Resource not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /dot/validate:
+    post:
+      operationId: validateDot
+      summary: Validate a DOT graph source
+      tags:
+      - dot
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DotValidateRequest'
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DotValidateResponse'
+        '400':
+          description: Bad request — missing or invalid field
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Resource not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /dot/render:
+    post:
+      operationId: renderDot
+      summary: Render DOT source to SVG using Graphviz
+      description: Requires Graphviz (`dot` binary) to be installed.
+      tags:
+      - dot
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DotRenderRequest'
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DotRenderResponse'
+        '400':
+          description: Bad request — missing or invalid field
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Resource not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /dot/generate:
+    post:
+      operationId: generateDot
+      summary: Generate a DOT graph from a natural-language prompt (synchronous)
+      tags:
+      - dot
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DotGenerateRequest'
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DotSourceResponse'
+        '400':
+          description: Bad request — missing or invalid field
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Resource not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /dot/generate/stream:
+    get:
+      operationId: generateDotStream
+      summary: Generate a DOT graph with streaming SSE deltas
+      tags:
+      - dot
+      parameters:
+      - name: prompt
+        in: query
+        required: true
+        schema:
+          type: string
+      responses:
+        '200': &id002
+          description: 'Server-Sent Events stream. Each frame: `data: {json}\n\n`. Heartbeat frames: `: heartbeat\n\n`.'
+          content:
+            text/event-stream:
+              schema:
+                $ref: '#/components/schemas/SseDelta'
+        '400':
+          description: Bad request — missing or invalid field
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Resource not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /dot/fix:
+    post:
+      operationId: fixDot
+      summary: Fix a broken DOT graph (synchronous)
+      tags:
+      - dot
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DotFixRequest'
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DotSourceResponse'
+        '400':
+          description: Bad request — missing or invalid field
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Resource not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /dot/fix/stream:
+    get:
+      operationId: fixDotStream
+      summary: Fix a broken DOT graph with streaming SSE deltas
+      tags:
+      - dot
+      parameters:
+      - name: dotSource
+        in: query
+        required: true
+        schema:
+          type: string
+      - name: error
+        in: query
+        required: false
+        schema:
+          type: string
+      responses:
+        '200': *id002
+        '400':
+          description: Bad request — missing or invalid field
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Resource not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /dot/iterate:
+    post:
+      operationId: iterateDot
+      summary: Iterate on an existing DOT graph (synchronous)
+      tags:
+      - dot
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DotIterateRequest'
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DotSourceResponse'
+        '400':
+          description: Bad request — missing or invalid field
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Resource not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /dot/iterate/stream:
+    get:
+      operationId: iterateDotStream
+      summary: Iterate on an existing DOT graph with streaming SSE deltas
+      tags:
+      - dot
+      parameters:
+      - name: baseDot
+        in: query
+        required: true
+        schema:
+          type: string
+      - name: changes
+        in: query
+        required: true
+        schema:
+          type: string
+      responses:
+        '200': *id002
+        '400':
+          description: Bad request — missing or invalid field
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Resource not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /settings:
+    get:
+      operationId: getSettings
+      summary: Get all settings
+      description: Returns a JSON object mapping each known setting key to its value. Defaults to `"true"` if a setting has
+        never been explicitly set.
+      tags:
+      - settings
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SettingsResponse'
+  /settings/{key}:
+    get:
+      operationId: getSetting
+      summary: Get a single setting
+      tags:
+      - settings
+      parameters:
+      - name: key
+        in: path
+        required: true
+        schema:
+          type: string
+          enum:
+          - fireworks_enabled
+        example: fireworks_enabled
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Setting'
+        '400':
+          description: Bad request — missing or invalid field
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Resource not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    put:
+      operationId: putSetting
+      summary: Update a setting
+      tags:
+      - settings
+      parameters:
+      - name: key
+        in: path
+        required: true
+        schema:
+          type: string
+          enum:
+          - fireworks_enabled
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SettingUpdateRequest'
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Setting'
+        '400':
+          description: Bad request — missing or invalid field
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Resource not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /models:
+    get:
+      operationId: listModels
+      summary: List all available LLM models
+      tags:
+      - models
+      responses:
+        '200':
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModelsResponse'
+  /events:
+    get:
+      operationId: getEvents
+      summary: All-pipelines Server-Sent Events stream
+      description: Streams full pipeline snapshot JSON on every state change. Delivers an initial snapshot on connect.
+      tags:
+      - events
+      responses:
+        '200':
+          description: SSE stream. Each `data:` frame is a JSON pipeline snapshot.
+          content:
+            text/event-stream:
+              schema:
+                type: string
+  /events/{id}:
+    get:
+      operationId: getPipelineEvents
+      summary: Single-pipeline Server-Sent Events stream
+      description: Same as `/events` but filtered to the specified pipeline. Returns 404 immediately if the pipeline does
+        not exist.
+      tags:
+      - events
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Filtered SSE stream
+          content:
+            text/event-stream:
+              schema:
+                type: string
+        '400':
+          description: Bad request — missing or invalid field
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '404':
+          description: Resource not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /openapi.json:
+    get:
+      operationId: getOpenApiJson
+      summary: OpenAPI 3.0 specification (JSON)
+      tags:
+      - docs
+      responses:
+        '200':
+          description: OpenAPI 3.0 JSON
+          content:
+            application/json:
+              schema:
+                type: object
+        '404':
+          description: Spec not generated — run `make openapi`
+  /openapi.yaml:
+    get:
+      operationId: getOpenApiYaml
+      summary: OpenAPI 3.0 specification (YAML)
+      tags:
+      - docs
+      responses:
+        '200':
+          description: OpenAPI 3.0 YAML
+          content:
+            application/yaml:
+              schema:
+                type: string
+        '404':
+          description: Spec not generated — run `make openapi`
+  /swagger.json:
+    get:
+      operationId: getSwaggerJson
+      summary: Alias for /openapi.json (Swagger-compatible)
+      tags:
+      - docs
+      responses:
+        '200':
+          description: OpenAPI 3.0 JSON
+          content:
+            application/json:
+              schema:
+                type: object
+  /docs:
+    get:
+      operationId: getSwaggerUi
+      summary: Swagger UI — interactive API explorer
+      tags:
+      - docs
+      responses:
+        '200':
+          description: Swagger UI HTML page
+          content:
+            text/html:
+              schema:
+                type: string
+components:
+  schemas:
+    Error:
+      type: object
+      required:
+      - error
+      - code
+      properties:
+        error:
+          type: string
+          example: pipeline not found
+        code:
+          type: string
+          enum:
+          - NOT_FOUND
+          - BAD_REQUEST
+          - INVALID_STATE
+          - INTERNAL_ERROR
+          - RENDER_ERROR
+          - GENERATION_ERROR
+          example: NOT_FOUND
+    StageRecord:
+      type: object
+      required:
+      - index
+      - name
+      - nodeId
+      - status
+      - hasLog
+      properties:
+        index:
+          type: integer
+          description: Zero-based stage index
+        name:
+          type: string
+          description: Stage label
+        nodeId:
+          type: string
+          description: DOT node ID
+        status:
+          type: string
+          enum:
+          - pending
+          - running
+          - completed
+          - failed
+          - retrying
+          - diagnosing
+          - repairing
+        startedAt:
+          type: integer
+          nullable: true
+          description: Epoch millis
+        durationMs:
+          type: integer
+          nullable: true
+        error:
+          type: string
+          nullable: true
+        hasLog:
+          type: boolean
+    Pipeline:
+      type: object
+      description: Full pipeline run (includes dotSource)
+      required:
+      - id
+      - displayName
+      - fileName
+      - status
+      - archived
+      - hasFailureReport
+      - simulate
+      - autoApprove
+      - familyId
+      - stages
+      - logs
+      properties:
+        id:
+          type: string
+          example: run-1700000000000-1
+        displayName:
+          type: string
+          example: sapphire-fox
+        fileName:
+          type: string
+          example: pipeline.dot
+        dotSource:
+          type: string
+          description: Full DOT graph source (included in single-item GET only)
+        status:
+          type: string
+          enum:
+          - idle
+          - running
+          - completed
+          - failed
+          - cancelled
+          - paused
+          example: completed
+        archived:
+          type: boolean
+          example: false
+        hasFailureReport:
+          type: boolean
+          example: false
+        simulate:
+          type: boolean
+          example: false
+        autoApprove:
+          type: boolean
+          example: true
+        familyId:
+          type: string
+        originalPrompt:
+          type: string
+        startedAt:
+          type: integer
+          nullable: true
+          example: 1700000000000
+        finishedAt:
+          type: integer
+          nullable: true
+          example: 1700000060000
+        currentNode:
+          type: string
+          nullable: true
+        stages:
+          type: array
+          items:
+            $ref: '#/components/schemas/StageRecord'
+        logs:
+          type: array
+          items:
+            type: string
+          description: Up to 50 most recent log lines
+    PipelineListItem:
+      allOf:
+      - $ref: '#/components/schemas/Pipeline'
+      description: Pipeline summary in list responses — dotSource is omitted
+    PipelineCreateRequest:
+      type: object
+      required:
+      - dotSource
+      properties:
+        dotSource:
+          type: string
+          description: DOT graph source
+        fileName:
+          type: string
+          default: ''
+          example: pipeline.dot
+        simulate:
+          type: boolean
+          default: false
+          description: Use simulation backend (no LLM calls)
+        autoApprove:
+          type: boolean
+          default: true
+          description: Auto-approve human checkpoints
+        originalPrompt:
+          type: string
+          default: ''
+        familyId:
+          type: string
+          default: ''
+          description: Family ID; omit to start a new family
+    PipelineCreateResponse:
+      type: object
+      required:
+      - id
+      - status
+      properties:
+        id:
+          type: string
+        status:
+          type: string
+          example: running
+    PipelinePatchRequest:
+      type: object
+      properties:
+        dotSource:
+          type: string
+          description: Updated DOT source (only allowed on idle/completed/failed runs)
+        originalPrompt:
+          type: string
+    DeleteResponse:
+      type: object
+      required:
+      - deleted
+      properties:
+        deleted:
+          type: boolean
+    ActionResponse:
+      type: object
+      description: Generic lifecycle action result
+      properties:
+        paused:
+          type: boolean
+        archived:
+          type: boolean
+        unarchived:
+          type: boolean
+        cancelled:
+          type: boolean
+        id:
+          type: string
+        status:
+          type: string
+    IterationCreateRequest:
+      type: object
+      required:
+      - dotSource
+      properties:
+        dotSource:
+          type: string
+        originalPrompt:
+          type: string
+        fileName:
+          type: string
+    IterationCreateResponse:
+      type: object
+      required:
+      - id
+      - familyId
+      - status
+      properties:
+        id:
+          type: string
+        familyId:
+          type: string
+        status:
+          type: string
+    FamilyMember:
+      type: object
+      required:
+      - id
+      - displayName
+      - fileName
+      - createdAt
+      - status
+      - versionNum
+      properties:
+        id:
+          type: string
+        displayName:
+          type: string
+        fileName:
+          type: string
+        createdAt:
+          type: integer
+        status:
+          type: string
+        versionNum:
+          type: integer
+        originalPrompt:
+          type: string
+    FamilyResponse:
+      type: object
+      required:
+      - familyId
+      - members
+      properties:
+        familyId:
+          type: string
+        members:
+          type: array
+          items:
+            $ref: '#/components/schemas/FamilyMember'
+    ArtifactInfo:
+      type: object
+      required:
+      - path
+      - size
+      - isText
+      properties:
+        path:
+          type: string
+          description: Relative path within artifacts directory
+        size:
+          type: integer
+          description: File size in bytes
+        isText:
+          type: boolean
+          description: True for text-based extensions
+    ArtifactListResponse:
+      type: object
+      required:
+      - files
+      - truncated
+      properties:
+        files:
+          type: array
+          items:
+            $ref: '#/components/schemas/ArtifactInfo'
+          maxItems: 500
+        truncated:
+          type: boolean
+          description: True if more than 500 artifacts exist
+    StagesResponse:
+      type: object
+      required:
+      - stages
+      properties:
+        stages:
+          type: array
+          items:
+            $ref: '#/components/schemas/StageRecord'
+    DotValidateRequest:
+      type: object
+      required:
+      - dotSource
+      properties:
+        dotSource:
+          type: string
+    Diagnostic:
+      type: object
+      required:
+      - severity
+      - message
+      properties:
+        severity:
+          type: string
+          enum:
+          - error
+          - warning
+          - info
+        message:
+          type: string
+        nodeId:
+          type: string
+          nullable: true
+    DotValidateResponse:
+      type: object
+      required:
+      - valid
+      - diagnostics
+      properties:
+        valid:
+          type: boolean
+        diagnostics:
+          type: array
+          items:
+            $ref: '#/components/schemas/Diagnostic'
+    DotRenderRequest:
+      type: object
+      required:
+      - dotSource
+      properties:
+        dotSource:
+          type: string
+    DotRenderResponse:
+      type: object
+      required:
+      - svg
+      properties:
+        svg:
+          type: string
+          description: SVG string from Graphviz
+    DotGenerateRequest:
+      type: object
+      required:
+      - prompt
+      properties:
+        prompt:
+          type: string
+    DotSourceResponse:
+      type: object
+      required:
+      - dotSource
+      properties:
+        dotSource:
+          type: string
+    DotFixRequest:
+      type: object
+      required:
+      - dotSource
+      properties:
+        dotSource:
+          type: string
+        error:
+          type: string
+          default: ''
+          description: Validation error or failure context to guide the fix
+    DotIterateRequest:
+      type: object
+      required:
+      - baseDot
+      - changes
+      properties:
+        baseDot:
+          type: string
+          description: Existing DOT source to iterate on
+        changes:
+          type: string
+          description: Natural-language description of desired changes
+    Setting:
+      type: object
+      required:
+      - key
+      - value
+      properties:
+        key:
+          type: string
+          example: fireworks_enabled
+        value:
+          type: string
+          example: 'true'
+    SettingsResponse:
+      type: object
+      description: Map of all known setting keys to their current values
+      additionalProperties:
+        type: string
+      example:
+        fireworks_enabled: 'true'
+    SettingUpdateRequest:
+      type: object
+      required:
+      - value
+      properties:
+        value:
+          type: string
+    ModelInfo:
+      type: object
+      required:
+      - id
+      - provider
+      - displayName
+      - contextWindow
+      - supportsTools
+      - supportsVision
+      - supportsReasoning
+      properties:
+        id:
+          type: string
+          example: claude-sonnet-4-5
+        provider:
+          type: string
+          example: anthropic
+        displayName:
+          type: string
+          example: Claude Sonnet 4.5
+        contextWindow:
+          type: integer
+          example: 200000
+        maxOutput:
+          type: integer
+          nullable: true
+        supportsTools:
+          type: boolean
+        supportsVision:
+          type: boolean
+        supportsReasoning:
+          type: boolean
+        inputCostPerMillion:
+          type: number
+          nullable: true
+        outputCostPerMillion:
+          type: number
+          nullable: true
+        aliases:
+          type: array
+          items:
+            type: string
+    ModelsResponse:
+      type: object
+      required:
+      - models
+      properties:
+        models:
+          type: array
+          items:
+            $ref: '#/components/schemas/ModelInfo'
+    SseDelta:
+      type: object
+      description: SSE event data frame
+      properties:
+        delta:
+          type: string
+          description: Incremental text chunk
+        done:
+          type: boolean
+          description: True on final frame
+        dotSource:
+          type: string
+          description: Complete result on final frame
+        error:
+          type: string
+          description: Present if generation failed

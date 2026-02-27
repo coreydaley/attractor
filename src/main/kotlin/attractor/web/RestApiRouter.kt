@@ -221,6 +221,16 @@ class RestApiRouter(
                 method == "GET" && segments.size == 2 && segments[0] == "events" ->
                     handleEventsSingle(ex, segments[1])
 
+                // API documentation
+                method == "GET" && segments == listOf("openapi.json") ->
+                    handleSpecJson(ex)
+                method == "GET" && segments == listOf("openapi.yaml") ->
+                    handleSpecYaml(ex)
+                method == "GET" && segments == listOf("swagger.json") ->
+                    handleSpecJson(ex)
+                method == "GET" && segments == listOf("docs") ->
+                    handleSwaggerUi(ex)
+
                 else -> errorResponse(ex, 404, "not found", "NOT_FOUND")
             }
         } catch (e: Exception) {
@@ -991,5 +1001,66 @@ class RestApiRouter(
             sseClients.remove(client)
             runCatching { ex.responseBody.close() }
         }
+    }
+
+    // ── API Documentation ─────────────────────────────────────────────────────
+
+    private fun handleSpecJson(ex: HttpExchange) {
+        val bytes = javaClass.getResourceAsStream("/api/openapi.json")?.readBytes()
+            ?: run {
+                errorResponse(ex, 404,
+                    "openapi.json not found — run `make openapi` then rebuild the app",
+                    "NOT_FOUND")
+                return
+            }
+        ex.responseHeaders.add("Content-Type", "application/json; charset=utf-8")
+        ex.responseHeaders.add("Access-Control-Allow-Origin", "*")
+        ex.sendResponseHeaders(200, bytes.size.toLong())
+        ex.responseBody.use { it.write(bytes) }
+    }
+
+    private fun handleSpecYaml(ex: HttpExchange) {
+        val bytes = javaClass.getResourceAsStream("/api/openapi.yaml")?.readBytes()
+            ?: run {
+                errorResponse(ex, 404,
+                    "openapi.yaml not found — run `make openapi` then rebuild the app",
+                    "NOT_FOUND")
+                return
+            }
+        ex.responseHeaders.add("Content-Type", "application/yaml; charset=utf-8")
+        ex.responseHeaders.add("Access-Control-Allow-Origin", "*")
+        ex.sendResponseHeaders(200, bytes.size.toLong())
+        ex.responseBody.use { it.write(bytes) }
+    }
+
+    private fun handleSwaggerUi(ex: HttpExchange) {
+        val html = """<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Corey's Attractor — API Docs</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist@5/swagger-ui.css">
+  <style>body { margin: 0; }</style>
+</head>
+<body>
+<div id="swagger-ui"></div>
+<script src="https://unpkg.com/swagger-ui-dist@5/swagger-ui-bundle.js"></script>
+<script>
+  SwaggerUIBundle({
+    url: '/api/v1/openapi.json',
+    dom_id: '#swagger-ui',
+    presets: [SwaggerUIBundle.presets.apis, SwaggerUIBundle.SwaggerUIStandalonePreset],
+    layout: 'BaseLayout',
+    deepLinking: true,
+    tryItOutEnabled: true,
+  });
+</script>
+</body>
+</html>""".trimIndent()
+        val bytes = html.toByteArray(Charsets.UTF_8)
+        ex.responseHeaders.add("Content-Type", "text/html; charset=utf-8")
+        ex.sendResponseHeaders(200, bytes.size.toLong())
+        ex.responseBody.use { it.write(bytes) }
     }
 }

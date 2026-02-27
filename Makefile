@@ -18,7 +18,7 @@ GRADLEW   := ./gradlew
 JAR        = $(shell ls -t build/libs/coreys-attractor-*.jar 2>/dev/null | head -1)
 WEB_PORT  ?= 7070
 
-.PHONY: help build test clean run run-jar jar dist check install-deps
+.PHONY: help build test clean run run-jar jar dist check install-deps openapi
 
 # Default target — show available targets
 help:
@@ -33,6 +33,7 @@ help:
 	@echo "  make jar            Build only the fat JAR"
 	@echo "  make dist           Build distribution archives (tar + zip)"
 	@echo "  make check          Run tests and static checks"
+	@echo "  make openapi        Generate OpenAPI 3.0 specs (JSON + YAML)"
 	@echo "  make install-deps   Install required dependencies (Java 21, git)"
 	@echo ""
 	@echo "  Options (pass on command line):"
@@ -67,6 +68,11 @@ dist:
 
 check:
 	$(GRADLEW) check
+
+# Generate OpenAPI 3.0 spec files into src/main/resources/api/.
+# Re-run whenever the API changes, then rebuild to embed updated specs in the JAR.
+openapi:
+	python3 scripts/generate-openapi.py
 
 # Detect the OS, ask which package manager to use, show the install command,
 # and offer to run it. Dependencies: Java 21 JDK, git.
