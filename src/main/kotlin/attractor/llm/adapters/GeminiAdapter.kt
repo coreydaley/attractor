@@ -171,7 +171,7 @@ class GeminiAdapter(
                         put("role", mapRole(msg.role))
                         putJsonArray("parts") {
                             for (part in msg.content) {
-                                add(translateContentPart(part, msg.role))
+                                add(translateContentPart(part))
                             }
                         }
                     }
@@ -327,7 +327,7 @@ class GeminiAdapter(
         }
     }
 
-    private fun translateContentPart(part: ContentPart, role: Role): JsonElement {
+    private fun translateContentPart(part: ContentPart): JsonElement {
         return when (part.kind) {
             ContentKind.TEXT -> buildJsonObject {
                 put("text", part.text ?: "")

@@ -89,7 +89,7 @@ class Engine(
 
         var currentNodeId = startNodeId
         var stageIndex = 0
-        var lastOutcome = Outcome.success()
+        var lastOutcome: Outcome
 
         // Checkpoint resume (Section 3.1): restore state if resuming
         if (config.resume) {

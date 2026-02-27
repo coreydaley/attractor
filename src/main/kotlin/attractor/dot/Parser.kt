@@ -129,17 +129,14 @@ class Parser(private val tokens: List<Token>) {
         edgeDefaults: MutableMap<String, DotValue>
     ) {
         expect(TokenType.SUBGRAPH)
-        // Optional subgraph ID
-        val subgraphLabel = if (match(TokenType.IDENTIFIER)) advance().value else null
+        // Optional subgraph ID — consume token but value is not used
+        if (match(TokenType.IDENTIFIER)) advance()
 
         // Subgraph inherits defaults but can override them
         val localNodeDefaults = nodeDefaults.toMutableMap()
         val localEdgeDefaults = edgeDefaults.toMutableMap()
 
         expect(TokenType.LBRACE)
-
-        // Derive class from subgraph label
-        val derivedClass = subgraphLabel?.let { deriveClass(it) }
 
         // Parse subgraph attributes and statements
         while (!match(TokenType.RBRACE, TokenType.EOF)) {
@@ -148,8 +145,7 @@ class Parser(private val tokens: List<Token>) {
                     // subgraph-level label or attrs
                     advance()
                     if (match(TokenType.LBRACKET)) {
-                        val attrs = parseAttrBlock()
-                        // Apply as subgraph defaults if relevant - ignored for now
+                        parseAttrBlock()
                     } else if (match(TokenType.EQUALS)) {
                         // skip
                     }

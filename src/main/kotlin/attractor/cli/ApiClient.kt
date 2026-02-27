@@ -163,15 +163,18 @@ class ApiClient(private val ctx: CliContext) {
             } catch (_: Exception) { "HTTP ${resp.code}" }
             throw CliException(msg, 1)
         }
-        resp.body?.use { body ->
-            val reader = body.byteStream().bufferedReader()
-            var line = reader.readLine()
+        val reader = resp.body?.byteStream()?.bufferedReader()
+        try {
+            var line = reader?.readLine()
             while (line != null) {
                 if (line.startsWith("data:")) {
                     yield(line.removePrefix("data:").trim())
                 }
-                line = reader.readLine()
+                line = reader?.readLine()
             }
+        } finally {
+            reader?.close()
+            resp.close()
         }
     }
 }
