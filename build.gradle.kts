@@ -5,7 +5,23 @@ plugins {
 }
 
 group = "attractor"
-version = "1.0.0"
+
+fun gitVersion(): String {
+    fun cmd(vararg args: String): Pair<Int, String> = try {
+        val proc = ProcessBuilder(*args)
+            .directory(rootDir)
+            .redirectErrorStream(true)
+            .start()
+        val out = proc.inputStream.bufferedReader().readText().trim()
+        proc.waitFor() to out
+    } catch (_: Exception) { -1 to "" }
+
+    val (tagExit, tagOut) = cmd("git", "describe", "--tags", "--exact-match", "HEAD")
+    return if (tagExit == 0) tagOut
+           else cmd("git", "rev-parse", "--short", "HEAD").second.ifEmpty { "unknown" }
+}
+
+version = gitVersion()
 
 repositories {
     mavenCentral()
