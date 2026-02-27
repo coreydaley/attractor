@@ -200,7 +200,8 @@ fun generate(
                         is Map<*, *> -> a as Map<String, Any>
                         else -> emptyMap<String, Any>()
                     }
-                    val result = tool.execute!!(args)
+                    val executeFn = tool.execute
+                    val result = executeFn(args)
                     Message.toolResult(tc.id, result.toString())
                 } catch (e: Exception) {
                     Message.toolResult(tc.id, "Error: ${e.message}", isError = true)

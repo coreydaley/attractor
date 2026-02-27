@@ -49,7 +49,7 @@ class OpenAIAdapter(
 
     override fun complete(request: LlmRequest): LlmResponse {
         val body = buildRequestBody(request)
-        val httpRequest = buildHttpRequest(request, body)
+        val httpRequest = buildHttpRequest(body)
 
         val response = try {
             client.newCall(httpRequest).execute()
@@ -68,7 +68,7 @@ class OpenAIAdapter(
 
     override fun stream(request: LlmRequest): Sequence<StreamEvent> {
         val body = buildRequestBody(request, streaming = true)
-        val httpRequest = buildHttpRequest(request, body)
+        val httpRequest = buildHttpRequest(body)
 
         return sequence {
             val call = client.newCall(httpRequest)
@@ -236,7 +236,7 @@ class OpenAIAdapter(
         return obj.toString()
     }
 
-    private fun buildHttpRequest(request: LlmRequest, body: String): okhttp3.Request {
+    private fun buildHttpRequest(body: String): okhttp3.Request {
         return okhttp3.Request.Builder()
             .url("$baseUrl/v1/responses")
             .post(body.toRequestBody(JSON_MEDIA_TYPE))

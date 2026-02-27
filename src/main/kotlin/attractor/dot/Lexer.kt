@@ -132,15 +132,6 @@ class Lexer(private val source: String) {
             val sfx = suffix.toString()
             if (sfx in DURATION_UNITS) {
                 val original = numStr + sfx
-                val num = numStr.toLong()
-                val millis = when (sfx) {
-                    "ms" -> num
-                    "s"  -> num * 1000
-                    "m"  -> num * 60_000
-                    "h"  -> num * 3_600_000
-                    "d"  -> num * 86_400_000
-                    else -> num
-                }
                 return Token(TokenType.DURATION, original, startLine, startCol)
             } else {
                 // Not a duration suffix: restore position
