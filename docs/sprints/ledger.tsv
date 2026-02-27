@@ -9,3 +9,4 @@ sprint_id	title	status	created_at	updated_at
 008	Performance Optimization	completed	2026-02-26T23:11:12Z	2026-02-26T23:15:37Z
 009	Critical Path Test Coverage	completed	2026-02-26T23:26:01Z	2026-02-26T23:32:00Z
 010	Full-Featured RESTful API (v1)	completed	2026-02-27T17:33:14Z	2026-02-27T17:53:27Z
+011	AI Provider Execution Mode & Per-Provider Toggles	in_progress	2026-02-27T18:02:28Z	2026-02-27T18:03:16Z

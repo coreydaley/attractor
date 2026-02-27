@@ -1,12 +1,15 @@
 package attractor.web
 
-import attractor.llm.Client
+import attractor.db.RunStore
+import attractor.llm.ClientProvider
+import attractor.llm.LlmExecutionConfig
 import attractor.llm.Message
+import attractor.llm.ModelSelection
 import attractor.llm.Request
 import attractor.llm.StreamEventType
 import attractor.llm.generate
 
-object DotGenerator {
+class DotGenerator(private val store: RunStore) {
 
     private val SYSTEM_PROMPT = """
 You are an expert at writing Attractor pipeline files in Graphviz DOT format.
@@ -102,23 +105,17 @@ digraph ContentReview {
 }
 """.trimIndent()
 
+    private fun config(): LlmExecutionConfig = LlmExecutionConfig.from(store)
+
     /**
      * Stream-generate an Attractor DOT pipeline file.
      * Calls [onDelta] for each text chunk as it arrives.
      * Returns the final cleaned DOT source (markdown fences stripped).
      */
     fun generateStream(prompt: String, onDelta: (String) -> Unit): String {
-        val hasKey = listOf("ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GEMINI_API_KEY", "GOOGLE_API_KEY")
-            .any { !System.getenv(it).isNullOrBlank() }
-
-        if (!hasKey) {
-            throw IllegalStateException(
-                "No LLM API key configured. Set ANTHROPIC_API_KEY, OPENAI_API_KEY, GEMINI_API_KEY, or GOOGLE_API_KEY."
-            )
-        }
-
-        val client = Client.fromEnv()
-        val model = selectModel()
+        val cfg = config()
+        val client = ClientProvider.getClient(cfg)
+        val (provider, model) = ModelSelection.selectModel(cfg)
 
         val msgs = mutableListOf<Message>()
         msgs.add(Message.system(SYSTEM_PROMPT))
@@ -127,6 +124,7 @@ digraph ContentReview {
         val request = Request(
             model = model,
             messages = msgs,
+            provider = provider,
             maxTokens = 8192,
             temperature = 0.2
         )
@@ -147,17 +145,9 @@ digraph ContentReview {
      * Returns the raw DOT source string.
      */
     fun generate(prompt: String): String {
-        val hasKey = listOf("ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GEMINI_API_KEY", "GOOGLE_API_KEY")
-            .any { !System.getenv(it).isNullOrBlank() }
-
-        if (!hasKey) {
-            throw IllegalStateException(
-                "No LLM API key configured. Set ANTHROPIC_API_KEY, OPENAI_API_KEY, GEMINI_API_KEY, or GOOGLE_API_KEY."
-            )
-        }
-
-        val client = Client.fromEnv()
-        val model = selectModel()
+        val cfg = config()
+        val client = ClientProvider.getClient(cfg)
+        val (provider, model) = ModelSelection.selectModel(cfg)
 
         val result = generate(
             model = model,
@@ -165,18 +155,11 @@ digraph ContentReview {
             prompt = prompt,
             maxTokens = 8192,
             temperature = 0.2,
+            provider = provider,
             client = client
         )
 
         return extractDotSource(result.text)
-    }
-
-    private fun selectModel(): String {
-        if (!System.getenv("ANTHROPIC_API_KEY").isNullOrBlank()) return "claude-sonnet-4-6"
-        if (!System.getenv("OPENAI_API_KEY").isNullOrBlank())     return "gpt-5.2-mini"
-        if (!System.getenv("GEMINI_API_KEY").isNullOrBlank() ||
-            !System.getenv("GOOGLE_API_KEY").isNullOrBlank())      return "gemini-3-flash-preview"
-        throw IllegalStateException("No LLM provider configured")
     }
 
     /**
@@ -186,13 +169,7 @@ digraph ContentReview {
      * Returns the final cleaned DOT source.
      */
     fun iterateStream(baseDot: String, changes: String, onDelta: (String) -> Unit): String {
-        val hasKey = listOf("ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GEMINI_API_KEY", "GOOGLE_API_KEY")
-            .any { !System.getenv(it).isNullOrBlank() }
-        if (!hasKey) throw IllegalStateException(
-            "No LLM API key configured. Set ANTHROPIC_API_KEY, OPENAI_API_KEY, GEMINI_API_KEY, or GOOGLE_API_KEY."
-        )
-
-        val prompt = """Given the following existing Attractor pipeline DOT source:
+        val iteratePrompt = """Given the following existing Attractor pipeline DOT source:
 
 $baseDot
 
@@ -201,7 +178,7 @@ Modify it according to these instructions: $changes
 Output ONLY the modified raw DOT source — no markdown fences, no explanations.
 Keep all existing nodes and edges unless explicitly told to remove them.""".trimIndent()
 
-        return generateStream(prompt, onDelta)
+        return generateStream(iteratePrompt, onDelta)
     }
 
     /**
@@ -209,12 +186,9 @@ Keep all existing nodes and edges unless explicitly told to remove them.""".trim
      * Calls [onDelta] for each text chunk. Returns the cleaned DOT source.
      */
     fun fixStream(brokenDot: String, error: String, onDelta: (String) -> Unit): String {
-        val hasKey = listOf("ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GEMINI_API_KEY", "GOOGLE_API_KEY")
-            .any { !System.getenv(it).isNullOrBlank() }
-        if (!hasKey) throw IllegalStateException("No LLM API key configured.")
-
-        val client = Client.fromEnv()
-        val model = selectModel()
+        val cfg = config()
+        val client = ClientProvider.getClient(cfg)
+        val (provider, model) = ModelSelection.selectModel(cfg)
 
         val msgs = mutableListOf<Message>()
         msgs.add(Message.system(SYSTEM_PROMPT))
@@ -231,6 +205,7 @@ Output ONLY the corrected raw DOT source — no markdown fences, no explanations
         val request = Request(
             model = model,
             messages = msgs,
+            provider = provider,
             maxTokens = 8192,
             temperature = 0.1
         )

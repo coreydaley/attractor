@@ -16,6 +16,8 @@ import kotlinx.serialization.json.jsonPrimitive
 
 class WebMonitorServer(private val port: Int, private val registry: PipelineRegistry, private val store: RunStore) {
 
+    private val dotGenerator = DotGenerator(store)
+
     private companion object {
         val dotSanitizePass1 = Regex("""(?s),?\s*\b(prompt|goal|goal_gate)\s*=\s*"(?:[^"\\]|\\.)*"""")
         val dotSanitizePass2 = Regex("""(?s),?\s*\b(prompt|goal|goal_gate)\s*=\s*"[^"]*\z""")
@@ -458,7 +460,7 @@ class WebMonitorServer(private val port: Int, private val registry: PipelineRegi
                     ex.responseBody.use { it.write(err) }
                     return@createContext
                 }
-                val dotSource = DotGenerator.generate(prompt)
+                val dotSource = dotGenerator.generate(prompt)
                 val resp = """{"dotSource":${js(dotSource)}}""".toByteArray()
                 ex.responseHeaders.add("Content-Type", "application/json")
                 ex.sendResponseHeaders(200, resp.size.toLong())
@@ -499,7 +501,7 @@ class WebMonitorServer(private val port: Int, private val registry: PipelineRegi
                 ex.sendResponseHeaders(200, 0)
                 val out = ex.responseBody
                 try {
-                    val cleanDot = DotGenerator.generateStream(prompt) { delta ->
+                    val cleanDot = dotGenerator.generateStream(prompt) { delta ->
                         val line = "data: {\"delta\":${js(delta)}}\n\n"
                         out.write(line.toByteArray(Charsets.UTF_8))
                         out.flush()
@@ -552,7 +554,7 @@ class WebMonitorServer(private val port: Int, private val registry: PipelineRegi
                 ex.sendResponseHeaders(200, 0)
                 val out = ex.responseBody
                 try {
-                    val cleanDot = DotGenerator.fixStream(dotSource, error) { delta ->
+                    val cleanDot = dotGenerator.fixStream(dotSource, error) { delta ->
                         val line = "data: {\"delta\":${js(delta)}}\n\n"
                         out.write(line.toByteArray(Charsets.UTF_8))
                         out.flush()
@@ -612,7 +614,7 @@ class WebMonitorServer(private val port: Int, private val registry: PipelineRegi
                 ex.sendResponseHeaders(200, 0)
                 val out = ex.responseBody
                 try {
-                    val cleanDot = DotGenerator.iterateStream(baseDot, changes) { delta ->
+                    val cleanDot = dotGenerator.iterateStream(baseDot, changes) { delta ->
                         val line = "data: {\"delta\":${js(delta)}}\n\n"
                         out.write(line.toByteArray(Charsets.UTF_8))
                         out.flush()
@@ -1057,8 +1059,24 @@ class WebMonitorServer(private val port: Int, private val registry: PipelineRegi
         // ── Get settings ─────────────────────────────────────────────────────
         httpServer.createContext("/api/settings") { ex ->
             if (ex.requestMethod == "GET") {
-                val fireworks = store.getSetting("fireworks_enabled") ?: "true"
-                val body = """{"fireworks_enabled":$fireworks}""".toByteArray()
+                val fireworks  = store.getSetting("fireworks_enabled") ?: "true"
+                val execMode   = store.getSetting("execution_mode") ?: "api"
+                val anthEnabled = store.getSetting("provider_anthropic_enabled") ?: "true"
+                val oaiEnabled  = store.getSetting("provider_openai_enabled") ?: "true"
+                val gemEnabled  = store.getSetting("provider_gemini_enabled") ?: "true"
+                val anthCmd    = store.getSetting("cli_anthropic_command") ?: "claude -p {prompt}"
+                val oaiCmd     = store.getSetting("cli_openai_command") ?: "codex -p {prompt}"
+                val gemCmd     = store.getSetting("cli_gemini_command") ?: "gemini -p {prompt}"
+                val body = """{
+                    "fireworks_enabled":$fireworks,
+                    "execution_mode":${js(execMode)},
+                    "provider_anthropic_enabled":$anthEnabled,
+                    "provider_openai_enabled":$oaiEnabled,
+                    "provider_gemini_enabled":$gemEnabled,
+                    "cli_anthropic_command":${js(anthCmd)},
+                    "cli_openai_command":${js(oaiCmd)},
+                    "cli_gemini_command":${js(gemCmd)}
+                }""".trimIndent().replace("\n", "").replace("    ", "").toByteArray()
                 ex.responseHeaders.add("Content-Type", "application/json")
                 ex.responseHeaders.add("Access-Control-Allow-Origin", "*")
                 ex.sendResponseHeaders(200, body.size.toLong())
@@ -1067,6 +1085,32 @@ class WebMonitorServer(private val port: Int, private val registry: PipelineRegi
                 ex.sendResponseHeaders(405, 0)
                 ex.responseBody.close()
             }
+        }
+
+        // ── CLI binary detection ──────────────────────────────────────────────
+        httpServer.createContext("/api/settings/cli-status") { ex ->
+            ex.responseHeaders.add("Access-Control-Allow-Origin", "*")
+            if (ex.requestMethod != "GET") {
+                ex.sendResponseHeaders(405, 0); ex.responseBody.close(); return@createContext
+            }
+            fun detectBinary(template: String): Boolean {
+                val binary = template.trim().split("\\s+".toRegex()).firstOrNull() ?: return false
+                return try {
+                    val proc = ProcessBuilder(binary, "--version").redirectErrorStream(true).start()
+                    proc.waitFor() == 0
+                } catch (_: Exception) { false }
+            }
+            val anthCmd = store.getSetting("cli_anthropic_command") ?: "claude -p {prompt}"
+            val oaiCmd  = store.getSetting("cli_openai_command") ?: "codex -p {prompt}"
+            val gemCmd  = store.getSetting("cli_gemini_command") ?: "gemini -p {prompt}"
+            val body = """{
+                "anthropic":${detectBinary(anthCmd)},
+                "openai":${detectBinary(oaiCmd)},
+                "gemini":${detectBinary(gemCmd)}
+            }""".trimIndent().replace("\n", "").replace("    ", "").toByteArray()
+            ex.responseHeaders.add("Content-Type", "application/json")
+            ex.sendResponseHeaders(200, body.size.toLong())
+            ex.responseBody.use { it.write(body) }
         }
 
         // ── Update a setting ──────────────────────────────────────────────────
@@ -1707,9 +1751,11 @@ input:checked + .toggle-slider:before { transform:translateX(20px); }
 </div>
 
 <!-- Settings view -->
-<div id="viewSettings" style="display:none; padding: 24px; max-width: 600px; margin: 0 auto;">
+<div id="viewSettings" style="display:none; padding: 24px; max-width: 640px; margin: 0 auto;">
   <div class="card">
     <h2>Settings</h2>
+
+    <!-- Fireworks -->
     <div class="setting-row">
       <div class="setting-info">
         <div class="setting-label">Fireworks</div>
@@ -1719,6 +1765,75 @@ input:checked + .toggle-slider:before { transform:translateX(20px); }
         <input type="checkbox" id="settingFireworks" onchange="saveSetting('fireworks_enabled', this.checked)">
         <span class="toggle-slider"></span>
       </label>
+    </div>
+
+    <!-- Execution Mode -->
+    <div class="setting-row" style="flex-direction:column; align-items:flex-start; gap:10px;">
+      <div class="setting-info">
+        <div class="setting-label">Execution Mode</div>
+        <div class="setting-desc">How AI providers are invoked for generation and pipeline stages</div>
+      </div>
+      <div style="display:flex; gap:8px;">
+        <button id="modeApiBtn" onclick="setExecutionMode('api')" style="padding:6px 18px; border-radius:6px; border:1px solid var(--border); cursor:pointer; font-size:0.9rem; background:var(--surface-muted); color:var(--text);">Direct API</button>
+        <button id="modeCliBtn" onclick="setExecutionMode('cli')" style="padding:6px 18px; border-radius:6px; border:1px solid var(--border); cursor:pointer; font-size:0.9rem; background:var(--surface-muted); color:var(--text);">CLI subprocess</button>
+      </div>
+    </div>
+
+    <!-- Providers -->
+    <div style="padding: 12px 0 4px 0;">
+      <div class="setting-label" style="margin-bottom:8px;">Providers</div>
+      <div class="setting-desc" style="margin-bottom:12px;">Enable or disable individual AI providers. CLI command templates support <code>{prompt}</code> substitution.</div>
+
+      <!-- Anthropic -->
+      <div class="setting-row" style="flex-direction:column; align-items:flex-start; gap:6px; padding:10px 0;">
+        <div style="display:flex; align-items:center; justify-content:space-between; width:100%;">
+          <div style="display:flex; align-items:center; gap:10px;">
+            <label class="toggle-switch" style="margin:0;">
+              <input type="checkbox" id="settingAnthropicEnabled" onchange="saveSetting('provider_anthropic_enabled', this.checked)">
+              <span class="toggle-slider"></span>
+            </label>
+            <span class="setting-label">Anthropic (claude)</span>
+          </div>
+          <span id="cliBadgeAnthropic" style="font-size:0.78rem; display:none;"></span>
+        </div>
+        <input id="cliCmdAnthropic" type="text" placeholder="claude -p {prompt}"
+          style="display:none; width:100%; box-sizing:border-box; padding:6px 10px; border:1px solid var(--border); border-radius:6px; background:var(--surface-muted); color:var(--text); font-size:0.85rem; font-family:monospace;"
+          onblur="saveSetting('cli_anthropic_command', this.value)">
+      </div>
+
+      <!-- OpenAI -->
+      <div class="setting-row" style="flex-direction:column; align-items:flex-start; gap:6px; padding:10px 0;">
+        <div style="display:flex; align-items:center; justify-content:space-between; width:100%;">
+          <div style="display:flex; align-items:center; gap:10px;">
+            <label class="toggle-switch" style="margin:0;">
+              <input type="checkbox" id="settingOpenAIEnabled" onchange="saveSetting('provider_openai_enabled', this.checked)">
+              <span class="toggle-slider"></span>
+            </label>
+            <span class="setting-label">OpenAI (codex)</span>
+          </div>
+          <span id="cliBadgeOpenAI" style="font-size:0.78rem; display:none;"></span>
+        </div>
+        <input id="cliCmdOpenAI" type="text" placeholder="codex -p {prompt}"
+          style="display:none; width:100%; box-sizing:border-box; padding:6px 10px; border:1px solid var(--border); border-radius:6px; background:var(--surface-muted); color:var(--text); font-size:0.85rem; font-family:monospace;"
+          onblur="saveSetting('cli_openai_command', this.value)">
+      </div>
+
+      <!-- Gemini -->
+      <div class="setting-row" style="flex-direction:column; align-items:flex-start; gap:6px; padding:10px 0;">
+        <div style="display:flex; align-items:center; justify-content:space-between; width:100%;">
+          <div style="display:flex; align-items:center; gap:10px;">
+            <label class="toggle-switch" style="margin:0;">
+              <input type="checkbox" id="settingGeminiEnabled" onchange="saveSetting('provider_gemini_enabled', this.checked)">
+              <span class="toggle-slider"></span>
+            </label>
+            <span class="setting-label">Google (gemini)</span>
+          </div>
+          <span id="cliBadgeGemini" style="font-size:0.78rem; display:none;"></span>
+        </div>
+        <input id="cliCmdGemini" type="text" placeholder="gemini -p {prompt}"
+          style="display:none; width:100%; box-sizing:border-box; padding:6px 10px; border:1px solid var(--border); border-radius:6px; background:var(--surface-muted); color:var(--text); font-size:0.85rem; font-family:monospace;"
+          onblur="saveSetting('cli_gemini_command', this.value)">
+      </div>
     </div>
   </div>
 </div>
@@ -2627,6 +2742,67 @@ function loadSettings() {
       appSettings = s;
       var el = document.getElementById('settingFireworks');
       if (el) el.checked = s.fireworks_enabled !== false;
+      var anthEl = document.getElementById('settingAnthropicEnabled');
+      if (anthEl) anthEl.checked = s.provider_anthropic_enabled !== false;
+      var oaiEl = document.getElementById('settingOpenAIEnabled');
+      if (oaiEl) oaiEl.checked = s.provider_openai_enabled !== false;
+      var gemEl = document.getElementById('settingGeminiEnabled');
+      if (gemEl) gemEl.checked = s.provider_gemini_enabled !== false;
+      var anthCmd = document.getElementById('cliCmdAnthropic');
+      if (anthCmd) anthCmd.value = s.cli_anthropic_command || 'claude -p {prompt}';
+      var oaiCmd = document.getElementById('cliCmdOpenAI');
+      if (oaiCmd) oaiCmd.value = s.cli_openai_command || 'codex -p {prompt}';
+      var gemCmd = document.getElementById('cliCmdGemini');
+      if (gemCmd) gemCmd.value = s.cli_gemini_command || 'gemini -p {prompt}';
+      applyExecutionModeUi(s.execution_mode || 'api');
+    })
+    .catch(function() {});
+}
+
+function setExecutionMode(mode) {
+  saveSetting('execution_mode', mode);
+  applyExecutionModeUi(mode);
+  if (mode === 'cli') loadCliStatus();
+}
+
+function applyExecutionModeUi(mode) {
+  var apiBtn = document.getElementById('modeApiBtn');
+  var cliBtn = document.getElementById('modeCliBtn');
+  var cliFields = ['cliCmdAnthropic', 'cliCmdOpenAI', 'cliCmdGemini'];
+  var cliBadges = ['cliBadgeAnthropic', 'cliBadgeOpenAI', 'cliBadgeGemini'];
+  if (apiBtn) {
+    apiBtn.style.background = mode === 'api' ? 'var(--accent, #4f8ef7)' : 'var(--surface-muted)';
+    apiBtn.style.color = mode === 'api' ? '#fff' : 'var(--text)';
+    apiBtn.style.borderColor = mode === 'api' ? 'var(--accent, #4f8ef7)' : 'var(--border)';
+  }
+  if (cliBtn) {
+    cliBtn.style.background = mode === 'cli' ? 'var(--accent, #4f8ef7)' : 'var(--surface-muted)';
+    cliBtn.style.color = mode === 'cli' ? '#fff' : 'var(--text)';
+    cliBtn.style.borderColor = mode === 'cli' ? 'var(--accent, #4f8ef7)' : 'var(--border)';
+  }
+  cliFields.forEach(function(id) {
+    var el = document.getElementById(id);
+    if (el) el.style.display = mode === 'cli' ? 'block' : 'none';
+  });
+  cliBadges.forEach(function(id) {
+    var el = document.getElementById(id);
+    if (el) el.style.display = mode === 'cli' ? 'inline' : 'none';
+  });
+}
+
+function loadCliStatus() {
+  fetch('/api/settings/cli-status')
+    .then(function(r) { return r.json(); })
+    .then(function(s) {
+      function badge(id, detected) {
+        var el = document.getElementById(id);
+        if (!el) return;
+        el.textContent = detected ? '\u25cf detected' : '\u2717 not found';
+        el.style.color = detected ? '#3c9e5f' : '#c0392b';
+      }
+      badge('cliBadgeAnthropic', s.anthropic);
+      badge('cliBadgeOpenAI', s.openai);
+      badge('cliBadgeGemini', s.gemini);
     })
     .catch(function() {});
 }
@@ -2857,6 +3033,10 @@ function showView(name) {
   document.getElementById('navArchived').classList.toggle('active', isArchived);
   document.getElementById('navSettings').classList.toggle('active', isSettings);
   if (isArchived) renderArchivedView();
+  if (isSettings) {
+    loadSettings();
+    if ((appSettings.execution_mode || 'api') === 'cli') loadCliStatus();
+  }
 }
 
 function switchPreview() {} // no-op — both panels are always visible

@@ -14,7 +14,7 @@ import attractor.handlers.HandlerRegistry
 import attractor.handlers.LlmCodergenBackend
 import attractor.handlers.SimulationBackend
 import attractor.human.AutoApproveInterviewer
-import attractor.llm.Client
+import attractor.llm.ClientProvider
 import attractor.transform.StylesheetApplicationTransform
 import attractor.transform.VariableExpansionTransform
 import java.util.concurrent.Executors
@@ -106,18 +106,17 @@ object PipelineRunner {
         try {
             val graph = Parser.parse(dotSource)
 
-            val hasKey = listOf("ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GEMINI_API_KEY", "GOOGLE_API_KEY")
-                .any { !System.getenv(it).isNullOrBlank() }
+            val client = try { ClientProvider.fromStore(store) } catch (_: Exception) { null }
 
             val backend = if (options.simulate) {
                 SimulationBackend
             } else {
-                if (hasKey) LlmCodergenBackend(Client.fromEnv()) else SimulationBackend
+                if (client != null) LlmCodergenBackend(client) else SimulationBackend
             }
 
             val diagnoser: FailureDiagnoser = when {
                 options.simulate -> NullFailureDiagnoser("simulation mode: diagnosis skipped")
-                hasKey           -> LlmFailureDiagnoser(Client.fromEnv())
+                client != null   -> LlmFailureDiagnoser(client)
                 else             -> NullFailureDiagnoser()
             }
 

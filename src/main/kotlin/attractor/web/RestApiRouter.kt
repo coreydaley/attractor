@@ -33,8 +33,18 @@ class RestApiRouter(
     }
 
     private val requestJson = Json { ignoreUnknownKeys = true }
+    private val dotGenerator = DotGenerator(store)
 
-    private val KNOWN_SETTINGS = setOf("fireworks_enabled")
+    private val KNOWN_SETTINGS = setOf(
+        "fireworks_enabled",
+        "execution_mode",
+        "provider_anthropic_enabled",
+        "provider_openai_enabled",
+        "provider_gemini_enabled",
+        "cli_anthropic_command",
+        "cli_openai_command",
+        "cli_gemini_command"
+    )
 
     private val TEXT_EXTENSIONS = setOf("log", "txt", "md", "json", "dot", "kt", "py", "js", "sh", "yaml", "yml", "toml", "xml", "html", "css")
 
@@ -749,7 +759,7 @@ class RestApiRouter(
             errorResponse(ex, 400, "prompt is required", "BAD_REQUEST"); return
         }
         try {
-            val dotSource = DotGenerator.generate(prompt)
+            val dotSource = dotGenerator.generate(prompt)
             jsonResponse(ex, 200, """{"dotSource":${js(dotSource)}}""")
         } catch (e: Exception) {
             jsonResponse(ex, 500, """{"error":${js(e.message ?: "generation failed")},"code":"GENERATION_ERROR"}""")
@@ -769,7 +779,7 @@ class RestApiRouter(
         ex.sendResponseHeaders(200, 0)
         val out = ex.responseBody
         try {
-            val dotSource = DotGenerator.generateStream(prompt) { delta ->
+            val dotSource = dotGenerator.generateStream(prompt) { delta ->
                 val line = "data: {\"delta\":${js(delta)}}\n\n"
                 out.write(line.toByteArray(Charsets.UTF_8))
                 out.flush()
@@ -792,7 +802,7 @@ class RestApiRouter(
             errorResponse(ex, 400, "dotSource is required", "BAD_REQUEST"); return
         }
         try {
-            val fixedDot = DotGenerator.fixStream(dotSource, error) { }
+            val fixedDot = dotGenerator.fixStream(dotSource, error) { }
             jsonResponse(ex, 200, """{"dotSource":${js(fixedDot)}}""")
         } catch (e: Exception) {
             jsonResponse(ex, 500, """{"error":${js(e.message ?: "fix failed")},"code":"GENERATION_ERROR"}""")
@@ -813,7 +823,7 @@ class RestApiRouter(
         ex.sendResponseHeaders(200, 0)
         val out = ex.responseBody
         try {
-            val fixedDot = DotGenerator.fixStream(dotSource, error) { delta ->
+            val fixedDot = dotGenerator.fixStream(dotSource, error) { delta ->
                 val line = "data: {\"delta\":${js(delta)}}\n\n"
                 out.write(line.toByteArray(Charsets.UTF_8))
                 out.flush()
@@ -835,7 +845,7 @@ class RestApiRouter(
         if (baseDot.isBlank()) { errorResponse(ex, 400, "baseDot is required", "BAD_REQUEST"); return }
         if (changes.isBlank()) { errorResponse(ex, 400, "changes is required", "BAD_REQUEST"); return }
         try {
-            val dotSource = DotGenerator.iterateStream(baseDot, changes) { }
+            val dotSource = dotGenerator.iterateStream(baseDot, changes) { }
             jsonResponse(ex, 200, """{"dotSource":${js(dotSource)}}""")
         } catch (e: Exception) {
             jsonResponse(ex, 500, """{"error":${js(e.message ?: "iterate failed")},"code":"GENERATION_ERROR"}""")
@@ -855,7 +865,7 @@ class RestApiRouter(
         ex.sendResponseHeaders(200, 0)
         val out = ex.responseBody
         try {
-            val dotSource = DotGenerator.iterateStream(baseDot, changes) { delta ->
+            val dotSource = dotGenerator.iterateStream(baseDot, changes) { delta ->
                 val line = "data: {\"delta\":${js(delta)}}\n\n"
                 out.write(line.toByteArray(Charsets.UTF_8))
                 out.flush()
@@ -873,21 +883,52 @@ class RestApiRouter(
     // ── Settings & Models ─────────────────────────────────────────────────────
 
     private fun handleGetSettings(ex: HttpExchange) {
+        val booleanKeys = setOf(
+            "fireworks_enabled",
+            "provider_anthropic_enabled",
+            "provider_openai_enabled",
+            "provider_gemini_enabled"
+        )
+        val defaults = mapOf(
+            "fireworks_enabled" to "true",
+            "execution_mode" to "api",
+            "provider_anthropic_enabled" to "true",
+            "provider_openai_enabled" to "true",
+            "provider_gemini_enabled" to "true",
+            "cli_anthropic_command" to "claude -p {prompt}",
+            "cli_openai_command" to "codex -p {prompt}",
+            "cli_gemini_command" to "gemini -p {prompt}"
+        )
         val sb = StringBuilder("{")
         KNOWN_SETTINGS.forEachIndexed { i, key ->
             if (i > 0) sb.append(",")
-            val value = store.getSetting(key) ?: "true"
-            sb.append("${js(key)}:${js(value)}")
+            val value = store.getSetting(key) ?: defaults[key] ?: ""
+            if (key in booleanKeys) {
+                sb.append("${js(key)}:${value == "true"}")
+            } else {
+                sb.append("${js(key)}:${js(value)}")
+            }
         }
         sb.append("}")
         jsonResponse(ex, 200, sb.toString())
     }
 
+    private val SETTING_DEFAULTS = mapOf(
+        "fireworks_enabled" to "true",
+        "execution_mode" to "api",
+        "provider_anthropic_enabled" to "true",
+        "provider_openai_enabled" to "true",
+        "provider_gemini_enabled" to "true",
+        "cli_anthropic_command" to "claude -p {prompt}",
+        "cli_openai_command" to "codex -p {prompt}",
+        "cli_gemini_command" to "gemini -p {prompt}"
+    )
+
     private fun handleGetSetting(ex: HttpExchange, key: String) {
         if (key !in KNOWN_SETTINGS) {
             errorResponse(ex, 404, "unknown setting: $key", "NOT_FOUND"); return
         }
-        val value = store.getSetting(key)
+        val value = store.getSetting(key) ?: SETTING_DEFAULTS[key]
         if (value == null) {
             errorResponse(ex, 404, "setting not found: $key", "NOT_FOUND"); return
         }
@@ -901,6 +942,22 @@ class RestApiRouter(
         val body = readJsonBody(ex)
         val value = body?.get("value")?.jsonPrimitive?.contentOrNull
             ?: run { errorResponse(ex, 400, "value is required", "BAD_REQUEST"); return }
+
+        // Validate values for constrained settings
+        when (key) {
+            "execution_mode" -> if (value !in setOf("api", "cli")) {
+                errorResponse(ex, 400, "execution_mode must be 'api' or 'cli'", "BAD_REQUEST"); return
+            }
+            "provider_anthropic_enabled", "provider_openai_enabled", "provider_gemini_enabled" ->
+                if (value !in setOf("true", "false")) {
+                    errorResponse(ex, 400, "$key must be 'true' or 'false'", "BAD_REQUEST"); return
+                }
+            "cli_anthropic_command", "cli_openai_command", "cli_gemini_command" ->
+                if (value.isBlank()) {
+                    errorResponse(ex, 400, "$key must not be blank", "BAD_REQUEST"); return
+                }
+        }
+
         store.setSetting(key, value)
         jsonResponse(ex, 200, """{"key":${js(key)},"value":${js(value)}}""")
     }
