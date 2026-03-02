@@ -103,6 +103,14 @@ class DocsEndpointTest : FunSpec({
         get("/docs").body() shouldContain "shape=Mdiamond"
     }
 
+    test("GET /docs artifact download section contains workspace/ directory description") {
+        get("/docs").body() shouldContain "workspace/"
+    }
+
+    test("GET /docs artifact download section contains live.log description") {
+        get("/docs").body() shouldContain "live.log"
+    }
+
     // ── Regression guard ──────────────────────────────────────────────────────
 
     test("GET / root SPA still returns 200") {
