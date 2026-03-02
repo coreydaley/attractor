@@ -2210,10 +2210,11 @@ main { max-width: 1200px; margin: 0 auto; padding: 20px; display: grid; grid-tem
 .stage.retrying   { border-color: #d29922; }
 .stage.diagnosing { border-color: #e3b341; }
 .stage.repairing  { border-color: #58a6ff; }
-.stage-row { display: flex; align-items: center; gap: 10px; padding: 9px 13px; }
+.stage-row { display: flex; align-items: center; gap: 8px; padding: 9px 13px; }
 .stage-icon { font-size: 0.95rem; width: 20px; text-align: center; flex-shrink: 0; }
 .stage-name { flex: 1; font-size: 0.88rem; }
-.stage-dur  { font-size: 0.72rem; color: var(--text-faint); white-space: nowrap; }
+.stage-logs-slot { width: 62px; flex-shrink: 0; display: flex; justify-content: flex-end; align-items: center; }
+.stage-dur  { width: 48px; flex-shrink: 0; text-align: right; font-size: 0.72rem; color: var(--text-faint); white-space: nowrap; font-variant-numeric: tabular-nums; }
 .stage-err  { font-size: 0.72rem; color: #f85149; white-space: nowrap; max-width: 120px; overflow: hidden; text-overflow: ellipsis; }
 .stage-err-btn { background: none; border: none; padding: 0 0 0 6px; cursor: pointer; color: #f85149; font-size: 0.88rem; line-height: 1; vertical-align: middle; opacity: 0.85; }
 .stage-err-btn:hover { opacity: 1; color: #ff7b72; }
@@ -3224,16 +3225,31 @@ function updatePanel(id) {
         if (s.error) {
           html += '<button class="stage-err-btn" title="Click for full error details" data-pos="' + i + '">&#9888;</button>';
         }
+        html += '<span class="stage-logs-slot">';
         if (hasNodeId && s.hasLog) {
           html += '<button class="stage-log-btn' + (isLogOpen ? ' active' : '') + '" data-node-id="' + esc(s.nodeId) + '" data-stage-name="' + esc(s.name) + '">' + (isLogOpen ? '\u25bc\u2002Logs' : 'Logs') + '</button>';
         }
-        if ((s.status === 'running' || s.status === 'retrying' || s.status === 'diagnosing' || s.status === 'repairing') && s.startedAt) {
-          var sec = Math.floor((Date.now() - s.startedAt) / 1000);
-          var liveStr = sec < 60 ? sec + 's' : Math.floor(sec/60) + 'm ' + (sec%60) + 's';
-          html += '<span class="stage-dur stage-live-dur" data-started-at="' + s.startedAt + '">' + liveStr + '</span>';
-        } else if (s.durationMs != null) {
-          html += '<span class="stage-dur">' + fmtDur(s.durationMs) + '</span>';
+        html += '</span>';
+        var isLastStage = (i === d.stages.length - 1);
+        html += '<span class="stage-dur">';
+        if (isLastStage && d.startedAt) {
+          if ((s.status === 'running' || s.status === 'retrying' || s.status === 'diagnosing' || s.status === 'repairing') && d.startedAt) {
+            var sec = Math.floor((Date.now() - d.startedAt) / 1000);
+            var liveStr = sec < 60 ? sec + 's' : Math.floor(sec/60) + 'm ' + (sec%60) + 's';
+            html += '<span class="stage-live-dur" data-started-at="' + d.startedAt + '">' + liveStr + '</span>';
+          } else if (s.status === 'completed' || s.status === 'failed' || s.status === 'cancelled') {
+            html += elapsed(d);
+          }
+        } else {
+          if ((s.status === 'running' || s.status === 'retrying' || s.status === 'diagnosing' || s.status === 'repairing') && s.startedAt) {
+            var sec = Math.floor((Date.now() - s.startedAt) / 1000);
+            var liveStr = sec < 60 ? sec + 's' : Math.floor(sec/60) + 'm ' + (sec%60) + 's';
+            html += '<span class="stage-live-dur" data-started-at="' + s.startedAt + '">' + liveStr + '</span>';
+          } else if (s.durationMs != null) {
+            html += fmtDur(s.durationMs);
+          }
         }
+        html += '</span>';
         html += '</div>'; // end stage-row
         if (isLogOpen) {
           html += '<div class="stage-log-inline">'
