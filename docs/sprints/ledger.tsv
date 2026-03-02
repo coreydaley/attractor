@@ -12,3 +12,4 @@ sprint_id	title	status	created_at	updated_at
 011	AI Provider Execution Mode & Per-Provider Toggles	completed	2026-02-27T18:02:28Z	2026-02-27T18:12:36Z
 012	Kotlin CLI Client for Attractor REST API	completed	2026-02-27T18:28:07Z	2026-02-27T18:45:32Z
 013	In-App Documentation Window	completed	2026-03-02T16:37:25Z	2026-03-02T16:59:14Z
+014	DOT File Upload on Create Page	in_progress	2026-03-02T18:10:00Z	2026-03-02T18:39:48Z

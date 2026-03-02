@@ -22,6 +22,8 @@ A DOT-based pipeline runner that orchestrates multi-stage AI workflows. You defi
 - **Retry & back-off** — configurable per-node retry policy with exponential back-off
 - **Persist & resume** — run state is stored in SQLite; crashed runs can be resumed from checkpoints
 - **Web dashboard** — real-time SSE-powered UI at `http://localhost:7070`; supports multiple concurrent pipelines; upload `.dot` files via the browser
+- **In-app documentation** — built-in `/docs` page with four tabs (Web App, REST API, CLI, DOT Format); accessible from the Docs button in the nav bar; no external dependencies, works offline
+- **REST API v1** — 35-endpoint versioned REST API at `/api/v1/`; see [`docs/api/rest-v1.md`](docs/api/rest-v1.md) for the full reference
 
 ## Requirements
 
@@ -114,6 +116,8 @@ java -jar build/libs/coreys-attractor-1.0.0.jar [options]
 
 Once running, open `http://localhost:7070` (or your chosen port) in a browser to start creating and executing pipelines. From the web interface you can describe a pipeline goal in natural language, review the generated DOT graph, and run it — all without touching the command line.
 
+Click **Docs** in the navigation bar to open the built-in documentation window. It provides comprehensive, self-contained reference material organized into four tabs — Web App, REST API, CLI, and DOT Format — served directly by the Attractor server with no external dependencies.
+
 ## Pipeline Format
 
 Pipelines are written in Graphviz DOT. Attractor interprets node shapes and attributes to decide how each node is executed.
@@ -191,16 +195,39 @@ digraph Review {
 
 ## Web API
 
-The dashboard exposes a small HTTP API for programmatic use:
+The server exposes a versioned REST API at `/api/v1/` with 35 endpoints covering pipelines, artifacts, DOT operations, settings, models, and SSE event streams. All request and response bodies use JSON.
+
+Selected endpoints:
 
 | Method | Path | Description |
 |--------|------|-------------|
 | `GET` | `/` | Dashboard UI |
-| `GET` | `/api/pipelines` | List all pipeline states (JSON) |
-| `POST` | `/api/upload` | Submit a new pipeline — body: `{dotSource, fileName, simulate, autoApprove}` |
-| `POST` | `/api/pause` | Pause a running pipeline — body: `{id}` |
-| `POST` | `/api/resume` | Resume a paused pipeline — body: `{id}` |
+| `GET` | `/docs` | Built-in documentation window (four tabs) |
+| `GET` | `/api/v1/pipelines` | List all pipeline states |
+| `POST` | `/api/v1/pipelines` | Submit a new pipeline |
+| `GET` | `/api/v1/pipelines/{id}` | Get a single pipeline (includes `dotSource`) |
+| `PATCH` | `/api/v1/pipelines/{id}` | Update pipeline metadata |
+| `DELETE` | `/api/v1/pipelines/{id}` | Delete a pipeline |
+| `POST` | `/api/v1/pipelines/{id}/rerun` | Re-run a completed/failed pipeline |
+| `POST` | `/api/v1/pipelines/{id}/pause` | Pause a running pipeline |
+| `POST` | `/api/v1/pipelines/{id}/resume` | Resume a paused pipeline |
+| `POST` | `/api/v1/pipelines/{id}/cancel` | Cancel a running pipeline |
+| `POST` | `/api/v1/pipelines/{id}/archive` | Archive a pipeline |
+| `POST` | `/api/v1/pipelines/{id}/iterations` | Create a new pipeline version (iterate) |
+| `GET` | `/api/v1/pipelines/{id}/family` | List all versions in a pipeline family |
+| `GET` | `/api/v1/pipelines/{id}/artifacts` | List artifacts for a pipeline |
+| `GET` | `/api/v1/pipelines/{id}/artifacts.zip` | Download all artifacts as a ZIP |
+| `GET` | `/api/v1/pipelines/{id}/export` | Export pipeline + artifacts as a ZIP |
+| `POST` | `/api/v1/pipelines/import` | Import a previously exported pipeline ZIP |
+| `POST` | `/api/v1/dot/generate` | Generate a DOT pipeline from a text prompt |
+| `POST` | `/api/v1/dot/validate` | Validate a DOT pipeline |
+| `GET` | `/api/v1/settings` | List all settings |
+| `PUT` | `/api/v1/settings/{key}` | Update a setting |
+| `GET` | `/api/v1/models` | List available LLM models |
 | `GET` | `/events` | SSE stream of all pipeline state updates |
+| `GET` | `/events/{id}` | SSE stream for a single pipeline |
+
+For the complete endpoint listing with request/response shapes and `curl` examples, see [`docs/api/rest-v1.md`](docs/api/rest-v1.md) or open the built-in **Docs** window from the web UI.
 
 ## CLI
 
@@ -341,16 +368,27 @@ For the full REST API reference, see [`docs/api/rest-v1.md`](docs/api/rest-v1.md
 ```
 src/main/kotlin/attractor/
 ├── Main.kt                  # CLI entrypoint
+├── cli/                     # CLI command implementations (Kotlin client for REST API v1)
+├── condition/               # Edge condition evaluator
+├── db/                      # SQLite persistence (RunStore)
 ├── dot/                     # DOT parser and graph model
 ├── engine/                  # Execution loop, retry policy
+├── events/                  # Pipeline event types and event bus
 ├── handlers/                # Node handlers (LLM, human, parallel, conditional, …)
-├── llm/                     # LLM provider clients (Anthropic, OpenAI, Gemini)
-├── web/                     # HTTP server, SSE, dashboard, pipeline registry
-├── db/                      # SQLite persistence (RunStore)
-├── condition/               # Edge condition evaluator
+├── human/                   # Human review gate logic
 ├── lint/                    # Pipeline linting
-└── state/                   # Run state model
+├── llm/                     # LLM provider clients (Anthropic, OpenAI, Gemini)
+├── state/                   # Run state model
+├── style/                   # Terminal/output style helpers
+├── transform/               # Pipeline graph transformations
+└── web/                     # HTTP server, SSE, dashboard, REST API
+    ├── WebMonitorServer.kt  # HTTP server, dashboard SPA, /docs endpoint
+    ├── RestApiRouter.kt     # Versioned REST API (/api/v1/)
+    └── …
 examples/                    # Sample .dot pipelines
+docs/
+├── api/rest-v1.md           # Full REST API reference (35 endpoints)
+└── sprints/                 # Sprint planning and history
 ```
 
 ## Running Tests

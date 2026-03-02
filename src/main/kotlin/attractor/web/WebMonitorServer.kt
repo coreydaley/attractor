@@ -1330,18 +1330,21 @@ java -jar coreys-attractor-*.jar --web-port 7070</code></pre>
 </table>
 
 <h2>Creating a Pipeline</h2>
-<p>There are two ways to create a pipeline:</p>
-<h3>Option A — Write DOT directly</h3>
-<p>Paste or type a valid DOT graph into the editor in the Create view, then click <strong>Run Pipeline</strong>.</p>
-
-<h3>Option B — Generate from natural language</h3>
+<p>There are three ways to create a pipeline:</p>
+<h3>Option A — Generate from natural language</h3>
 <ol>
 <li>Type a description in the natural language input (e.g., <em>"Build a Go application and run its tests"</em>)</li>
 <li>Click <strong>Generate</strong> — the LLM produces a DOT graph</li>
 <li>Review the graph in the preview pane (toggle between Source and Graph views)</li>
-<li>Optionally click <strong>Fix</strong> (if there are syntax errors) or <strong>Iterate</strong> (to refine the pipeline)</li>
+<li>Optionally click <strong>Iterate</strong> to refine the pipeline via LLM</li>
 <li>Click <strong>Run Pipeline</strong></li>
 </ol>
+
+<h3>Option B — Write DOT directly</h3>
+<p>Paste or type a valid DOT graph into the editor in the Create view, then click <strong>Run Pipeline</strong>.</p>
+
+<h3>Option C — Upload a .dot file</h3>
+<p>Click <strong>&#128194; Upload .dot</strong> in the Generated DOT section to open a file picker. Select a <code>.dot</code> file from disk — the DOT source loads into the editor, the NL prompt is cleared, and the graph renders automatically. Click <strong>Run Pipeline</strong> to execute it. The original filename is preserved and used for artifact labelling.</p>
 
 <h2>Pipeline States</h2>
 <table class="status-table">
@@ -2340,6 +2343,8 @@ main { max-width: 1200px; margin: 0 auto; padding: 20px; display: grid; grid-tem
 .run-btn:disabled { background: var(--surface-muted); color: var(--text-dim); cursor: not-allowed; }
 .btn-cancel-iterate { background: transparent; color: var(--text-muted); border: 1px solid var(--border); padding: 9px 16px; border-radius: 6px; font-size: 0.86rem; font-weight: 600; cursor: pointer; white-space: nowrap; }
 .btn-cancel-iterate:hover { background: var(--surface-muted); color: var(--text); border-color: var(--text-muted); }
+.dot-upload-btn { background: none; border: 1px solid var(--border); border-radius: 6px; color: var(--text-muted); font-size: 0.75rem; padding: 3px 10px; cursor: pointer; white-space: nowrap; }
+.dot-upload-btn:hover { border-color: var(--accent); color: var(--text); }
 
 /* DOT preview tabs */
 .preview-tabs { display: flex; gap: 2px; }
@@ -2464,9 +2469,11 @@ input:checked + .toggle-slider:before { transform:translateX(20px); }
         </div>
         <textarea id="dotPreview" class="dot-textarea" spellcheck="false"
           placeholder="Generated pipeline DOT source will appear here&hellip;"></textarea>
+        <input type="file" id="dotFileInput" accept=".dot" style="display:none;" onchange="onDotFileSelected()">
         <div class="run-row">
           <span class="gen-hint" id="genHint">You can edit the DOT source before running.</span>
           <div style="display:flex;gap:8px;align-items:center;">
+            <button class="dot-upload-btn" onclick="document.getElementById('dotFileInput').click()" title="Load a .dot file from disk">&#128194;&ensp;Upload .dot</button>
             <button class="btn-cancel-iterate" id="cancelIterateBtn" style="display:none;" onclick="cancelIterate()">&#x2715;&ensp;Cancel</button>
             <button class="run-btn" id="runBtn" disabled onclick="runGenerated()">&#9654;&ensp;Run Pipeline</button>
           </div>
@@ -3603,6 +3610,9 @@ connectSSE();
 // ── Iterate mode state ───────────────────────────────────────────────────────
 var iterateSourceId = null;
 
+// ── DOT file upload state ─────────────────────────────────────────────────────
+var uploadedFileName = null;
+
 function enterIterateMode(id, dot, prompt) {
   iterateSourceId = id;
   var dotPreview = document.getElementById('dotPreview');
@@ -3773,10 +3783,13 @@ function clearCreateForm() {
   var dotPreview   = document.getElementById('dotPreview');
   var runBtn       = document.getElementById('runBtn');
   var graphContent = document.getElementById('graphContent');
+  var dotFileInput = document.getElementById('dotFileInput');
   if (nlInput)    { nlInput.value = ''; }
   if (dotPreview) { dotPreview.value = ''; }
   if (runBtn)     { runBtn.disabled = true; runBtn.innerHTML = '&#9654;&ensp;Run Pipeline'; }
   if (graphContent) { graphContent.innerHTML = '<div class="graph-placeholder">Generate a pipeline first to see the graph.</div>'; }
+  if (dotFileInput) { dotFileInput.value = ''; }
+  uploadedFileName = null;
   setGenStatus('', 'Start typing to generate\u2026');
 }
 
@@ -4001,6 +4014,34 @@ function setGenStatus(cls, msg) {
   var el = document.getElementById('genStatus');
   el.className = 'gen-status' + (cls ? ' ' + cls : '');
   el.textContent = msg;
+}
+
+function onDotFileSelected() {
+  var input = document.getElementById('dotFileInput');
+  if (!input || !input.files || input.files.length === 0) return;
+  var file = input.files[0];
+  // Cancel any pending NL auto-generate to prevent overwriting uploaded DOT
+  clearTimeout(genDebounce);
+  clearInterval(genCountdown);
+  var reader = new FileReader();
+  reader.onload = function(e) {
+    var dotSource = e.target.result || '';
+    var preview = document.getElementById('dotPreview');
+    var nlInput = document.getElementById('nlInput');
+    if (preview) {
+      preview.value = dotSource;
+      if (nlInput) nlInput.value = '';
+      uploadedFileName = file.name;
+      document.getElementById('runBtn').disabled = !dotSource.trim();
+      setGenStatus('ok', 'Loaded: ' + file.name);
+      renderRetries = 0;
+      renderGraph();
+    }
+  };
+  reader.onerror = function() {
+    setGenStatus('error', 'Could not read file.');
+  };
+  reader.readAsText(file, 'UTF-8');
 }
 
 function generateDot(prompt) {
@@ -4615,7 +4656,7 @@ function runGenerated() {
   fetch('/api/run', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ dotSource: dotSource, fileName: 'generated.dot', simulate: simulate, autoApprove: autoApprove, originalPrompt: originalPrompt })
+    body: JSON.stringify({ dotSource: dotSource, fileName: uploadedFileName || 'generated.dot', simulate: simulate, autoApprove: autoApprove, originalPrompt: originalPrompt })
   })
   .then(function(r) { return r.json(); })
   .then(function(resp) {
@@ -4651,6 +4692,9 @@ function resetCreatePage() {
   document.getElementById('runBtn').textContent = '\u25B6\u2002Run Pipeline';
   setGenStatus('', 'Start typing to generate\u2026');
   document.getElementById('graphContent').innerHTML = '<div class="graph-placeholder">Generate a pipeline first to see the graph.</div>';
+  var dotFileInput = document.getElementById('dotFileInput');
+  if (dotFileInput) dotFileInput.value = '';
+  uploadedFileName = null;
 }
 
 // ── Import run modal ─────────────────────────────────────────────────────────
