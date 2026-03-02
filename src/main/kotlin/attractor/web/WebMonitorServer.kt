@@ -2418,7 +2418,7 @@ main { max-width: 1200px; margin: 0 auto; padding: 20px; display: grid; grid-tem
 .preview-tab { background: transparent; border: none; color: var(--text-muted); padding: 4px 11px; border-radius: 5px; font-size: 0.75rem; font-weight: 600; cursor: pointer; }
 .preview-tab:hover { background: var(--surface-muted); color: var(--text); }
 .preview-tab.active { background: var(--surface-muted); color: var(--text-strong); }
-.graph-preview { flex: 1; min-height: 200px; background: var(--graph-bg); border: 1px solid var(--border); border-radius: 8px; overflow: auto; display: flex; align-items: flex-start; }
+.graph-preview { flex: 1; min-height: 200px; background: var(--graph-bg); border: 1px solid var(--border); border-radius: 8px; overflow: auto; display: flex; align-items: flex-start; position: relative; }
 .graph-content { padding: 20px; width: 100%; display: flex; align-items: center; justify-content: center; min-height: 200px; box-sizing: border-box; }
 .graph-content svg { max-width: 100%; height: auto; display: block; }
 .graph-placeholder { color: #aaa; font-size: 0.82rem; text-align: center; }
@@ -2552,13 +2552,13 @@ input:checked + .toggle-slider:before { transform:translateX(20px); }
     <div class="create-col">
       <div class="graph-toolbar">
         <span class="graph-toolbar-label">Graph Preview</span>
-        <button class="dot-download-btn" onclick="downloadCreateDot()" title="Download .dot file">&#8675;</button>
         <button class="graph-zoom-btn" title="Zoom out (or Ctrl+scroll)" onclick="zoomCreate(-1)">&#x2212;</button>
         <span class="graph-zoom-label" id="createZoomLabel">100%</span>
         <button class="graph-zoom-btn" title="Zoom in (or Ctrl+scroll)" onclick="zoomCreate(1)">+</button>
         <button class="graph-zoom-btn" title="Reset zoom" onclick="resetCreateZoom()">&#x21BA;</button>
       </div>
       <div id="graphPreview" class="graph-preview">
+        <button id="createDownloadBtn" class="dot-download-btn" onclick="downloadCreateDot()" title="Download .dot file" style="display:none;position:absolute;top:8px;right:8px;z-index:1;">&#8675;</button>
         <div id="graphContent" class="graph-content">
           <div class="graph-placeholder">Generate a pipeline first to see the graph.</div>
         </div>
@@ -3878,6 +3878,8 @@ function clearCreateForm() {
   if (dotPreview) { dotPreview.value = ''; }
   if (runBtn)     { runBtn.disabled = true; runBtn.innerHTML = '&#9654;&ensp;Run Pipeline'; }
   if (graphContent) { graphContent.innerHTML = '<div class="graph-placeholder">Generate a pipeline first to see the graph.</div>'; }
+  var createDownloadBtn = document.getElementById('createDownloadBtn');
+  if (createDownloadBtn) createDownloadBtn.style.display = 'none';
   if (dotFileInput) { dotFileInput.value = ''; }
   uploadedFileName = null;
   setGenStatus('', 'Start typing to generate\u2026');
@@ -3914,11 +3916,14 @@ var MAX_RENDER_RETRIES = 2;
 function renderGraph() {
   var dotSource = document.getElementById('dotPreview').value.trim();
   var content = document.getElementById('graphContent');
+  var dlBtn = document.getElementById('createDownloadBtn');
   if (!dotSource) {
     content.innerHTML = '<div class="graph-placeholder">No DOT source yet.</div>';
+    if (dlBtn) dlBtn.style.display = 'none';
     return;
   }
   content.innerHTML = '<div class="graph-loading">Rendering\u2026</div>';
+  if (dlBtn) dlBtn.style.display = 'none';
   fetch('/api/render', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -3939,6 +3944,7 @@ function renderGraph() {
       renderRetries = 0;
       content.innerHTML = resp.svg;
       applyCreateZoom();
+      if (dlBtn) dlBtn.style.display = '';
     }
   })
   .catch(function(err) {
@@ -4823,6 +4829,8 @@ function resetCreatePage() {
   document.getElementById('runBtn').textContent = '\u25B6\u2002Run Pipeline';
   setGenStatus('', 'Start typing to generate\u2026');
   document.getElementById('graphContent').innerHTML = '<div class="graph-placeholder">Generate a pipeline first to see the graph.</div>';
+  var createDownloadBtn = document.getElementById('createDownloadBtn');
+  if (createDownloadBtn) createDownloadBtn.style.display = 'none';
   var dotFileInput = document.getElementById('dotFileInput');
   if (dotFileInput) dotFileInput.value = '';
   uploadedFileName = null;
