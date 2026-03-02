@@ -2215,6 +2215,7 @@ main { max-width: 1200px; margin: 0 auto; padding: 20px; display: grid; grid-tem
 .stage-name { flex: 1; font-size: 0.88rem; }
 .stage-logs-slot { width: 62px; flex-shrink: 0; display: flex; justify-content: flex-end; align-items: center; }
 .stage-dur  { width: 48px; flex-shrink: 0; text-align: right; font-size: 0.72rem; color: var(--text-faint); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.stage-total { width: auto; flex-shrink: 0; text-align: right; font-size: 0.72rem; color: var(--text-muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
 .stage-err  { font-size: 0.72rem; color: #f85149; white-space: nowrap; max-width: 120px; overflow: hidden; text-overflow: ellipsis; }
 .stage-err-btn { background: none; border: none; padding: 0 0 0 6px; cursor: pointer; color: #f85149; font-size: 0.88rem; line-height: 1; vertical-align: middle; opacity: 0.85; }
 .stage-err-btn:hover { opacity: 1; color: #ff7b72; }
@@ -3231,16 +3232,18 @@ function updatePanel(id) {
         }
         html += '</span>';
         var isLastStage = (i === d.stages.length - 1);
-        html += '<span class="stage-dur">';
         if (isLastStage && d.startedAt) {
+          html += '<span class="stage-total">';
           if ((s.status === 'running' || s.status === 'retrying' || s.status === 'diagnosing' || s.status === 'repairing') && d.startedAt) {
             var sec = Math.floor((Date.now() - d.startedAt) / 1000);
             var liveStr = sec < 60 ? sec + 's' : Math.floor(sec/60) + 'm ' + (sec%60) + 's';
-            html += '<span class="stage-live-dur" data-started-at="' + d.startedAt + '">' + liveStr + '</span>';
+            html += 'Total Runtime: <span class="stage-live-dur" data-started-at="' + d.startedAt + '">' + liveStr + '</span>';
           } else if (s.status === 'completed' || s.status === 'failed' || s.status === 'cancelled') {
-            html += elapsed(d);
+            html += 'Total Runtime: ' + elapsed(d);
           }
+          html += '</span>';
         } else {
+          html += '<span class="stage-dur">';
           if ((s.status === 'running' || s.status === 'retrying' || s.status === 'diagnosing' || s.status === 'repairing') && s.startedAt) {
             var sec = Math.floor((Date.now() - s.startedAt) / 1000);
             var liveStr = sec < 60 ? sec + 's' : Math.floor(sec/60) + 'm ' + (sec%60) + 's';
@@ -3248,8 +3251,8 @@ function updatePanel(id) {
           } else if (s.durationMs != null) {
             html += fmtDur(s.durationMs);
           }
+          html += '</span>';
         }
-        html += '</span>';
         html += '</div>'; // end stage-row
         if (isLogOpen) {
           html += '<div class="stage-log-inline">'
