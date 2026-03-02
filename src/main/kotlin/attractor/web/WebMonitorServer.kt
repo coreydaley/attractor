@@ -1630,7 +1630,7 @@ java -jar coreys-attractor-*.jar --web-port 7070</code></pre>
 </div>
 </details>
 
-<details><summary>Import / Export (2 endpoints)</summary>
+<details><summary>Import / Export / DOT file (4 endpoints)</summary>
 <div class="endpoint">
 <div class="endpoint-sig"><span class="badge badge-get">GET</span><span class="endpoint-path">/api/v1/pipelines/{id}/export</span></div>
 <p>Export pipeline as a ZIP containing <code>pipeline-meta.json</code>.</p>
@@ -1642,6 +1642,18 @@ java -jar coreys-attractor-*.jar --web-port 7070</code></pre>
 <pre><code>curl -X POST "http://localhost:7070/api/v1/pipelines/import?onConflict=skip" \
   -H 'Content-Type: application/zip' \
   --data-binary @pipeline.zip</code></pre>
+</div>
+<div class="endpoint">
+<div class="endpoint-sig"><span class="badge badge-get">GET</span><span class="endpoint-path">/api/v1/pipelines/{id}/dot</span></div>
+<p>Download the pipeline&rsquo;s DOT source as a plain-text <code>.dot</code> file. Returns 404 if the pipeline has no DOT source.</p>
+<pre><code>curl -o pipeline.dot http://localhost:7070/api/v1/pipelines/{id}/dot</code></pre>
+</div>
+<div class="endpoint">
+<div class="endpoint-sig"><span class="badge badge-post">POST</span><span class="endpoint-path">/api/v1/pipelines/dot</span></div>
+<p>Upload raw DOT source as the request body to create and immediately run a new pipeline. Options via query params: <code>fileName</code>, <code>simulate</code> (default <code>false</code>), <code>autoApprove</code> (default <code>true</code>), <code>originalPrompt</code>. Returns 201.</p>
+<pre><code>curl -X POST "http://localhost:7070/api/v1/pipelines/dot?fileName=my.dot" \
+  -H 'Content-Type: text/plain' \
+  --data-binary @my.dot</code></pre>
 </div>
 </details>
 
@@ -2525,7 +2537,6 @@ input:checked + .toggle-slider:before { transform:translateX(20px); }
         <div class="dot-header-row">
           <h2>Generated DOT</h2>
           <span class="gen-status" id="genStatus">Start typing to generate&hellip;</span>
-          <button class="dot-download-btn" onclick="downloadCreateDot()" title="Download .dot file">&#8675; Download .dot</button>
         </div>
         <textarea id="dotPreview" class="dot-textarea" spellcheck="false"
           placeholder="Generated pipeline DOT source will appear here&hellip;"></textarea>
@@ -2541,6 +2552,7 @@ input:checked + .toggle-slider:before { transform:translateX(20px); }
     <div class="create-col">
       <div class="graph-toolbar">
         <span class="graph-toolbar-label">Graph Preview</span>
+        <button class="dot-download-btn" onclick="downloadCreateDot()" title="Download .dot file">&#8675;</button>
         <button class="graph-zoom-btn" title="Zoom out (or Ctrl+scroll)" onclick="zoomCreate(-1)">&#x2212;</button>
         <span class="graph-zoom-label" id="createZoomLabel">100%</span>
         <button class="graph-zoom-btn" title="Zoom in (or Ctrl+scroll)" onclick="zoomCreate(1)">+</button>
