@@ -11,4 +11,4 @@ sprint_id	title	status	created_at	updated_at
 010	Full-Featured RESTful API (v1)	completed	2026-02-27T17:33:14Z	2026-02-27T17:53:27Z
 011	AI Provider Execution Mode & Per-Provider Toggles	completed	2026-02-27T18:02:28Z	2026-02-27T18:12:36Z
 012	Kotlin CLI Client for Attractor REST API	completed	2026-02-27T18:28:07Z	2026-02-27T18:45:32Z
-013	In-App Documentation Window	in_progress	2026-03-02T16:37:25Z	2026-03-02T16:38:27Z
+013	In-App Documentation Window	completed	2026-03-02T16:37:25Z	2026-03-02T16:59:14Z
