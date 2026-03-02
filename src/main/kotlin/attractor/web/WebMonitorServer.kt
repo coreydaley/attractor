@@ -2427,7 +2427,7 @@ input:checked + .toggle-slider:before { transform:translateX(20px); }
   </nav>
   <button class="theme-toggle-btn" id="themeToggle" onclick="toggleTheme()" aria-label="Switch to light theme" title="Switch to light theme">&#9728;</button>
   <div class="conn-indicator">
-    <span id="connDot" class="conn-dot offline"></span>
+    <span id="connDot" class="conn-dot offline" title="Offline"></span>
   </div>
 </header>
 
@@ -3490,7 +3490,9 @@ function applyUpdate(data) {
 
 // ── SSE connection ───────────────────────────────────────────────────────────
 function setConnected(live) {
-  document.getElementById('connDot').className = 'conn-dot' + (live ? ' live' : ' offline');
+  var dot = document.getElementById('connDot');
+  dot.className = 'conn-dot' + (live ? ' live' : ' offline');
+  dot.title = live ? 'Online' : 'Offline';
 }
 
 var sseDelay = 500;
