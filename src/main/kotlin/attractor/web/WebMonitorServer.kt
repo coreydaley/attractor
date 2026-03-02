@@ -2397,8 +2397,9 @@ main { max-width: 1200px; margin: 0 auto; padding: 20px; display: grid; grid-tem
 .btn-cancel-iterate:hover { background: var(--surface-muted); color: var(--text); border-color: var(--text-muted); }
 .dot-upload-link { color: var(--accent); text-decoration: underline; cursor: pointer; font-size: 0.82rem; font-weight: 400; white-space: nowrap; }
 .dot-upload-link:hover { opacity: 0.8; }
-.dot-download-btn { background: var(--surface-muted); border: 1px solid var(--border); border-radius: 4px; color: var(--text-muted); font-size: 0.72rem; padding: 2px 8px; cursor: pointer; white-space: nowrap; }
+.dot-download-btn { background: var(--surface-muted); border: 1px solid var(--border); border-radius: 4px; color: var(--text-muted); width: 24px; height: 24px; padding: 0; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; font-size: 0.9rem; }
 .dot-download-btn:hover { border-color: var(--accent); color: var(--accent); }
+.graph-toolbar-row { display: flex; align-items: center; gap: 4px; margin-bottom: 8px; }
 
 /* DOT preview tabs */
 .preview-tabs { display: flex; gap: 2px; }
@@ -3011,14 +3012,14 @@ function buildPanel(id) {
     +   '<div class="right-panel-tabs">'
     +     '<button class="right-tab-btn" id="rightTabLog" onclick="switchRightPanel(\'log\')">Live Log</button>'
     +     '<button class="right-tab-btn active" id="rightTabGraph" onclick="switchRightPanel(\'graph\')">Graph</button>'
+    +   '</div>'
+    +   '<div id="graphToolbarRow" class="graph-toolbar-row">'
+    +     '<button class="dot-download-btn" onclick="downloadMonitorDot()" title="Download .dot file">&#8675;</button>'
     +     '<div style="flex:1;"></div>'
-    +     '<button class="dot-download-btn" onclick="downloadMonitorDot()" title="Download .dot file" style="margin-right:6px;">&#8675; Download .dot</button>'
-    +     '<div id="graphZoomControls" style="display:flex;flex-direction:row;align-items:center;gap:3px;">'
-    +       '<button class="graph-zoom-btn" title="Zoom out (or Ctrl+scroll)" onclick="zoomMonitor(-1)">&#x2212;</button>'
-    +       '<span class="graph-zoom-label" id="monitorZoomLabel">100%</span>'
-    +       '<button class="graph-zoom-btn" title="Zoom in (or Ctrl+scroll)" onclick="zoomMonitor(1)">+</button>'
-    +       '<button class="graph-zoom-btn" title="Reset zoom" onclick="resetMonitorZoom()">&#x21BA;</button>'
-    +     '</div>'
+    +     '<button class="graph-zoom-btn" title="Zoom out (or Ctrl+scroll)" onclick="zoomMonitor(-1)">&#x2212;</button>'
+    +     '<span class="graph-zoom-label" id="monitorZoomLabel">100%</span>'
+    +     '<button class="graph-zoom-btn" title="Zoom in (or Ctrl+scroll)" onclick="zoomMonitor(1)">+</button>'
+    +     '<button class="graph-zoom-btn" title="Reset zoom" onclick="resetMonitorZoom()">&#x21BA;</button>'
     +   '</div>'
     +   '<div class="log-panel" id="logPanel" style="display:none;"></div>'
     +   '<div class="pipeline-graph-view" id="graphView"><div id="graphViewInner"><div class="pipeline-graph-placeholder">Waiting for pipeline\u2026</div></div></div>'
@@ -4333,12 +4334,12 @@ function switchRightPanel(tab) {
   var graphView  = document.getElementById('graphView');
   var btnLog     = document.getElementById('rightTabLog');
   var btnGraph   = document.getElementById('rightTabGraph');
-  var zoomCtrl   = document.getElementById('graphZoomControls');
+  var toolbar    = document.getElementById('graphToolbarRow');
   if (logPanel)  logPanel.style.display  = isLog ? '' : 'none';
   if (graphView) graphView.style.display = isLog ? 'none' : '';
   if (btnLog)    btnLog.classList.toggle('active', isLog);
   if (btnGraph)  btnGraph.classList.toggle('active', !isLog);
-  if (zoomCtrl)  zoomCtrl.style.display  = isLog ? 'none' : 'flex';
+  if (toolbar)   toolbar.style.display   = isLog ? 'none' : '';
   if (!isLog && selectedId) renderPipelineGraph(selectedId);
 }
 
