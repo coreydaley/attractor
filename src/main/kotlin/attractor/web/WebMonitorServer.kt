@@ -1369,7 +1369,7 @@ java -jar coreys-attractor-*.jar --web-port 7070</code></pre>
 <tr><td>Resume</td><td>Paused</td><td>Resumes from the paused stage</td></tr>
 <tr><td>Re-run</td><td>Completed or failed</td><td>Restarts the pipeline from the beginning</td></tr>
 <tr><td>Iterate</td><td>Completed or failed</td><td>Opens the Create view for a new version</td></tr>
-<tr><td>Download Artifacts</td><td>Completed</td><td>Downloads a ZIP of all stage output files</td></tr>
+<tr><td>Download Artifacts</td><td>Completed</td><td>Downloads a ZIP of all stage output files and workspace contents — see <em>Downloading Artifacts</em> below</td></tr>
 <tr><td>View Failure Report</td><td>Failed</td><td>Shows the AI-generated failure diagnosis</td></tr>
 <tr><td>Export</td><td>Any terminal state</td><td>Downloads a ZIP with pipeline metadata for import elsewhere</td></tr>
 <tr><td>Archive</td><td>Completed or failed</td><td>Moves to the Archived view</td></tr>
@@ -1379,14 +1379,36 @@ java -jar coreys-attractor-*.jar --web-port 7070</code></pre>
 <h2>Pipeline Versions (Iterate)</h2>
 <p>Clicking <strong>Iterate</strong> on a completed or failed pipeline opens the Create view pre-filled with the pipeline's DOT source. When you submit, a new pipeline is created in the same <em>family</em> — sharing the same <code>familyId</code>. Use the <code>&lt;&lt;</code> and <code>&gt;&gt;</code> arrows in the pipeline panel header to navigate between family members.</p>
 
+<h2>Downloading Artifacts</h2>
+<p>Click <strong>Download Artifacts</strong> on a completed pipeline to download a ZIP archive of everything the pipeline produced. The ZIP contains the entire artifact workspace for the run.</p>
+
+<h3>ZIP contents</h3>
+<table>
+<tr><th>Path</th><th>Description</th></tr>
+<tr><td><code>manifest.json</code></td><td>Pipeline completion summary: final status, stage count, finish time</td></tr>
+<tr><td><code>failure_report.json</code></td><td>AI-generated failure diagnosis (only present when the pipeline failed)</td></tr>
+<tr><td><code>checkpoint.json</code></td><td>Internal pipeline checkpoint used for resume and re-run</td></tr>
+<tr><td><code>workspace/</code></td><td>Shared working directory — all files the LLM created or modified during execution (source code, build output, test results, etc.)</td></tr>
+<tr><td><code>{nodeId}/prompt.md</code></td><td>The exact prompt sent to the LLM for this stage</td></tr>
+<tr><td><code>{nodeId}/response.md</code></td><td>The LLM's full response for this stage</td></tr>
+<tr><td><code>{nodeId}/live.log</code></td><td>Chronological log of all tool calls, command executions, and their output for this stage</td></tr>
+<tr><td><code>{nodeId}/status.json</code></td><td>Stage completion record: outcome, duration, error message if any</td></tr>
+</table>
+<p>One <code>{nodeId}/</code> directory is created per stage. The <code>workspace/</code> directory persists across all stages, so files written in an early stage are available to later stages.</p>
+<div class="tip-box">&#128161; The <code>workspace/</code> directory is where you'll find the actual deliverables — code, reports, compiled binaries, or any other files the LLM was instructed to produce.</div>
+
+<h3>Artifact browser</h3>
+<p>Before downloading, you can browse individual files directly in the UI. Click the log icon next to any stage in the stage list to open the artifact browser for that stage, or use the REST API (<code>GET /api/v1/pipelines/{id}/artifacts</code>) to list and fetch individual files programmatically.</p>
+
 <h2>Failure Diagnosis</h2>
-<p>When a stage fails, Attractor automatically asks the LLM to diagnose the failure and generates a <code>failure_report.json</code> in the pipeline's artifact directory. Click <strong>View Failure Report</strong> to see the structured diagnosis.</p>
+<p>When a stage fails, Attractor automatically asks the LLM to diagnose the failure and generates a <code>failure_report.json</code> in the pipeline's artifact directory. Click <strong>View Failure Report</strong> to see the structured diagnosis. The report is also included in the artifacts ZIP download.</p>
 
 <h2>Import / Export</h2>
 <ul>
-<li><strong>Export</strong> — downloads a ZIP archive containing <code>pipeline-meta.json</code> (the pipeline's DOT source, options, and metadata)</li>
+<li><strong>Export</strong> — downloads a ZIP archive containing <code>pipeline-meta.json</code> (the pipeline's DOT source, options, and metadata). Use this to move a pipeline definition between Attractor instances.</li>
 <li><strong>Import</strong> — upload an exported ZIP via the Import button in the nav; use <code>onConflict=skip</code> (default) or <code>onConflict=overwrite</code> to control conflict behavior</li>
 </ul>
+<div class="tip-box">&#9432; <strong>Export vs Download Artifacts:</strong> Export saves the pipeline <em>definition</em> (DOT graph + metadata) for re-importing. Download Artifacts saves the pipeline <em>outputs</em> (files, logs, workspace). They serve different purposes.</div>
 
 <h2>Settings</h2>
 <table>
