@@ -14,7 +14,7 @@ import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 
-class WebMonitorServer(private val port: Int, private val registry: PipelineRegistry, private val store: RunStore) {
+class WebMonitorServer(private val requestedPort: Int, private val registry: PipelineRegistry, private val store: RunStore) {
 
     private val dotGenerator = DotGenerator(store)
 
@@ -24,7 +24,8 @@ class WebMonitorServer(private val port: Int, private val registry: PipelineRegi
         val dotSanitizePass3 = Regex("""\[\s*,\s*""")
     }
 
-    private val httpServer = HttpServer.create(InetSocketAddress(port), 0)
+    private val httpServer = HttpServer.create(InetSocketAddress(requestedPort), 0)
+    val port: Int get() = httpServer.address.port
     private val sseClients = CopyOnWriteArrayList<SseClient>()
     internal val restSseClients = CopyOnWriteArrayList<RestApiRouter.RestSseClient>()
 
@@ -1178,6 +1179,17 @@ class WebMonitorServer(private val port: Int, private val registry: PipelineRegi
 
         val restApi = RestApiRouter(registry, store, { broadcastUpdate() }, { allPipelinesJson() }, restSseClients)
         httpServer.createContext("/api/v1/") { ex -> restApi.handle(ex) }
+
+        httpServer.createContext("/docs") { ex ->
+            val path = ex.requestURI.path
+            if (path != "/docs" && path != "/docs/") {
+                ex.sendResponseHeaders(404, 0); ex.responseBody.close(); return@createContext
+            }
+            val html = docsHtml().toByteArray(Charsets.UTF_8)
+            ex.responseHeaders.add("Content-Type", "text/html; charset=utf-8")
+            ex.sendResponseHeaders(200, html.size.toLong())
+            ex.responseBody.use { it.write(html, 0, html.size) }
+        }
     }
 
     fun broadcastUpdate() {
@@ -1193,6 +1205,728 @@ class WebMonitorServer(private val port: Int, private val registry: PipelineRegi
         }
         restSseClients.removeAll(deadRest.toSet())
     }
+
+    // ── Documentation page helpers ────────────────────────────────────────────
+
+    private fun docsHtml(): String = docsPageShell("""
+        <div class="doc-tab-bar">
+          <button class="doc-tab" id="tab-webapp" onclick="showTab('webapp')">Web App</button>
+          <button class="doc-tab" id="tab-restapi" onclick="showTab('restapi')">REST API</button>
+          <button class="doc-tab" id="tab-cli" onclick="showTab('cli')">CLI</button>
+          <button class="doc-tab" id="tab-dotformat" onclick="showTab('dotformat')">DOT Format</button>
+        </div>
+        <div id="panel-webapp" class="doc-panel">${webAppTabContent()}</div>
+        <div id="panel-restapi" class="doc-panel">${restApiTabContent()}</div>
+        <div id="panel-cli" class="doc-panel">${cliTabContent()}</div>
+        <div id="panel-dotformat" class="doc-panel">${dotFormatTabContent()}</div>
+    """)
+
+    private fun docsPageShell(body: String): String = """<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Attractor Docs</title>
+<style>
+*,*::before,*::after{box-sizing:border-box}
+:root{
+  --bg:#0d1117;--surface:#161b22;--surface-raised:#21262d;--surface-muted:#30363d;
+  --border:#30363d;--text:#c9d1d9;--text-strong:#f0f6fc;--text-muted:#8b949e;--text-faint:#484f58;
+  --accent:#58a6ff;--accent-muted:#1f6feb;--success:#3fb950;--warning:#e3b341;--danger:#f85149;
+  --tag-bg:#21262d;--tag-text:#8b949e;
+}
+@media(prefers-color-scheme:light){
+  :root{
+    --bg:#ffffff;--surface:#f6f8fa;--surface-raised:#ffffff;--surface-muted:#eaeef2;
+    --border:#d0d7de;--text:#24292f;--text-strong:#1f2328;--text-muted:#57606a;--text-faint:#8c959f;
+    --accent:#0969da;--accent-muted:#ddf4ff;--success:#1a7f37;--warning:#9a6700;--danger:#d1242f;
+    --tag-bg:#eaeef2;--tag-text:#57606a;
+  }
+}
+html,body{margin:0;padding:0;height:100%;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;font-size:15px;line-height:1.6;background:var(--bg);color:var(--text)}
+a{color:var(--accent);text-decoration:none}a:hover{text-decoration:underline}
+h1,h2,h3,h4{color:var(--text-strong);margin:0 0 0.5em;line-height:1.3}
+h1{font-size:1.5rem}h2{font-size:1.2rem;margin-top:1.5em}h3{font-size:1rem;margin-top:1.2em}
+p{margin:0 0 0.8em}
+pre{background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:12px 16px;overflow-x:auto;font-size:0.82rem;line-height:1.5;margin:0 0 1em}
+code{font-family:'Consolas','Cascadia Code','Courier New',monospace;font-size:0.85em;background:var(--surface-muted);padding:2px 5px;border-radius:4px}
+pre code{background:none;padding:0;font-size:inherit}
+table{width:100%;border-collapse:collapse;margin-bottom:1em;font-size:0.88rem}
+th{text-align:left;padding:7px 10px;font-size:0.75rem;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.06em;border-bottom:2px solid var(--border)}
+td{padding:7px 10px;border-bottom:1px solid var(--surface-muted);vertical-align:top}
+tr:last-child td{border-bottom:none}
+details{margin-bottom:1em}
+summary{cursor:pointer;font-weight:600;color:var(--text-strong);padding:8px 0;user-select:none}
+summary:hover{color:var(--accent)}
+.doc-header{position:sticky;top:0;z-index:10;background:var(--surface);border-bottom:1px solid var(--border);padding:10px 24px;display:flex;align-items:center;justify-content:space-between}
+.doc-header h1{font-size:1.1rem;margin:0}
+.doc-header a{font-size:0.85rem;color:var(--text-muted)}
+.doc-header a:hover{color:var(--accent)}
+.doc-tab-bar{position:sticky;top:41px;z-index:9;background:var(--surface);border-bottom:1px solid var(--border);padding:0 24px;display:flex;gap:2px}
+.doc-tab{background:transparent;border:none;border-bottom:2px solid transparent;color:var(--text-muted);padding:10px 14px;font-size:0.85rem;font-weight:600;cursor:pointer;transition:color 0.15s}
+.doc-tab:hover{color:var(--text)}
+.doc-tab.active{color:var(--accent);border-bottom-color:var(--accent)}
+.doc-panel{display:none;padding:24px;max-width:900px;margin:0 auto;min-height:calc(100vh - 120px)}
+.doc-panel.active{display:block}
+.badge{display:inline-block;padding:2px 8px;border-radius:4px;font-size:0.75rem;font-weight:700;font-family:monospace}
+.badge-get{background:#0d419d33;color:#58a6ff}
+.badge-post{background:#1a7f3733;color:#3fb950}
+.badge-patch{background:#9a670033;color:#e3b341}
+.badge-put{background:#9a670033;color:#e3b341}
+.badge-delete{background:#d1242f33;color:#f85149}
+.endpoint{margin-bottom:2em;padding-bottom:1.5em;border-bottom:1px solid var(--surface-muted)}
+.endpoint:last-child{border-bottom:none}
+.endpoint-sig{display:flex;align-items:center;gap:10px;margin-bottom:0.5em}
+.endpoint-path{font-family:monospace;font-size:0.9rem;font-weight:600;color:var(--text-strong)}
+.tip-box{background:var(--surface);border:1px solid var(--border);border-left:3px solid var(--accent);border-radius:6px;padding:10px 14px;margin-bottom:1em;font-size:0.88rem}
+.status-table td:first-child code{font-weight:700}
+</style>
+</head>
+<body>
+<div class="doc-header">
+  <h1>&#128218; Attractor Docs</h1>
+  <a href="/">&#8592; Back to App</a>
+</div>
+$body
+<script>
+function showTab(name) {
+  document.querySelectorAll('.doc-panel').forEach(function(p){p.style.display='none';p.classList.remove('active');});
+  document.querySelectorAll('.doc-tab').forEach(function(b){b.classList.remove('active');});
+  var panel = document.getElementById('panel-'+name);
+  var tab   = document.getElementById('tab-'+name);
+  if(panel){panel.style.display='';panel.classList.add('active');}
+  if(tab){tab.classList.add('active');}
+  try{localStorage.setItem('attractor-docs-tab',name);}catch(e){}
+}
+window.onload = function() {
+  var saved;
+  try{saved=localStorage.getItem('attractor-docs-tab');}catch(e){}
+  showTab(saved||'webapp');
+};
+</script>
+</body>
+</html>"""
+
+    private fun webAppTabContent(): String = """
+<h2>Getting Started</h2>
+<p>Attractor is an AI pipeline orchestration system. You define your workflow as a DOT graph — a directed graph where each node is an LLM-powered stage — and Attractor executes it, handling retries, failure diagnosis, and real-time progress monitoring.</p>
+<p><strong>Start the server:</strong></p>
+<pre><code># Via Makefile
+make run
+
+# Via JAR directly
+java -jar coreys-attractor-*.jar --web-port 7070</code></pre>
+<p><strong>Open the UI:</strong> <a href="/" target="_blank">http://localhost:7070</a></p>
+
+<h2>Navigation</h2>
+<p>The top navigation bar has five views:</p>
+<table>
+<tr><th>View</th><th>Purpose</th></tr>
+<tr><td><strong>Monitor</strong></td><td>Real-time status of all active pipelines. Each pipeline gets a tab showing its stage list, live log, and graph.</td></tr>
+<tr><td><strong>&#10024; Create</strong></td><td>Write or generate a DOT pipeline and submit it for execution.</td></tr>
+<tr><td><strong>&#128193; Archived</strong></td><td>Table of archived completed, failed, or cancelled pipelines.</td></tr>
+<tr><td><strong>&#128229; Import</strong></td><td>Upload a previously exported pipeline ZIP file.</td></tr>
+<tr><td><strong>&#9881; Settings</strong></td><td>Configure execution mode, provider toggles, CLI commands, and UI preferences.</td></tr>
+</table>
+
+<h2>Creating a Pipeline</h2>
+<p>There are two ways to create a pipeline:</p>
+<h3>Option A — Write DOT directly</h3>
+<p>Paste or type a valid DOT graph into the editor in the Create view, then click <strong>Run Pipeline</strong>.</p>
+
+<h3>Option B — Generate from natural language</h3>
+<ol>
+<li>Type a description in the natural language input (e.g., <em>"Build a Go application and run its tests"</em>)</li>
+<li>Click <strong>Generate</strong> — the LLM produces a DOT graph</li>
+<li>Review the graph in the preview pane (toggle between Source and Graph views)</li>
+<li>Optionally click <strong>Fix</strong> (if there are syntax errors) or <strong>Iterate</strong> (to refine the pipeline)</li>
+<li>Click <strong>Run Pipeline</strong></li>
+</ol>
+
+<h2>Pipeline States</h2>
+<table class="status-table">
+<tr><th>Status</th><th>Meaning</th></tr>
+<tr><td><code>idle</code></td><td>Created but not yet started</td></tr>
+<tr><td><code>running</code></td><td>Actively executing stages</td></tr>
+<tr><td><code>paused</code></td><td>Execution suspended — awaiting Resume</td></tr>
+<tr><td><code>completed</code></td><td>All stages finished successfully</td></tr>
+<tr><td><code>failed</code></td><td>A stage encountered an unrecoverable error</td></tr>
+<tr><td><code>cancelled</code></td><td>Manually stopped by the user</td></tr>
+</table>
+
+<h2>Monitoring a Pipeline</h2>
+<p>Click a pipeline tab in the Monitor view to open its detail panel:</p>
+<ul>
+<li><strong>Stage list</strong> — each stage shown with status badge, duration, and a log icon</li>
+<li><strong>Log panel</strong> — scrollable live log of pipeline events and LLM output</li>
+<li><strong>Graph panel</strong> — rendered SVG of the DOT graph with stage status colors overlaid</li>
+</ul>
+<h3>Action buttons</h3>
+<table>
+<tr><th>Button</th><th>When available</th><th>Effect</th></tr>
+<tr><td>Cancel</td><td>Running or paused</td><td>Immediately terminates execution</td></tr>
+<tr><td>Pause</td><td>Running</td><td>Suspends after current stage completes</td></tr>
+<tr><td>Resume</td><td>Paused</td><td>Resumes from the paused stage</td></tr>
+<tr><td>Re-run</td><td>Completed or failed</td><td>Restarts the pipeline from the beginning</td></tr>
+<tr><td>Iterate</td><td>Completed or failed</td><td>Opens the Create view for a new version</td></tr>
+<tr><td>Download Artifacts</td><td>Completed</td><td>Downloads a ZIP of all stage output files</td></tr>
+<tr><td>View Failure Report</td><td>Failed</td><td>Shows the AI-generated failure diagnosis</td></tr>
+<tr><td>Export</td><td>Any terminal state</td><td>Downloads a ZIP with pipeline metadata for import elsewhere</td></tr>
+<tr><td>Archive</td><td>Completed or failed</td><td>Moves to the Archived view</td></tr>
+<tr><td>Delete</td><td>Completed, failed, or cancelled</td><td>Permanently removes the pipeline and its artifacts</td></tr>
+</table>
+
+<h2>Pipeline Versions (Iterate)</h2>
+<p>Clicking <strong>Iterate</strong> on a completed or failed pipeline opens the Create view pre-filled with the pipeline's DOT source. When you submit, a new pipeline is created in the same <em>family</em> — sharing the same <code>familyId</code>. Use the <code>&lt;&lt;</code> and <code>&gt;&gt;</code> arrows in the pipeline panel header to navigate between family members.</p>
+
+<h2>Failure Diagnosis</h2>
+<p>When a stage fails, Attractor automatically asks the LLM to diagnose the failure and generates a <code>failure_report.json</code> in the pipeline's artifact directory. Click <strong>View Failure Report</strong> to see the structured diagnosis.</p>
+
+<h2>Import / Export</h2>
+<ul>
+<li><strong>Export</strong> — downloads a ZIP archive containing <code>pipeline-meta.json</code> (the pipeline's DOT source, options, and metadata)</li>
+<li><strong>Import</strong> — upload an exported ZIP via the Import button in the nav; use <code>onConflict=skip</code> (default) or <code>onConflict=overwrite</code> to control conflict behavior</li>
+</ul>
+
+<h2>Settings</h2>
+<table>
+<tr><th>Setting</th><th>Description</th></tr>
+<tr><td>Execution Mode</td><td><strong>API</strong> (default) — HTTP REST calls to LLM providers; <strong>CLI</strong> — invoke <code>claude</code>, <code>codex</code>, or <code>gemini</code> CLI binaries</td></tr>
+<tr><td>Provider toggles</td><td>Enable or disable Anthropic, OpenAI, and Gemini independently</td></tr>
+<tr><td>CLI command templates</td><td>Customize the CLI invocation command per provider (shown in CLI mode)</td></tr>
+<tr><td>Fireworks</td><td>Toggle celebratory animation when a pipeline completes successfully</td></tr>
+</table>
+"""
+
+    private fun restApiTabContent(): String = """
+<h2>Overview</h2>
+<p>The REST API v1 is mounted at <code>/api/v1/</code> and provides programmatic access to all pipeline management, DOT generation, validation, settings, model catalog, and real-time event streaming capabilities.</p>
+<p><strong>Base URL:</strong> <code>http://localhost:7070/api/v1</code></p>
+<p>All request and response bodies are JSON (<code>Content-Type: application/json</code>) unless noted otherwise (ZIP downloads, plain-text logs, SSE streams). CORS headers (<code>Access-Control-Allow-Origin: *</code>) are present on all endpoints.</p>
+
+<h3>Error response format</h3>
+<pre><code>{"error": "human-readable description", "code": "MACHINE_READABLE_CODE"}</code></pre>
+<table>
+<tr><th>Code</th><th>HTTP Status</th><th>Meaning</th></tr>
+<tr><td><code>NOT_FOUND</code></td><td>404</td><td>Resource does not exist</td></tr>
+<tr><td><code>BAD_REQUEST</code></td><td>400</td><td>Missing or invalid parameter</td></tr>
+<tr><td><code>INVALID_STATE</code></td><td>409</td><td>Operation not permitted in current state</td></tr>
+<tr><td><code>INTERNAL_ERROR</code></td><td>500</td><td>Unexpected server error</td></tr>
+<tr><td><code>RENDER_ERROR</code></td><td>400</td><td>Graphviz render failed</td></tr>
+<tr><td><code>GENERATION_ERROR</code></td><td>500</td><td>LLM generation failed</td></tr>
+</table>
+
+<h3>Pipeline JSON shape</h3>
+<table>
+<tr><th>Field</th><th>Type</th><th>Notes</th></tr>
+<tr><td><code>id</code></td><td>string</td><td>Unique pipeline identifier</td></tr>
+<tr><td><code>displayName</code></td><td>string</td><td>Human-readable name (auto-generated)</td></tr>
+<tr><td><code>fileName</code></td><td>string</td><td>Source DOT filename</td></tr>
+<tr><td><code>status</code></td><td>string</td><td>idle | running | paused | completed | failed | cancelled</td></tr>
+<tr><td><code>archived</code></td><td>boolean</td><td>Whether moved to archive view</td></tr>
+<tr><td><code>hasFailureReport</code></td><td>boolean</td><td>Whether a failure_report.json exists</td></tr>
+<tr><td><code>simulate</code></td><td>boolean</td><td>Simulation mode (no real LLM calls)</td></tr>
+<tr><td><code>autoApprove</code></td><td>boolean</td><td>Skip human review gates automatically</td></tr>
+<tr><td><code>familyId</code></td><td>string</td><td>Groups pipeline versions (iterations)</td></tr>
+<tr><td><code>originalPrompt</code></td><td>string</td><td>Natural language prompt that generated the DOT</td></tr>
+<tr><td><code>startedAt</code></td><td>long</td><td>Unix epoch milliseconds</td></tr>
+<tr><td><code>finishedAt</code></td><td>long|null</td><td>Unix epoch milliseconds, null if still running</td></tr>
+<tr><td><code>currentNode</code></td><td>string|null</td><td>Node ID of currently executing stage</td></tr>
+<tr><td><code>stages</code></td><td>array</td><td>Stage execution records</td></tr>
+<tr><td><code>logs</code></td><td>array</td><td>Recent log lines (up to 200)</td></tr>
+<tr><td><code>dotSource</code></td><td>string</td><td>Only in single-pipeline GET responses</td></tr>
+</table>
+
+<h2>Endpoints</h2>
+
+<details open><summary>Pipeline CRUD (5 endpoints)</summary>
+<div class="endpoint">
+<div class="endpoint-sig"><span class="badge badge-get">GET</span><span class="endpoint-path">/api/v1/pipelines</span></div>
+<p>Returns a JSON array of all pipelines (without <code>dotSource</code>).</p>
+<pre><code>curl http://localhost:7070/api/v1/pipelines</code></pre>
+</div>
+<div class="endpoint">
+<div class="endpoint-sig"><span class="badge badge-post">POST</span><span class="endpoint-path">/api/v1/pipelines</span></div>
+<p>Create and immediately run a new pipeline. Returns 201 with the new pipeline ID.</p>
+<p>Body: <code>{"dotSource":"...","fileName":"","simulate":false,"autoApprove":true,"originalPrompt":""}</code> (<code>dotSource</code> required)</p>
+<pre><code>curl -X POST http://localhost:7070/api/v1/pipelines \
+  -H 'Content-Type: application/json' \
+  -d '{"dotSource":"digraph P { graph[goal=\"test\"] start[shape=Mdiamond] exit[shape=Msquare] start->exit }","simulate":true}'</code></pre>
+</div>
+<div class="endpoint">
+<div class="endpoint-sig"><span class="badge badge-get">GET</span><span class="endpoint-path">/api/v1/pipelines/{id}</span></div>
+<p>Get a single pipeline including <code>dotSource</code>. Hydrates from database if not in memory.</p>
+<pre><code>curl http://localhost:7070/api/v1/pipelines/run-1700000000000-1</code></pre>
+</div>
+<div class="endpoint">
+<div class="endpoint-sig"><span class="badge badge-patch">PATCH</span><span class="endpoint-path">/api/v1/pipelines/{id}</span></div>
+<p>Update <code>dotSource</code> or <code>originalPrompt</code>. Not allowed while running or paused (returns 409).</p>
+<pre><code>curl -X PATCH http://localhost:7070/api/v1/pipelines/run-1700000000000-1 \
+  -H 'Content-Type: application/json' \
+  -d '{"dotSource":"digraph Updated { ... }"}'</code></pre>
+</div>
+<div class="endpoint">
+<div class="endpoint-sig"><span class="badge badge-delete">DELETE</span><span class="endpoint-path">/api/v1/pipelines/{id}</span></div>
+<p>Delete pipeline and artifacts. Not allowed while running or paused (returns 409).</p>
+<pre><code>curl -X DELETE http://localhost:7070/api/v1/pipelines/run-1700000000000-1</code></pre>
+</div>
+</details>
+
+<details><summary>Pipeline Lifecycle (6 endpoints)</summary>
+<div class="endpoint">
+<div class="endpoint-sig"><span class="badge badge-post">POST</span><span class="endpoint-path">/api/v1/pipelines/{id}/rerun</span></div>
+<p>Reset and re-execute from the beginning. Not allowed if already running (409).</p>
+<pre><code>curl -X POST http://localhost:7070/api/v1/pipelines/{id}/rerun</code></pre>
+</div>
+<div class="endpoint">
+<div class="endpoint-sig"><span class="badge badge-post">POST</span><span class="endpoint-path">/api/v1/pipelines/{id}/pause</span></div>
+<p>Signal a running pipeline to pause after its current stage. Returns <code>{"paused":true}</code>. Pipeline must be running (409 otherwise).</p>
+<pre><code>curl -X POST http://localhost:7070/api/v1/pipelines/{id}/pause</code></pre>
+</div>
+<div class="endpoint">
+<div class="endpoint-sig"><span class="badge badge-post">POST</span><span class="endpoint-path">/api/v1/pipelines/{id}/resume</span></div>
+<p>Resume a paused pipeline. Creates a new pipeline ID. Returns <code>{"id":"...","status":"running"}</code>.</p>
+<pre><code>curl -X POST http://localhost:7070/api/v1/pipelines/{id}/resume</code></pre>
+</div>
+<div class="endpoint">
+<div class="endpoint-sig"><span class="badge badge-post">POST</span><span class="endpoint-path">/api/v1/pipelines/{id}/cancel</span></div>
+<p>Cancel a running or paused pipeline. Returns <code>{"cancelled":true}</code>.</p>
+<pre><code>curl -X POST http://localhost:7070/api/v1/pipelines/{id}/cancel</code></pre>
+</div>
+<div class="endpoint">
+<div class="endpoint-sig"><span class="badge badge-post">POST</span><span class="endpoint-path">/api/v1/pipelines/{id}/archive</span></div>
+<p>Move pipeline to the archived view. Returns <code>{"archived":true}</code>.</p>
+<pre><code>curl -X POST http://localhost:7070/api/v1/pipelines/{id}/archive</code></pre>
+</div>
+<div class="endpoint">
+<div class="endpoint-sig"><span class="badge badge-post">POST</span><span class="endpoint-path">/api/v1/pipelines/{id}/unarchive</span></div>
+<p>Restore a pipeline from the archived view. Returns <code>{"unarchived":true}</code>.</p>
+<pre><code>curl -X POST http://localhost:7070/api/v1/pipelines/{id}/unarchive</code></pre>
+</div>
+</details>
+
+<details><summary>Pipeline Versioning (3 endpoints)</summary>
+<div class="endpoint">
+<div class="endpoint-sig"><span class="badge badge-post">POST</span><span class="endpoint-path">/api/v1/pipelines/{id}/iterations</span></div>
+<p>Create a new pipeline version in the same family. Body: <code>{"dotSource":"...","originalPrompt":""}</code>. Returns 201.</p>
+<pre><code>curl -X POST http://localhost:7070/api/v1/pipelines/{id}/iterations \
+  -H 'Content-Type: application/json' \
+  -d '{"dotSource":"digraph Updated { ... }","originalPrompt":"Add a test stage"}'</code></pre>
+</div>
+<div class="endpoint">
+<div class="endpoint-sig"><span class="badge badge-get">GET</span><span class="endpoint-path">/api/v1/pipelines/{id}/family</span></div>
+<p>List all versions in the pipeline's family. Returns <code>{"familyId":"...","members":[...]}</code> with <code>versionNum</code> per member.</p>
+<pre><code>curl http://localhost:7070/api/v1/pipelines/{id}/family</code></pre>
+</div>
+<div class="endpoint">
+<div class="endpoint-sig"><span class="badge badge-get">GET</span><span class="endpoint-path">/api/v1/pipelines/{id}/stages</span></div>
+<p>List the stage execution records for a pipeline.</p>
+<pre><code>curl http://localhost:7070/api/v1/pipelines/{id}/stages</code></pre>
+</div>
+</details>
+
+<details><summary>Artifacts &amp; Logs (5 endpoints)</summary>
+<div class="endpoint">
+<div class="endpoint-sig"><span class="badge badge-get">GET</span><span class="endpoint-path">/api/v1/pipelines/{id}/artifacts</span></div>
+<p>List artifact files. Returns <code>{"files":[{"path":"...","size":N,"isText":true}],"truncated":false}</code>. Max 500 files.</p>
+<pre><code>curl http://localhost:7070/api/v1/pipelines/{id}/artifacts</code></pre>
+</div>
+<div class="endpoint">
+<div class="endpoint-sig"><span class="badge badge-get">GET</span><span class="endpoint-path">/api/v1/pipelines/{id}/artifacts/{path}</span></div>
+<p>Get the content of a specific artifact file. Path traversal is blocked.</p>
+<pre><code>curl http://localhost:7070/api/v1/pipelines/{id}/artifacts/writeTests/live.log</code></pre>
+</div>
+<div class="endpoint">
+<div class="endpoint-sig"><span class="badge badge-get">GET</span><span class="endpoint-path">/api/v1/pipelines/{id}/artifacts.zip</span></div>
+<p>Download all artifacts as a ZIP archive (<code>application/zip</code>).</p>
+<pre><code>curl -o artifacts.zip http://localhost:7070/api/v1/pipelines/{id}/artifacts.zip</code></pre>
+</div>
+<div class="endpoint">
+<div class="endpoint-sig"><span class="badge badge-get">GET</span><span class="endpoint-path">/api/v1/pipelines/{id}/stages/{nodeId}/log</span></div>
+<p>Get the live log for a specific stage as plain text.</p>
+<pre><code>curl http://localhost:7070/api/v1/pipelines/{id}/stages/writeTests/log</code></pre>
+</div>
+<div class="endpoint">
+<div class="endpoint-sig"><span class="badge badge-get">GET</span><span class="endpoint-path">/api/v1/pipelines/{id}/failure-report</span></div>
+<p>Get the AI-generated failure diagnosis as JSON. Returns 404 if no failure report exists.</p>
+<pre><code>curl http://localhost:7070/api/v1/pipelines/{id}/failure-report</code></pre>
+</div>
+</details>
+
+<details><summary>Import / Export (2 endpoints)</summary>
+<div class="endpoint">
+<div class="endpoint-sig"><span class="badge badge-get">GET</span><span class="endpoint-path">/api/v1/pipelines/{id}/export</span></div>
+<p>Export pipeline as a ZIP containing <code>pipeline-meta.json</code>.</p>
+<pre><code>curl -o pipeline.zip http://localhost:7070/api/v1/pipelines/{id}/export</code></pre>
+</div>
+<div class="endpoint">
+<div class="endpoint-sig"><span class="badge badge-post">POST</span><span class="endpoint-path">/api/v1/pipelines/import</span></div>
+<p>Import from a previously exported ZIP. Query param: <code>?onConflict=skip</code> (default) or <code>?onConflict=overwrite</code>. Returns 201.</p>
+<pre><code>curl -X POST "http://localhost:7070/api/v1/pipelines/import?onConflict=skip" \
+  -H 'Content-Type: application/zip' \
+  --data-binary @pipeline.zip</code></pre>
+</div>
+</details>
+
+<details><summary>DOT Operations (8 endpoints)</summary>
+<div class="endpoint">
+<div class="endpoint-sig"><span class="badge badge-post">POST</span><span class="endpoint-path">/api/v1/dot/render</span></div>
+<p>Render a DOT graph to SVG via Graphviz. Returns <code>{"svg":"..."}</code> or 400 if Graphviz is not installed.</p>
+<pre><code>curl -X POST http://localhost:7070/api/v1/dot/render \
+  -H 'Content-Type: application/json' \
+  -d '{"dotSource":"digraph G { a -> b }"}'</code></pre>
+</div>
+<div class="endpoint">
+<div class="endpoint-sig"><span class="badge badge-post">POST</span><span class="endpoint-path">/api/v1/dot/validate</span></div>
+<p>Parse and lint a DOT pipeline. Returns <code>{"valid":true,"diagnostics":[]}</code>.</p>
+<pre><code>curl -X POST http://localhost:7070/api/v1/dot/validate \
+  -H 'Content-Type: application/json' \
+  -d '{"dotSource":"digraph P { ... }"}'</code></pre>
+</div>
+<div class="endpoint">
+<div class="endpoint-sig"><span class="badge badge-post">POST</span><span class="endpoint-path">/api/v1/dot/generate</span></div>
+<p>Generate a DOT pipeline from a natural language prompt (synchronous). Returns <code>{"dotSource":"..."}</code>.</p>
+<pre><code>curl -X POST http://localhost:7070/api/v1/dot/generate \
+  -H 'Content-Type: application/json' \
+  -d '{"prompt":"Build and test a Go REST API"}'</code></pre>
+</div>
+<div class="endpoint">
+<div class="endpoint-sig"><span class="badge badge-get">GET</span><span class="endpoint-path">/api/v1/dot/generate/stream</span></div>
+<p>Generate DOT from a prompt with SSE streaming. Query param: <code>?prompt=...</code>. Streams <code>data: {"delta":"..."}</code> events.</p>
+<pre><code>curl "http://localhost:7070/api/v1/dot/generate/stream?prompt=Build+a+Go+app"</code></pre>
+</div>
+<div class="endpoint">
+<div class="endpoint-sig"><span class="badge badge-post">POST</span><span class="endpoint-path">/api/v1/dot/fix</span></div>
+<p>Fix a broken DOT graph using the LLM (synchronous). Body: <code>{"dotSource":"...","error":"..."}</code>.</p>
+<pre><code>curl -X POST http://localhost:7070/api/v1/dot/fix \
+  -H 'Content-Type: application/json' \
+  -d '{"dotSource":"...","error":"syntax error"}'</code></pre>
+</div>
+<div class="endpoint">
+<div class="endpoint-sig"><span class="badge badge-get">GET</span><span class="endpoint-path">/api/v1/dot/fix/stream</span></div>
+<p>Fix a broken DOT with SSE streaming. Query params: <code>?dotSource=...&amp;error=...</code>.</p>
+<pre><code>curl "http://localhost:7070/api/v1/dot/fix/stream?dotSource=...&error=syntax+error"</code></pre>
+</div>
+<div class="endpoint">
+<div class="endpoint-sig"><span class="badge badge-post">POST</span><span class="endpoint-path">/api/v1/dot/iterate</span></div>
+<p>Iterate on an existing DOT graph given a change description (synchronous). Body: <code>{"baseDot":"...","changes":"..."}</code>.</p>
+<pre><code>curl -X POST http://localhost:7070/api/v1/dot/iterate \
+  -H 'Content-Type: application/json' \
+  -d '{"baseDot":"digraph P {...}","changes":"Add a deployment stage after tests"}'</code></pre>
+</div>
+<div class="endpoint">
+<div class="endpoint-sig"><span class="badge badge-get">GET</span><span class="endpoint-path">/api/v1/dot/iterate/stream</span></div>
+<p>Iterate on DOT with SSE streaming. Query params: <code>?baseDot=...&amp;changes=...</code>.</p>
+<pre><code>curl "http://localhost:7070/api/v1/dot/iterate/stream?baseDot=...&changes=Add+a+deployment+stage"</code></pre>
+</div>
+</details>
+
+<details><summary>Settings (3 endpoints)</summary>
+<div class="endpoint">
+<div class="endpoint-sig"><span class="badge badge-get">GET</span><span class="endpoint-path">/api/v1/settings</span></div>
+<p>Get all settings as a JSON object.</p>
+<pre><code>curl http://localhost:7070/api/v1/settings</code></pre>
+</div>
+<div class="endpoint">
+<div class="endpoint-sig"><span class="badge badge-get">GET</span><span class="endpoint-path">/api/v1/settings/{key}</span></div>
+<p>Get a single setting. Returns 404 if the key is unknown or not set.</p>
+<pre><code>curl http://localhost:7070/api/v1/settings/fireworks_enabled</code></pre>
+</div>
+<div class="endpoint">
+<div class="endpoint-sig"><span class="badge badge-put">PUT</span><span class="endpoint-path">/api/v1/settings/{key}</span></div>
+<p>Update a setting. Body: <code>{"value":"..."}</code>. Returns 400 for unknown keys.</p>
+<pre><code>curl -X PUT http://localhost:7070/api/v1/settings/fireworks_enabled \
+  -H 'Content-Type: application/json' \
+  -d '{"value":"false"}'</code></pre>
+</div>
+</details>
+
+<details><summary>Models (1 endpoint)</summary>
+<div class="endpoint">
+<div class="endpoint-sig"><span class="badge badge-get">GET</span><span class="endpoint-path">/api/v1/models</span></div>
+<p>List all available LLM models from the model catalog.</p>
+<pre><code>curl http://localhost:7070/api/v1/models</code></pre>
+</div>
+</details>
+
+<details><summary>Events / SSE (2 endpoints)</summary>
+<div class="endpoint">
+<div class="endpoint-sig"><span class="badge badge-get">GET</span><span class="endpoint-path">/api/v1/events</span></div>
+<p>Subscribe to a Server-Sent Events stream of all pipeline state updates. Streams <code>data: {"pipelines":[...]}</code> on every change, with a heartbeat every 2 seconds.</p>
+<pre><code>curl -N http://localhost:7070/api/v1/events</code></pre>
+</div>
+<div class="endpoint">
+<div class="endpoint-sig"><span class="badge badge-get">GET</span><span class="endpoint-path">/api/v1/events/{id}</span></div>
+<p>Subscribe to events for a single pipeline. Returns 404 if the pipeline is not found. Auto-delivers the current state on connect.</p>
+<pre><code>curl -N http://localhost:7070/api/v1/events/run-1700000000000-1</code></pre>
+</div>
+</details>
+"""
+
+    private fun cliTabContent(): String = """
+<h2>Installation</h2>
+<h3>Build</h3>
+<pre><code>make cli-jar</code></pre>
+<p>Produces <code>build/libs/coreys-attractor-cli-devel.jar</code>. For a versioned release: <code>make release</code></p>
+
+<h3>Run</h3>
+<pre><code># Via JAR directly
+java -jar build/libs/coreys-attractor-cli-devel.jar [command]
+
+# Via bin/ wrapper (auto-locates latest CLI JAR)
+bin/attractor [command]</code></pre>
+
+<h2>Command Grammar</h2>
+<pre><code>attractor [--host &lt;url&gt;] [--output text|json] [--help] [--version]
+          &lt;resource&gt; &lt;verb&gt; [flags] [args]</code></pre>
+
+<h2>Global Flags</h2>
+<table>
+<tr><th>Flag</th><th>Default</th><th>Description</th></tr>
+<tr><td><code>--host &lt;url&gt;</code></td><td><code>http://localhost:7070</code></td><td>Target Attractor server base URL</td></tr>
+<tr><td><code>--output text|json</code></td><td><code>text</code></td><td>Output format. Use <code>json</code> for machine-readable output (enables <code>jq</code> piping)</td></tr>
+<tr><td><code>--help</code></td><td>—</td><td>Show help (works at any level)</td></tr>
+<tr><td><code>--version</code></td><td>—</td><td>Print version string</td></tr>
+</table>
+
+<h2>Resources</h2>
+
+<details open><summary>pipeline — 14 commands</summary>
+<table>
+<tr><th>Command</th><th>Flags</th><th>Description</th></tr>
+<tr><td><code>attractor pipeline list</code></td><td></td><td>List all pipelines as a table (ID, Name, Status, Started)</td></tr>
+<tr><td><code>attractor pipeline get &lt;id&gt;</code></td><td></td><td>Show all fields for a single pipeline</td></tr>
+<tr><td><code>attractor pipeline create</code></td><td><code>--file &lt;path&gt;</code> (required), <code>--name</code>, <code>--simulate</code>, <code>--no-auto-approve</code>, <code>--prompt</code></td><td>Submit a DOT file and run it</td></tr>
+<tr><td><code>attractor pipeline update &lt;id&gt;</code></td><td><code>--file &lt;path&gt;</code>, <code>--prompt</code></td><td>Update DOT source or prompt</td></tr>
+<tr><td><code>attractor pipeline delete &lt;id&gt;</code></td><td></td><td>Delete a non-running pipeline</td></tr>
+<tr><td><code>attractor pipeline rerun &lt;id&gt;</code></td><td></td><td>Restart a completed/failed pipeline</td></tr>
+<tr><td><code>attractor pipeline pause &lt;id&gt;</code></td><td></td><td>Pause a running pipeline</td></tr>
+<tr><td><code>attractor pipeline resume &lt;id&gt;</code></td><td></td><td>Resume a paused pipeline</td></tr>
+<tr><td><code>attractor pipeline cancel &lt;id&gt;</code></td><td></td><td>Cancel a running or paused pipeline</td></tr>
+<tr><td><code>attractor pipeline archive &lt;id&gt;</code></td><td></td><td>Move pipeline to archive</td></tr>
+<tr><td><code>attractor pipeline unarchive &lt;id&gt;</code></td><td></td><td>Restore pipeline from archive</td></tr>
+<tr><td><code>attractor pipeline stages &lt;id&gt;</code></td><td></td><td>List stage execution records</td></tr>
+<tr><td><code>attractor pipeline family &lt;id&gt;</code></td><td></td><td>List all versions in the pipeline's family</td></tr>
+<tr><td><code>attractor pipeline watch &lt;id&gt;</code></td><td><code>--interval-ms</code> (default 2000), <code>--timeout-ms</code></td><td>Poll until terminal state. Exit 0=completed, 1=failed/cancelled</td></tr>
+<tr><td><code>attractor pipeline iterate &lt;id&gt;</code></td><td><code>--file &lt;path&gt;</code> (required), <code>--prompt</code></td><td>Create a new family iteration</td></tr>
+</table>
+</details>
+
+<details><summary>artifact — 7 commands</summary>
+<table>
+<tr><th>Command</th><th>Flags</th><th>Description</th></tr>
+<tr><td><code>attractor artifact list &lt;id&gt;</code></td><td></td><td>List artifact files (path, size, type)</td></tr>
+<tr><td><code>attractor artifact get &lt;id&gt; &lt;path&gt;</code></td><td></td><td>Print artifact content to stdout</td></tr>
+<tr><td><code>attractor artifact download-zip &lt;id&gt;</code></td><td><code>--output &lt;file&gt;</code></td><td>Download all artifacts as ZIP (default: artifacts-{id}.zip)</td></tr>
+<tr><td><code>attractor artifact stage-log &lt;id&gt; &lt;nodeId&gt;</code></td><td></td><td>Print stage live log to stdout</td></tr>
+<tr><td><code>attractor artifact failure-report &lt;id&gt;</code></td><td></td><td>Print failure report JSON</td></tr>
+<tr><td><code>attractor artifact export &lt;id&gt;</code></td><td><code>--output &lt;file&gt;</code></td><td>Export pipeline as ZIP (default: pipeline-{id}.zip)</td></tr>
+<tr><td><code>attractor artifact import &lt;file&gt;</code></td><td><code>--on-conflict skip|overwrite</code></td><td>Import from an exported ZIP</td></tr>
+</table>
+</details>
+
+<details><summary>dot — 8 commands</summary>
+<table>
+<tr><th>Command</th><th>Flags</th><th>Description</th></tr>
+<tr><td><code>attractor dot generate</code></td><td><code>--prompt &lt;text&gt;</code> (required), <code>--output</code></td><td>Generate DOT from natural language (synchronous)</td></tr>
+<tr><td><code>attractor dot generate-stream</code></td><td><code>--prompt &lt;text&gt;</code> (required)</td><td>Generate DOT with streaming token output</td></tr>
+<tr><td><code>attractor dot validate</code></td><td><code>--file &lt;path&gt;</code> (required)</td><td>Lint/validate a DOT file; print diagnostics</td></tr>
+<tr><td><code>attractor dot render</code></td><td><code>--file &lt;path&gt;</code> (required), <code>--output</code></td><td>Render DOT to SVG (default: output.svg)</td></tr>
+<tr><td><code>attractor dot fix</code></td><td><code>--file &lt;path&gt;</code> (required), <code>--error &lt;msg&gt;</code></td><td>Fix broken DOT using LLM (synchronous)</td></tr>
+<tr><td><code>attractor dot fix-stream</code></td><td><code>--file &lt;path&gt;</code> (required), <code>--error &lt;msg&gt;</code></td><td>Fix DOT with streaming output</td></tr>
+<tr><td><code>attractor dot iterate</code></td><td><code>--file &lt;path&gt;</code> (required), <code>--changes &lt;text&gt;</code> (required)</td><td>Iterate on DOT with a change description (synchronous)</td></tr>
+<tr><td><code>attractor dot iterate-stream</code></td><td><code>--file &lt;path&gt;</code> (required), <code>--changes &lt;text&gt;</code> (required)</td><td>Iterate on DOT with streaming output</td></tr>
+</table>
+</details>
+
+<details><summary>settings — 3 commands</summary>
+<table>
+<tr><th>Command</th><th>Description</th></tr>
+<tr><td><code>attractor settings list</code></td><td>Show all settings as a table (Key, Value)</td></tr>
+<tr><td><code>attractor settings get &lt;key&gt;</code></td><td>Print a single setting value</td></tr>
+<tr><td><code>attractor settings set &lt;key&gt; &lt;value&gt;</code></td><td>Update a setting</td></tr>
+</table>
+</details>
+
+<details><summary>models — 1 command</summary>
+<pre><code>attractor models list</code></pre>
+<p>List all available LLM models (ID, Provider, Name, Context, Tools, Vision).</p>
+</details>
+
+<details><summary>events — 2 commands</summary>
+<table>
+<tr><th>Command</th><th>Description</th></tr>
+<tr><td><code>attractor events</code></td><td>Stream all pipeline events until Ctrl+C</td></tr>
+<tr><td><code>attractor events &lt;id&gt;</code></td><td>Stream events for one pipeline; exits when pipeline reaches a terminal state</td></tr>
+</table>
+</details>
+
+<h2>Exit Codes</h2>
+<table>
+<tr><th>Code</th><th>Meaning</th></tr>
+<tr><td><code>0</code></td><td>Success</td></tr>
+<tr><td><code>1</code></td><td>API error, connection error, or runtime error</td></tr>
+<tr><td><code>2</code></td><td>Usage error (missing required argument, unknown command, invalid flag)</td></tr>
+</table>
+
+<h2>Workflow Examples</h2>
+
+<h3>1. Submit a pipeline, watch it, then download artifacts</h3>
+<pre><code># Submit
+ID=${'$'}(attractor pipeline create --file my-pipeline.dot --output json | jq -r '.id')
+
+# Watch until terminal state
+attractor pipeline watch "${'$'}ID"
+
+# Download artifacts
+attractor artifact download-zip "${'$'}ID"</code></pre>
+
+<h3>2. Generate DOT from prompt, validate, then run</h3>
+<pre><code># Generate
+attractor dot generate --prompt "Build and test a Go REST API" --output pipeline.dot
+
+# Validate
+attractor dot validate --file pipeline.dot
+
+# Submit
+attractor pipeline create --file pipeline.dot</code></pre>
+
+<h3>3. Investigate a failed pipeline</h3>
+<pre><code># Get the failure report
+attractor artifact failure-report &lt;id&gt;
+
+# Browse individual stage logs
+attractor pipeline stages &lt;id&gt;
+attractor artifact stage-log &lt;id&gt; &lt;nodeId&gt;</code></pre>
+"""
+
+    private fun dotFormatTabContent(): String = """
+<h2>Overview</h2>
+<p>Attractor pipelines are defined using the <a href="https://graphviz.org/doc/info/lang.html" target="_blank">Graphviz DOT language</a>, extended with Attractor-specific node and graph attributes. A pipeline is a directed graph where each node represents an execution stage and each edge represents a transition.</p>
+<div class="tip-box">&#128218; The Create view can generate a valid DOT pipeline from a natural language description. Use it as a starting point, then customize.</div>
+
+<h2>Node Types</h2>
+<table>
+<tr><th>Shape / Type</th><th>Role</th><th>Description</th></tr>
+<tr><td><code>shape=Mdiamond</code></td><td><strong>Start</strong></td><td>Pipeline entry point. Every pipeline must have exactly one start node.</td></tr>
+<tr><td><code>shape=Msquare</code></td><td><strong>Exit</strong></td><td>Pipeline terminal. Every pipeline must have at least one exit node.</td></tr>
+<tr><td><code>shape=box</code> (default)</td><td><strong>LLM Stage</strong></td><td>The <code>prompt</code> attribute is sent to the configured LLM. The model's response becomes the stage output.</td></tr>
+<tr><td><code>shape=diamond</code></td><td><strong>Conditional Gate</strong></td><td>Evaluates outgoing edge <code>condition</code> attributes to choose the next stage.</td></tr>
+<tr><td><code>shape=hexagon</code> or <code>type="wait.human"</code></td><td><strong>Human Review Gate</strong></td><td>Pauses the pipeline and waits for an operator to approve or reject.</td></tr>
+<tr><td>Multiple outgoing edges</td><td><strong>Parallel Fan-out</strong></td><td>When a non-conditional node has multiple outgoing edges, all target nodes run concurrently.</td></tr>
+</table>
+
+<h2>Node Attributes</h2>
+<table>
+<tr><th>Attribute</th><th>Type</th><th>Description</th></tr>
+<tr><td><code>label</code></td><td>string</td><td>Display name shown in the dashboard and graph view. Defaults to the node ID.</td></tr>
+<tr><td><code>prompt</code></td><td>string</td><td>LLM instruction for this stage. Required for LLM stage nodes.</td></tr>
+<tr><td><code>shape</code></td><td>string</td><td>Determines node behavior. See Node Types above.</td></tr>
+<tr><td><code>type</code></td><td>string</td><td>Extended type override. Currently: <code>"wait.human"</code> for human review gates.</td></tr>
+</table>
+
+<h2>Edge Attributes</h2>
+<table>
+<tr><th>Attribute</th><th>Type</th><th>Description</th></tr>
+<tr><td><code>label</code></td><td>string</td><td>Display label shown in the graph view.</td></tr>
+<tr><td><code>condition</code></td><td>string</td><td>Boolean expression evaluated at a conditional gate. Example: <code>outcome=success</code>, <code>outcome!=success</code>.</td></tr>
+</table>
+
+<h2>Graph Attributes</h2>
+<table>
+<tr><th>Attribute</th><th>Description</th></tr>
+<tr><td><code>goal</code></td><td>Pipeline description shown in the dashboard Overview panel.</td></tr>
+<tr><td><code>label</code></td><td>Pipeline display label used in the graph title.</td></tr>
+</table>
+
+<h2>Annotated Examples</h2>
+
+<h3>1. Simple linear pipeline</h3>
+<pre><code>digraph SimplePipeline {
+  graph [goal="Build and test the application", label="Simple Pipeline"]
+
+  start   [shape=Mdiamond, label="Start"]
+  build   [shape=box,      label="Build",
+           prompt="Compile the Go application and report any errors."]
+  test    [shape=box,      label="Test",
+           prompt="Run the test suite and summarize results."]
+  exit    [shape=Msquare,  label="Done"]
+
+  start -> build
+  build -> test
+  test  -> exit
+}</code></pre>
+
+<h3>2. Conditional branch</h3>
+<pre><code>digraph ConditionalPipeline {
+  graph [goal="Build, test, and deploy on success"]
+
+  start   [shape=Mdiamond, label="Start"]
+  test    [shape=box,      label="Run Tests",
+           prompt="Execute the full test suite. Output 'outcome=success' if all pass, 'outcome=failure' otherwise."]
+  gate    [shape=diamond,  label="Tests Passed?"]
+  deploy  [shape=box,      label="Deploy",
+           prompt="Deploy the application to production."]
+  notify  [shape=box,      label="Notify Failure",
+           prompt="Send a failure notification with test output."]
+  exit    [shape=Msquare,  label="Done"]
+
+  start -> test
+  test  -> gate
+  gate  -> deploy [label="Pass",    condition="outcome=success"]
+  gate  -> notify [label="Fail",    condition="outcome!=success"]
+  deploy -> exit
+  notify -> exit
+}</code></pre>
+
+<h3>3. Parallel fan-out</h3>
+<pre><code>digraph ParallelPipeline {
+  graph [goal="Run unit and integration tests in parallel"]
+
+  start        [shape=Mdiamond, label="Start"]
+  unit_tests   [shape=box,      label="Unit Tests",
+                prompt="Run unit tests and report coverage."]
+  integration  [shape=box,      label="Integration Tests",
+                prompt="Run integration tests against a test database."]
+  summarize    [shape=box,      label="Summarize",
+                prompt="Combine unit and integration test results into a report."]
+  exit         [shape=Msquare,  label="Done"]
+
+  start       -> unit_tests
+  start       -> integration
+  unit_tests  -> summarize
+  integration -> summarize
+  summarize   -> exit
+}</code></pre>
+
+<h3>4. Human review gate</h3>
+<pre><code>digraph HumanReviewPipeline {
+  graph [goal="Generate and review a deployment plan before applying"]
+
+  start    [shape=Mdiamond,  label="Start"]
+  plan     [shape=box,       label="Generate Plan",
+            prompt="Create a detailed deployment plan for the release."]
+  review   [shape=hexagon,   label="Human Review",
+            type="wait.human"]
+  apply    [shape=box,       label="Apply Changes",
+            prompt="Execute the approved deployment plan."]
+  exit     [shape=Msquare,   label="Done"]
+
+  start  -> plan
+  plan   -> review
+  review -> apply
+  apply  -> exit
+}</code></pre>
+
+<h2>Tips</h2>
+<ul>
+<li>Validate your DOT before running: <code>POST /api/v1/dot/validate</code> or <code>attractor dot validate --file pipeline.dot</code></li>
+<li>Render to SVG locally: <code>dot -Tsvg pipeline.dot -o pipeline.svg</code> (requires Graphviz)</li>
+<li>Node IDs must be valid DOT identifiers (alphanumeric + underscore, no hyphens as first character)</li>
+<li>Stage <code>prompt</code> text can reference previous stage context — the runtime maintains a conversation history</li>
+<li>The <code>simulate=true</code> option runs the pipeline without real LLM calls (useful for graph testing)</li>
+</ul>
+"""
 
     fun start() {
         httpServer.start()
@@ -1313,9 +2047,9 @@ class WebMonitorServer(private val port: Int, private val registry: PipelineRegi
   --border: #d1d1d8;
   --text: #27272a;
   --text-strong: #18181b;
-  --text-muted: #52525b;
-  --text-faint: #71717a;
-  --text-dim: #a1a1aa;
+  --text-muted: #3f3f46;
+  --text-faint: #52525b;
+  --text-dim: #71717a;
   --accent: #4f46e5;
   --code-bg: #f0f0f3;
   --code-text: #27272a;
@@ -1323,7 +2057,7 @@ class WebMonitorServer(private val port: Int, private val registry: PipelineRegi
   --dot-text: #3730a3;
   --graph-bg: #ffffff;
   --badge-idle-bg: #e9e9ec;
-  --badge-idle-fg: #71717a;
+  --badge-idle-fg: #52525b;
   --badge-running-bg: #fef3c7;
   --badge-running-fg: #92400e;
   --badge-completed-bg: #dcfce7;
@@ -1343,8 +2077,9 @@ button { font-variant-emoji: text; }
 header { background: var(--surface); border-bottom: 1px solid var(--border); padding: 12px 20px; display: flex; align-items: center; gap: 12px; }
 header h1 { font-size: 1.05rem; font-weight: 600; color: var(--text-strong); flex: 1; }
 .conn-indicator { display: flex; align-items: center; gap: 5px; font-size: 0.72rem; color: var(--text-faint); }
-.conn-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--text-faint); }
+.conn-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--text-faint); }
 .conn-dot.live { background: #3fb950; animation: pulse 2s infinite; }
+.conn-dot.offline { background: #f85149; animation: pulse 1.4s infinite; }
 
 /* Tab bar */
 .tab-bar { background: var(--surface); border-bottom: 1px solid var(--border); padding: 0 20px; display: flex; align-items: flex-end; gap: 2px; overflow-x: auto; min-height: 40px; }
@@ -1444,7 +2179,7 @@ main { max-width: 1200px; margin: 0 auto; padding: 20px; display: grid; grid-tem
 .btn-delete:hover { background: #f85149; }
 .btn-delete:disabled { background: var(--surface-muted); color: var(--text-faint); cursor: not-allowed; }
 /* Dashboard view */
-.dashboard-layout { max-width: 1200px; margin: 0 auto; padding: 20px; }
+.dashboard-layout { grid-column: 1 / -1; padding: 20px 0; }
 .dash-stats { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; margin-bottom: 24px; }
 @media (max-width: 800px) { .dash-stats { grid-template-columns: repeat(3, 1fr); } }
 .dash-stat { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 16px 18px; }
@@ -1647,8 +2382,13 @@ input:checked + .toggle-slider:before { transform:translateX(20px); }
 [data-theme="light"] .stage-log-btn.active { background: #ede9fe; border-color: #4f46e566; color: #4338ca; }
 [data-theme="light"] .log-line { border-bottom-color: rgba(0,0,0,0.05); }
 [data-theme="light"] .conn-dot.live { background: #16a34a; }
+[data-theme="light"] .conn-dot.offline { background: #dc2626; }
 [data-theme="light"] .pipeline-graph-error { color: #dc2626; }
 [data-theme="light"] .dash-elapsed { color: #7c3aed; }
+[data-theme="light"] .dot-textarea { background: #ffffff; color: #18181b; }
+[data-theme="light"] .dot-textarea::placeholder { color: #71717a; }
+[data-theme="light"] .nl-textarea { background: #ffffff; color: #18181b; }
+[data-theme="light"] .nl-textarea::placeholder { color: #71717a; }
 </style>
 </head>
 <body>
@@ -1658,14 +2398,14 @@ input:checked + .toggle-slider:before { transform:translateX(20px); }
   <nav style="display:flex;gap:3px;">
     <button class="nav-btn active" id="navMonitor" onclick="showView('monitor')">Monitor</button>
     <button class="nav-btn" id="navCreate" onclick="showView('create')">&#10024; Create</button>
-    <button class="nav-btn" id="navArchived" onclick="showView('archived')">&#128193; Archived</button>
     <button class="nav-btn" onclick="openImportModal()">&#128229; Import</button>
+    <button class="nav-btn" id="navArchived" onclick="showView('archived')">&#128193; Archived</button>
     <button class="nav-btn" id="navSettings" onclick="showView('settings')">&#9881; Settings</button>
+    <button class="nav-btn" onclick="window.open('/docs','_blank')">&#128218; Docs</button>
   </nav>
   <button class="theme-toggle-btn" id="themeToggle" onclick="toggleTheme()" aria-label="Switch to light theme" title="Switch to light theme">&#9728;</button>
   <div class="conn-indicator">
-    <span id="connDot" class="conn-dot"></span>
-    <span id="connLabel">connecting</span>
+    <span id="connDot" class="conn-dot offline"></span>
   </div>
 </header>
 
@@ -2728,8 +3468,7 @@ function applyUpdate(data) {
 
 // ── SSE connection ───────────────────────────────────────────────────────────
 function setConnected(live) {
-  document.getElementById('connDot').className = 'conn-dot' + (live ? ' live' : '');
-  document.getElementById('connLabel').textContent = live ? 'live' : 'reconnecting';
+  document.getElementById('connDot').className = 'conn-dot' + (live ? ' live' : ' offline');
 }
 
 var sseDelay = 500;
@@ -3024,6 +3763,7 @@ function showView(name) {
   var isSettings = name === 'settings';
   if (!isCreate && iterateSourceId) exitIterateMode();
   if (isCreate && !iterateSourceId) clearCreateForm();
+  try { localStorage.setItem('activeView', name); } catch(e) {}
   document.getElementById('viewMonitor').style.display  = isMonitor  ? '' : 'none';
   document.getElementById('viewCreate').style.display   = isCreate   ? '' : 'none';
   document.getElementById('viewArchived').style.display = isArchived ? '' : 'none';
@@ -3173,6 +3913,9 @@ function initTheme() {
 document.addEventListener('DOMContentLoaded', function() {
   initTheme();
   loadSettings();
+  var savedView = '';
+  try { savedView = localStorage.getItem('activeView') || ''; } catch(e) {}
+  if (savedView === 'create' || savedView === 'archived' || savedView === 'settings') showView(savedView);
   document.getElementById('nlInput').addEventListener('input', function() {
     clearTimeout(genDebounce);
     clearInterval(genCountdown);
