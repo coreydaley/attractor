@@ -2488,7 +2488,7 @@ input:checked + .toggle-slider:before { transform:translateX(20px); }
 <body>
 
 <header>
-  <h1>&#9889; Corey's Attractor</h1>
+  <h1><a href="#" onclick="showView('monitor');selectTab(DASHBOARD_TAB_ID);return false;" style="color:inherit;text-decoration:none;">&#9889; Corey's Attractor</a></h1>
   <nav style="display:flex;gap:3px;">
     <button class="nav-btn active" id="navMonitor" onclick="showView('monitor')">Monitor</button>
     <button class="nav-btn" id="navCreate" onclick="showView('create')">&#10024; Create</button>
@@ -3227,7 +3227,7 @@ function updatePanel(id) {
         if (hasNodeId && s.hasLog) {
           html += '<button class="stage-log-btn' + (isLogOpen ? ' active' : '') + '" data-node-id="' + esc(s.nodeId) + '" data-stage-name="' + esc(s.name) + '">' + (isLogOpen ? '\u25bc\u2002Logs' : 'Logs') + '</button>';
         }
-        if (s.status === 'running' && s.startedAt) {
+        if ((s.status === 'running' || s.status === 'retrying' || s.status === 'diagnosing' || s.status === 'repairing') && s.startedAt) {
           var sec = Math.floor((Date.now() - s.startedAt) / 1000);
           var liveStr = sec < 60 ? sec + 's' : Math.floor(sec/60) + 'm ' + (sec%60) + 's';
           html += '<span class="stage-dur stage-live-dur" data-started-at="' + s.startedAt + '">' + liveStr + '</span>';
