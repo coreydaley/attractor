@@ -57,8 +57,8 @@ class CreateDotUploadTest : FunSpec({
         get("/").body() shouldContain "onDotFileSelected()"
     }
 
-    test("GET / contains Upload .dot button label") {
-        get("/").body() shouldContain "Upload .dot"
+    test("GET / contains upload .dot link label") {
+        get("/").body() shouldContain "upload an existing .dot file"
     }
 
     // ── Regression guard ──────────────────────────────────────────────────────

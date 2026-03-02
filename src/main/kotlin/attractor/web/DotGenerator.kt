@@ -220,6 +220,42 @@ Output ONLY the corrected raw DOT source — no markdown fences, no explanations
         return extractDotSource(fullText.toString())
     }
 
+    /**
+     * Stream a concise natural language description of an existing DOT pipeline.
+     * Calls [onDelta] for each text chunk as it arrives.
+     * Returns the final description string.
+     */
+    fun describeStream(dotSource: String, onDelta: (String) -> Unit): String {
+        val cfg = config()
+        val client = ClientProvider.getClient(cfg)
+        val (provider, model) = ModelSelection.selectModel(cfg)
+
+        val msgs = mutableListOf<Message>()
+        msgs.add(Message.user("""Given the following Attractor pipeline DOT source, write a concise natural language description of what this pipeline does. The description should be 1-3 sentences, specific about the workflow steps and overall goal, and suitable as a prompt to regenerate a similar pipeline.
+
+DOT source:
+$dotSource
+
+Output ONLY the description — no labels, no headers, no markdown formatting."""))
+
+        val request = Request(
+            model = model,
+            messages = msgs,
+            provider = provider,
+            maxTokens = 512,
+            temperature = 0.3
+        )
+
+        val fullText = StringBuilder()
+        for (event in client.stream(request)) {
+            if (event.type == StreamEventType.TEXT_DELTA && event.delta != null) {
+                onDelta(event.delta)
+                fullText.append(event.delta)
+            }
+        }
+        return fullText.toString().trim()
+    }
+
     /** Strip markdown code fences if the model wrapped its output. */
     private fun extractDotSource(text: String): String {
         val fenceRegex = Regex("""```(?:dot|DOT|graphviz)?\s*\n?([\s\S]+?)\n?```""")

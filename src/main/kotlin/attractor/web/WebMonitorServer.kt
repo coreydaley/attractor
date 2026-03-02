@@ -526,6 +526,58 @@ class WebMonitorServer(private val requestedPort: Int, private val registry: Pip
             }
         }
 
+        // ── Describe DOT pipeline in natural language (SSE) ─────────────────
+        httpServer.createContext("/api/describe-dot/stream") { ex ->
+            ex.responseHeaders.add("Access-Control-Allow-Origin", "*")
+            ex.responseHeaders.add("Access-Control-Allow-Methods", "POST, OPTIONS")
+            ex.responseHeaders.add("Access-Control-Allow-Headers", "Content-Type")
+            if (ex.requestMethod == "OPTIONS") {
+                ex.sendResponseHeaders(204, -1)
+                return@createContext
+            }
+            if (ex.requestMethod != "POST") {
+                ex.sendResponseHeaders(405, 0); ex.responseBody.close(); return@createContext
+            }
+            try {
+                val body = ex.requestBody.readBytes().toString(Charsets.UTF_8)
+                val dotSource = jsonField(body, "dotSource")
+                if (dotSource.isEmpty()) {
+                    val err = """{"error":"dotSource is required"}""".toByteArray()
+                    ex.responseHeaders.add("Content-Type", "application/json")
+                    ex.sendResponseHeaders(400, err.size.toLong())
+                    ex.responseBody.use { it.write(err) }
+                    return@createContext
+                }
+                ex.responseHeaders.add("Content-Type", "text/event-stream")
+                ex.responseHeaders.add("Cache-Control", "no-cache")
+                ex.responseHeaders.add("X-Accel-Buffering", "no")
+                ex.sendResponseHeaders(200, 0)
+                val out = ex.responseBody
+                try {
+                    dotGenerator.describeStream(dotSource) { delta ->
+                        val line = "data: {\"delta\":${js(delta)}}\n\n"
+                        out.write(line.toByteArray(Charsets.UTF_8))
+                        out.flush()
+                    }
+                    val done = "data: {\"done\":true}\n\n"
+                    out.write(done.toByteArray(Charsets.UTF_8))
+                    out.flush()
+                } catch (e: Exception) {
+                    val errLine = "data: {\"error\":${js(e.message ?: "unknown")}}\n\n"
+                    runCatching { out.write(errLine.toByteArray(Charsets.UTF_8)); out.flush() }
+                } finally {
+                    runCatching { out.close() }
+                }
+            } catch (e: Exception) {
+                runCatching {
+                    val err = """{"error":"${e.message?.replace("\"", "'")}"}""".toByteArray()
+                    ex.responseHeaders.add("Content-Type", "application/json")
+                    ex.sendResponseHeaders(500, err.size.toLong())
+                    ex.responseBody.use { it.write(err) }
+                }
+            }
+        }
+
         // ── Fix broken DOT via LLM (SSE) ────────────────────────────────────
         httpServer.createContext("/api/fix-dot") { ex ->
             ex.responseHeaders.add("Access-Control-Allow-Origin", "*")
@@ -2343,8 +2395,10 @@ main { max-width: 1200px; margin: 0 auto; padding: 20px; display: grid; grid-tem
 .run-btn:disabled { background: var(--surface-muted); color: var(--text-dim); cursor: not-allowed; }
 .btn-cancel-iterate { background: transparent; color: var(--text-muted); border: 1px solid var(--border); padding: 9px 16px; border-radius: 6px; font-size: 0.86rem; font-weight: 600; cursor: pointer; white-space: nowrap; }
 .btn-cancel-iterate:hover { background: var(--surface-muted); color: var(--text); border-color: var(--text-muted); }
-.dot-upload-btn { background: none; border: 1px solid var(--border); border-radius: 6px; color: var(--text-muted); font-size: 0.75rem; padding: 3px 10px; cursor: pointer; white-space: nowrap; }
-.dot-upload-btn:hover { border-color: var(--accent); color: var(--text); }
+.dot-upload-link { color: var(--accent); text-decoration: underline; cursor: pointer; font-size: 0.82rem; font-weight: 400; white-space: nowrap; }
+.dot-upload-link:hover { opacity: 0.8; }
+.dot-download-btn { background: var(--surface-muted); border: 1px solid var(--border); border-radius: 4px; color: var(--text-muted); font-size: 0.72rem; padding: 2px 8px; cursor: pointer; white-space: nowrap; }
+.dot-download-btn:hover { border-color: var(--accent); color: var(--accent); }
 
 /* DOT preview tabs */
 .preview-tabs { display: flex; gap: 2px; }
@@ -2454,7 +2508,11 @@ input:checked + .toggle-slider:before { transform:translateX(20px); }
   <div class="create-layout">
     <div class="create-col">
       <div class="create-section">
-        <h2>Describe your pipeline</h2>
+        <input type="file" id="dotFileInput" accept=".dot" style="display:none;" onchange="onDotFileSelected()">
+        <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:0;">
+          <h2>Describe your pipeline</h2>
+          <span style="font-size:0.82rem;color:var(--text-muted);">or <a class="dot-upload-link" onclick="document.getElementById('dotFileInput').click();return false;" href="#">upload an existing .dot file</a></span>
+        </div>
         <textarea id="nlInput" class="nl-textarea"
           placeholder="e.g. &quot;Write comprehensive unit tests for a Python web app, run them, fix any failures, then generate a coverage report&quot;&#10;&#10;Describe what you want in plain English. The pipeline will be generated automatically as you type."></textarea>
         <div class="create-options-row">
@@ -2466,14 +2524,13 @@ input:checked + .toggle-slider:before { transform:translateX(20px); }
         <div class="dot-header-row">
           <h2>Generated DOT</h2>
           <span class="gen-status" id="genStatus">Start typing to generate&hellip;</span>
+          <button class="dot-download-btn" onclick="downloadCreateDot()" title="Download .dot file">&#8675; Download .dot</button>
         </div>
         <textarea id="dotPreview" class="dot-textarea" spellcheck="false"
           placeholder="Generated pipeline DOT source will appear here&hellip;"></textarea>
-        <input type="file" id="dotFileInput" accept=".dot" style="display:none;" onchange="onDotFileSelected()">
         <div class="run-row">
           <span class="gen-hint" id="genHint">You can edit the DOT source before running.</span>
           <div style="display:flex;gap:8px;align-items:center;">
-            <button class="dot-upload-btn" onclick="document.getElementById('dotFileInput').click()" title="Load a .dot file from disk">&#128194;&ensp;Upload .dot</button>
             <button class="btn-cancel-iterate" id="cancelIterateBtn" style="display:none;" onclick="cancelIterate()">&#x2715;&ensp;Cancel</button>
             <button class="run-btn" id="runBtn" disabled onclick="runGenerated()">&#9654;&ensp;Run Pipeline</button>
           </div>
@@ -2955,6 +3012,7 @@ function buildPanel(id) {
     +     '<button class="right-tab-btn" id="rightTabLog" onclick="switchRightPanel(\'log\')">Live Log</button>'
     +     '<button class="right-tab-btn active" id="rightTabGraph" onclick="switchRightPanel(\'graph\')">Graph</button>'
     +     '<div style="flex:1;"></div>'
+    +     '<button class="dot-download-btn" onclick="downloadMonitorDot()" title="Download .dot file" style="margin-right:6px;">&#8675; Download .dot</button>'
     +     '<div id="graphZoomControls" style="display:flex;flex-direction:row;align-items:center;gap:3px;">'
     +       '<button class="graph-zoom-btn" title="Zoom out (or Ctrl+scroll)" onclick="zoomMonitor(-1)">&#x2212;</button>'
     +       '<span class="graph-zoom-label" id="monitorZoomLabel">100%</span>'
@@ -3610,6 +3668,25 @@ connectSSE();
 // ── Iterate mode state ───────────────────────────────────────────────────────
 var iterateSourceId = null;
 
+// ── DOT download ──────────────────────────────────────────────────────────────
+function downloadDot(content, filename) {
+  if (!content) return;
+  var blob = new Blob([content], { type: 'text/plain' });
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement('a');
+  a.href = url; a.download = filename; a.click();
+  URL.revokeObjectURL(url);
+}
+function downloadCreateDot() {
+  var content = document.getElementById('dotPreview').value.trim();
+  downloadDot(content, uploadedFileName || 'pipeline.dot');
+}
+function downloadMonitorDot() {
+  var p = selectedId && pipelines[selectedId];
+  if (!p || !p.dotSource) return;
+  downloadDot(p.dotSource, p.fileName || 'pipeline.dot');
+}
+
 // ── DOT file upload state ─────────────────────────────────────────────────────
 var uploadedFileName = null;
 
@@ -4036,12 +4113,53 @@ function onDotFileSelected() {
       setGenStatus('ok', 'Loaded: ' + file.name);
       renderRetries = 0;
       renderGraph();
+      if (dotSource.trim()) describeUploadedDot(dotSource);
     }
   };
   reader.onerror = function() {
     setGenStatus('error', 'Could not read file.');
   };
   reader.readAsText(file, 'UTF-8');
+}
+
+function describeUploadedDot(dotSource) {
+  var nlInput = document.getElementById('nlInput');
+  if (!nlInput) return;
+  fetch('/api/describe-dot/stream', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ dotSource: dotSource })
+  })
+  .then(function(resp) {
+    if (!resp.ok) return;
+    var reader = resp.body.getReader();
+    var decoder = new TextDecoder();
+    var buf = '';
+    var finished = false;
+    function read() {
+      reader.read().then(function(result) {
+        if (result.done) return;
+        buf += decoder.decode(result.value, { stream: true });
+        var lines = buf.split('\n');
+        buf = lines.pop();
+        for (var i = 0; i < lines.length; i++) {
+          var line = lines[i];
+          if (!line.startsWith('data: ')) continue;
+          try {
+            var evt = JSON.parse(line.slice(6));
+            if (evt.delta !== undefined) {
+              nlInput.value += evt.delta;
+            } else if (evt.done || evt.error) {
+              finished = true;
+            }
+          } catch (x) {}
+        }
+        if (!finished) read();
+      }).catch(function() {});
+    }
+    read();
+  })
+  .catch(function() {});
 }
 
 function generateDot(prompt) {
