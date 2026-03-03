@@ -2230,6 +2230,8 @@ header h1 { font-size: 1.05rem; font-weight: 600; color: var(--text-strong); fle
 .tab:hover { color: var(--text); background: var(--surface-raised); }
 .tab.active { background: var(--bg); border-color: var(--border); color: var(--text-strong); }
 .tab-empty { padding: 10px 16px; font-size: 0.78rem; color: var(--text-faint); font-style: italic; align-self: center; }
+.tab-close { margin-left: 4px; opacity: 0.45; font-size: 0.85rem; line-height: 1; padding: 1px 3px; border-radius: 3px; cursor: pointer; flex-shrink: 0; }
+.tab-close:hover { opacity: 1; background: rgba(128,128,128,0.25); }
 
 /* Badge */
 .badge { display: inline-flex; align-items: center; gap: 5px; padding: 2px 7px; border-radius: 10px; font-size: 0.65rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; }
@@ -2787,6 +2789,10 @@ var DASHBOARD_TAB_ID = '__dashboard__';
 var pipelines = {};     // id -> {id, fileName, state}
 var _storedTab = localStorage.getItem('attractor-selected-tab');
 var selectedId = _storedTab || DASHBOARD_TAB_ID;
+var _closedTabsRaw; try { _closedTabsRaw = localStorage.getItem('attractor-closed-tabs'); } catch(e){}
+var closedTabs = {};
+if (_closedTabsRaw) { try { var _cta = JSON.parse(_closedTabsRaw); if (Array.isArray(_cta)) _cta.forEach(function(id){ closedTabs[id] = true; }); } catch(e){} }
+if (_storedTab && closedTabs[_storedTab]) { selectedId = DASHBOARD_TAB_ID; try { localStorage.setItem('attractor-selected-tab', DASHBOARD_TAB_ID); } catch(e){} }
 var panelBuiltFor = null;  // which id the main panel DOM was built for
 var logRenderedCount = {}; // id -> number of log lines already appended to DOM
 var elapsedTimer = null;   // interval that ticks the elapsed counter every second
@@ -3000,12 +3006,30 @@ function renderDashboard() {
 }
 
 // ── Tabs ────────────────────────────────────────────────────────────────────
+function saveClosedTabs() {
+  try { localStorage.setItem('attractor-closed-tabs', JSON.stringify(Object.keys(closedTabs))); } catch(e){}
+}
+
+function closeTab(id, event) {
+  event.stopPropagation();
+  closedTabs[id] = true;
+  saveClosedTabs();
+  delete logRenderedCount[id]; delete graphSigFor[id]; delete graphRenderGen[id];
+  if (selectedId === id) {
+    selectedId = DASHBOARD_TAB_ID;
+    try { localStorage.setItem('attractor-selected-tab', DASHBOARD_TAB_ID); } catch(e){}
+    panelBuiltFor = null;
+  }
+  renderTabs();
+  renderMain();
+}
+
 function renderTabs() {
   var bar = document.getElementById('tabBar');
   var ids = Object.keys(pipelines);
-  // Show non-archived runs, plus the selected run even if archived
+  // Show non-archived runs, plus the selected run even if archived; never show closed tabs
   var visibleIds = ids.filter(function(id) {
-    return !pipelines[id].state.archived || id === selectedId;
+    return (!pipelines[id].state.archived || id === selectedId) && !closedTabs[id];
   });
   var dashActive = selectedId === DASHBOARD_TAB_ID ? ' active' : '';
   var html = '<div class="tab dash-tab' + dashActive + '" onclick="selectTab(DASHBOARD_TAB_ID)">&#128202; Dashboard</div>';
@@ -3020,12 +3044,14 @@ function renderTabs() {
     html += '<div class="tab' + active + archivedCls + '" onclick="selectTab(\'' + id + '\')">'
          +  esc(name)
          +  ' <span class="badge badge-' + esc(status) + '">' + esc(status) + '</span>'
+         +  ' <span class="tab-close" onclick="closeTab(' + JSON.stringify(id) + ', event)" title="Close tab">&times;</span>'
          +  '</div>';
   }
   bar.innerHTML = html;
 }
 
 function selectTab(id) {
+  if (closedTabs[id]) { delete closedTabs[id]; saveClosedTabs(); }
   localStorage.setItem('attractor-selected-tab', id);
   stopDashboardTimer();
   selectedId = id;
@@ -3680,7 +3706,7 @@ function applyUpdate(data) {
     var prevStatus = pipelines[key] && pipelines[key].state && pipelines[key].state.status;
     pipelines[key] = p;
     incoming[key] = true;
-    if (isNew && selectedId === DASHBOARD_TAB_ID && _storedTab === null) selectedId = key;
+    if (isNew && selectedId === DASHBOARD_TAB_ID && _storedTab === null && !closedTabs[key]) selectedId = key;
     // Fireworks when the viewed pipeline transitions to completed
     if (!isNew && prevStatus !== 'completed' && p.state && p.state.status === 'completed' && key === selectedId) {
       var monitorView = document.getElementById('viewMonitor');
@@ -3691,6 +3717,7 @@ function applyUpdate(data) {
   for (var existingKey in pipelines) {
     if (!incoming[existingKey]) {
       delete pipelines[existingKey];
+      if (closedTabs[existingKey]) { delete closedTabs[existingKey]; saveClosedTabs(); }
       if (selectedId === existingKey) {
         selectedId = DASHBOARD_TAB_ID;
         panelBuiltFor = null;

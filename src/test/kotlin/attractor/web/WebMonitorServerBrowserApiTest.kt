@@ -159,4 +159,26 @@ class WebMonitorServerBrowserApiTest : FunSpec({
         val resp = get("/docs")
         resp.statusCode() shouldBe 200
     }
+
+    // ── Sprint 016: Closeable tabs markup presence ────────────────────────────
+
+    test("GET / body contains closeTab JS function (closeable tabs)") {
+        val resp = get("/")
+        resp.body() shouldContain "closeTab"
+    }
+
+    test("GET / body contains tab-close CSS class (closeable tabs)") {
+        val resp = get("/")
+        resp.body() shouldContain "tab-close"
+    }
+
+    test("GET / body contains attractor-closed-tabs localStorage key (closeable tabs)") {
+        val resp = get("/")
+        resp.body() shouldContain "attractor-closed-tabs"
+    }
+
+    test("GET / body contains saveClosedTabs helper function (closeable tabs)") {
+        val resp = get("/")
+        resp.body() shouldContain "saveClosedTabs"
+    }
 })
