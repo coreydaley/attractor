@@ -72,6 +72,17 @@ class PipelineRegistry(private val store: RunStore) {
         return true
     }
 
+    /** Archive all runs belonging to the given familyId. Returns true if at least one was archived. */
+    fun archiveFamily(familyId: String): Boolean {
+        val members = entries.values.filter { it.familyId == familyId }
+        if (members.isEmpty()) return false
+        members.forEach { entry ->
+            entry.state.archived.set(true)
+            store.archiveRun(entry.id)
+        }
+        return true
+    }
+
     fun unarchive(id: String): Boolean {
         val entry = entries[id] ?: return false
         entry.state.archived.set(false)
@@ -88,6 +99,21 @@ class PipelineRegistry(private val store: RunStore) {
         futures.remove(id)
         store.deleteRun(id)
         return Pair(true, logsRoot)
+    }
+
+    /** Permanently removes all runs in a family from memory and DB. Returns (success, list of logsRoots). */
+    fun deleteFamily(familyId: String): Pair<Boolean, List<String>> {
+        val members = entries.values.filter { it.familyId == familyId }
+        if (members.isEmpty()) return Pair(false, emptyList())
+        val logsRoots = mutableListOf<String>()
+        members.forEach { entry ->
+            entries.remove(entry.id)
+            orderedIds.remove(entry.id)
+            futures.remove(entry.id)
+            store.deleteRun(entry.id)
+            if (entry.logsRoot.isNotBlank()) logsRoots.add(entry.logsRoot)
+        }
+        return Pair(true, logsRoots)
     }
 
     fun get(id: String): PipelineEntry? = entries[id]

@@ -1,6 +1,7 @@
 package attractor
 
-import attractor.db.RunStore
+import attractor.db.DatabaseConfig
+import attractor.db.RunStoreFactory
 import attractor.web.PipelineRegistry
 import attractor.web.WebMonitorServer
 
@@ -10,7 +11,9 @@ fun main(args: Array<String>) {
     val parsed = parseArgs(args)
     val webPort = parsed.webPort ?: DEFAULT_WEB_PORT
 
-    val store = RunStore("attractor.db")
+    val dbConfig = DatabaseConfig.fromEnv()
+    println("[attractor] Database: ${dbConfig.displayName}")
+    val store = RunStoreFactory.create(dbConfig)
     val registry = PipelineRegistry(store)
     val webServer = WebMonitorServer(webPort, registry, store)
     registry.loadFromDB { webServer.broadcastUpdate() }

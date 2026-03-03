@@ -1,6 +1,7 @@
 package attractor.web
 
 import attractor.db.RunStore
+import attractor.db.SqliteRunStore
 import com.sun.net.httpserver.HttpServer
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
@@ -25,7 +26,7 @@ class SettingsEndpointsTest : FunSpec({
 
     beforeSpec {
         tmpDb = Files.createTempFile("settings-test-", ".db").toFile()
-        val s = RunStore(tmpDb!!.absolutePath)
+        val s = SqliteRunStore(tmpDb!!.absolutePath)
         store = s
         val r = PipelineRegistry(s)
         val sseClients = CopyOnWriteArrayList<RestApiRouter.RestSseClient>()

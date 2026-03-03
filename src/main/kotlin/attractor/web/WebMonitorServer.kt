@@ -290,7 +290,11 @@ class WebMonitorServer(private val requestedPort: Int, private val registry: Pip
             try {
                 val body = ex.requestBody.readBytes().toString(Charsets.UTF_8)
                 val id = jsonField(body, "id")
-                val archived = registry.archive(id)
+                val familyId = jsonField(body, "familyId")
+                val archived = when {
+                    familyId.isNotBlank() -> registry.archiveFamily(familyId)
+                    else -> registry.archive(id)
+                }
                 if (archived) broadcastUpdate()
                 val resp = """{"archived":$archived}""".toByteArray()
                 ex.responseHeaders.add("Content-Type", "application/json")
@@ -403,32 +407,54 @@ class WebMonitorServer(private val requestedPort: Int, private val registry: Pip
             try {
                 val body = ex.requestBody.readBytes().toString(Charsets.UTF_8)
                 val id = jsonField(body, "id")
-                val entry = registry.get(id)
-                if (entry == null) {
-                    val err = """{"error":"Pipeline not found"}""".toByteArray()
+                val familyId = jsonField(body, "familyId")
+                if (familyId.isNotBlank()) {
+                    // Family delete: refuse if any member is running/paused
+                    val members = registry.getAll().filter { it.familyId == familyId }
+                    val blocked = members.any { it.state.status.get().let { s -> s == "running" || s == "paused" } }
+                    if (blocked) {
+                        val err = """{"error":"Cannot delete a running or paused pipeline"}""".toByteArray()
+                        ex.responseHeaders.add("Content-Type", "application/json")
+                        ex.sendResponseHeaders(400, err.size.toLong())
+                        ex.responseBody.use { it.write(err) }
+                        return@createContext
+                    }
+                    val (deleted, logsRoots) = registry.deleteFamily(familyId)
+                    logsRoots.forEach { lr -> runCatching { java.io.File(lr).deleteRecursively() } }
+                    broadcastUpdate()
+                    println("[attractor] Pipeline family deleted: $familyId (${logsRoots.size} runs)")
+                    val resp = """{"deleted":$deleted}""".toByteArray()
                     ex.responseHeaders.add("Content-Type", "application/json")
-                    ex.sendResponseHeaders(404, err.size.toLong())
-                    ex.responseBody.use { it.write(err) }
-                    return@createContext
-                }
-                val status = entry.state.status.get()
-                if (status == "running" || status == "paused") {
-                    val err = """{"error":"Cannot delete a running or paused pipeline"}""".toByteArray()
+                    ex.sendResponseHeaders(200, resp.size.toLong())
+                    ex.responseBody.use { it.write(resp) }
+                } else {
+                    val entry = registry.get(id)
+                    if (entry == null) {
+                        val err = """{"error":"Pipeline not found"}""".toByteArray()
+                        ex.responseHeaders.add("Content-Type", "application/json")
+                        ex.sendResponseHeaders(404, err.size.toLong())
+                        ex.responseBody.use { it.write(err) }
+                        return@createContext
+                    }
+                    val status = entry.state.status.get()
+                    if (status == "running" || status == "paused") {
+                        val err = """{"error":"Cannot delete a running or paused pipeline"}""".toByteArray()
+                        ex.responseHeaders.add("Content-Type", "application/json")
+                        ex.sendResponseHeaders(400, err.size.toLong())
+                        ex.responseBody.use { it.write(err) }
+                        return@createContext
+                    }
+                    val (deleted, logsRoot) = registry.delete(id)
+                    if (deleted && logsRoot.isNotBlank()) {
+                        runCatching { java.io.File(logsRoot).deleteRecursively() }
+                    }
+                    broadcastUpdate()
+                    println("[attractor] Pipeline deleted: $id (logsRoot=${logsRoot.ifBlank { "none" }})")
+                    val resp = """{"deleted":$deleted}""".toByteArray()
                     ex.responseHeaders.add("Content-Type", "application/json")
-                    ex.sendResponseHeaders(400, err.size.toLong())
-                    ex.responseBody.use { it.write(err) }
-                    return@createContext
+                    ex.sendResponseHeaders(200, resp.size.toLong())
+                    ex.responseBody.use { it.write(resp) }
                 }
-                val (deleted, logsRoot) = registry.delete(id)
-                if (deleted && logsRoot.isNotBlank()) {
-                    runCatching { java.io.File(logsRoot).deleteRecursively() }
-                }
-                broadcastUpdate()
-                println("[attractor] Pipeline deleted: $id (logsRoot=${logsRoot.ifBlank { "none" }})")
-                val resp = """{"deleted":$deleted}""".toByteArray()
-                ex.responseHeaders.add("Content-Type", "application/json")
-                ex.sendResponseHeaders(200, resp.size.toLong())
-                ex.responseBody.use { it.write(resp) }
             } catch (e: Exception) {
                 val err = """{"error":"${e.message?.replace("\"", "'")}"}""".toByteArray()
                 ex.responseHeaders.add("Content-Type", "application/json")
@@ -1465,6 +1491,34 @@ java -jar coreys-attractor-*.jar --web-port 7070</code></pre>
 </ul>
 <div class="tip-box">&#9432; <strong>Export vs Download Artifacts:</strong> Export saves the pipeline <em>definition</em> (DOT graph + metadata) for re-importing. Download Artifacts saves the pipeline <em>outputs</em> (files, logs, workspace). They serve different purposes.</div>
 
+<h2>Database Configuration</h2>
+<p>Attractor stores pipeline run history in a database. By default it uses a local SQLite file (<code>attractor.db</code>). Set <code>ATTRACTOR_DB_*</code> environment variables at startup to switch to MySQL or PostgreSQL.</p>
+<p>The active backend is shown in the startup log: <code>[attractor] Database: SQLite (attractor.db)</code></p>
+<h3>Connection string (ATTRACTOR_DB_URL)</h3>
+<p>Set <code>ATTRACTOR_DB_URL</code> to a JDBC URL. Simplified URLs without the <code>jdbc:</code> prefix are also accepted:</p>
+<pre><code># PostgreSQL (JDBC form)
+export ATTRACTOR_DB_URL="jdbc:postgresql://localhost:5432/attractor?user=app&amp;password=secret"
+# PostgreSQL (simplified)
+export ATTRACTOR_DB_URL="postgres://app:secret@localhost:5432/attractor"
+
+# MySQL (JDBC form)
+export ATTRACTOR_DB_URL="jdbc:mysql://localhost:3306/attractor?user=app&amp;password=secret"
+# MySQL (simplified)
+export ATTRACTOR_DB_URL="mysql://app:secret@localhost:3306/attractor"</code></pre>
+<h3>Individual parameters</h3>
+<table>
+<tr><th>Variable</th><th>Default</th><th>Description</th></tr>
+<tr><td><code>ATTRACTOR_DB_TYPE</code></td><td><code>sqlite</code></td><td>Backend: <code>sqlite</code>, <code>mysql</code>, or <code>postgresql</code> (also <code>postgres</code>)</td></tr>
+<tr><td><code>ATTRACTOR_DB_HOST</code></td><td><code>localhost</code></td><td>Database server hostname</td></tr>
+<tr><td><code>ATTRACTOR_DB_PORT</code></td><td><code>3306</code> / <code>5432</code></td><td>Port (default depends on type)</td></tr>
+<tr><td><code>ATTRACTOR_DB_NAME</code></td><td><code>attractor.db</code> / <code>attractor</code></td><td>Database name or SQLite file path</td></tr>
+<tr><td><code>ATTRACTOR_DB_USER</code></td><td>—</td><td>Database username</td></tr>
+<tr><td><code>ATTRACTOR_DB_PASSWORD</code></td><td>—</td><td>Database password (never logged)</td></tr>
+<tr><td><code>ATTRACTOR_DB_PARAMS</code></td><td>—</td><td>Extra JDBC query params, e.g. <code>sslmode=require</code></td></tr>
+</table>
+<div class="tip-box">&#128274; <strong>Security:</strong> Use environment variables for credentials, not command-line arguments. The startup log always shows a credential-free display name. Use <code>ATTRACTOR_DB_PARAMS=sslmode=require</code> for encrypted connections in production.</div>
+<p>Attractor creates the database schema automatically on first start. A misconfigured <code>ATTRACTOR_DB_TYPE</code> causes a clear startup error and clean exit.</p>
+
 <h2>Settings</h2>
 <table>
 <tr><th>Setting</th><th>Description</th></tr>
@@ -2213,8 +2267,10 @@ main { max-width: 1200px; margin: 0 auto; padding: 20px; display: grid; grid-tem
 .stage-row { display: flex; align-items: center; gap: 8px; padding: 9px 13px; }
 .stage-icon { font-size: 0.95rem; width: 20px; text-align: center; flex-shrink: 0; }
 .stage-name { flex: 1; font-size: 0.88rem; }
+.stage-name.not-run { text-decoration: line-through; color: var(--text-faint); }
 .stage-logs-slot { width: 62px; flex-shrink: 0; display: flex; justify-content: flex-end; align-items: center; }
 .stage-dur  { width: 48px; flex-shrink: 0; text-align: right; font-size: 0.72rem; color: var(--text-faint); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.stage-na   { font-size: 0.72rem; color: var(--text-faint); }
 .stage-total { width: auto; flex-shrink: 0; text-align: right; font-size: 0.72rem; color: var(--text-muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
 .stage-err  { font-size: 0.72rem; color: #f85149; white-space: nowrap; max-width: 120px; overflow: hidden; text-overflow: ellipsis; }
 .stage-err-btn { background: none; border: none; padding: 0 0 0 6px; cursor: pointer; color: #f85149; font-size: 0.88rem; line-height: 1; vertical-align: middle; opacity: 0.85; }
@@ -2293,6 +2349,12 @@ main { max-width: 1200px; margin: 0 auto; padding: 20px; display: grid; grid-tem
 .dash-card-body { padding: 14px 16px; flex: 1; display: flex; flex-direction: column; gap: 10px; }
 .dash-card-title-row { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .dash-card-name { font-size: 0.92rem; font-weight: 600; color: var(--text-strong); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+.dash-card-actions { display: flex; gap: 4px; flex-shrink: 0; }
+.dash-card-action-btn { border-radius: 4px; cursor: pointer; font-size: 0.78rem; font-weight: 600; width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; padding: 0; line-height: 1; flex-shrink: 0; border: none; }
+.dash-card-action-btn.arch { background: var(--surface-muted); color: var(--text-muted); }
+.dash-card-action-btn.arch:hover { background: var(--border); color: var(--text); }
+.dash-card-action-btn.del { background: #da3633; color: #fff; }
+.dash-card-action-btn.del:hover { background: #f85149; }
 .dash-sim-badge { font-size: 0.6rem; background: #1c2d3e; color: #79c0ff; padding: 2px 6px; border-radius: 3px; white-space: nowrap; flex-shrink: 0; font-weight: 600; letter-spacing: 0.04em; }
 .dash-status-row { display: flex; align-items: center; justify-content: space-between; }
 .dash-elapsed { font-family: 'Consolas','Cascadia Code',monospace; font-size: 0.88rem; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--text-muted); }
@@ -2420,7 +2482,7 @@ main { max-width: 1200px; margin: 0 auto; padding: 20px; display: grid; grid-tem
 .preview-tab { background: transparent; border: none; color: var(--text-muted); padding: 4px 11px; border-radius: 5px; font-size: 0.75rem; font-weight: 600; cursor: pointer; }
 .preview-tab:hover { background: var(--surface-muted); color: var(--text); }
 .preview-tab.active { background: var(--surface-muted); color: var(--text-strong); }
-.graph-preview { flex: 1; min-height: 200px; background: var(--graph-bg); border: 1px solid var(--border); border-radius: 8px; overflow: auto; display: flex; align-items: flex-start; position: relative; }
+.graph-preview { flex: 1; min-height: 200px; background: var(--graph-bg); border: 1px solid var(--border); border-radius: 8px; overflow: auto; display: flex; align-items: flex-start; position: relative; cursor: grab; }
 .graph-content { padding: 20px; width: 100%; display: flex; align-items: center; justify-content: center; min-height: 200px; box-sizing: border-box; }
 .graph-content svg { max-width: 100%; height: auto; display: block; }
 .graph-placeholder { color: #aaa; font-size: 0.82rem; text-align: center; }
@@ -2434,7 +2496,7 @@ main { max-width: 1200px; margin: 0 auto; padding: 20px; display: grid; grid-tem
 .right-tab-btn.active { background: var(--surface-muted); color: var(--text-strong); }
 
 /* Pipeline graph panel (monitor view) */
-.pipeline-graph-view { overflow: auto; flex: 1; min-height: 0; background: var(--graph-bg); border-radius: 4px; }
+.pipeline-graph-view { overflow: auto; flex: 1; min-height: 0; background: var(--graph-bg); border-radius: 4px; cursor: grab; }
 #rightPanel { display: flex; flex-direction: column; }
 .pipeline-graph-view > div { width: 100%; }
 .pipeline-graph-view svg { display: block; width: 100%; height: auto; }
@@ -2907,11 +2969,18 @@ function renderDashboard() {
     }
     var stageCountStr = totalStages > 0 ? doneStages + '\u2009/\u2009' + totalStages + ' stages' : '';
     var simBadge = p.simulate ? '<span class="dash-sim-badge">SIM</span>' : '';
+    var isTerminal = (status === 'completed' || status === 'failed' || status === 'cancelled');
+    var cardActions = isTerminal
+      ? '<div class="dash-card-actions">'
+        + '<button class="dash-card-action-btn arch" onclick="dashCardArchive(\'' + id + '\',event)" title="Archive">&#8595;</button>'
+        + '<button class="dash-card-action-btn del" onclick="dashCardDelete(\'' + id + '\',event)" title="Delete">&#10005;</button>'
+        + '</div>'
+      : '';
 
     cards += '<div class="dash-card" onclick="selectTab(\'' + id + '\')">'
       + '<div class="dash-card-top ' + sc + '"></div>'
       + '<div class="dash-card-body">'
-      +   '<div class="dash-card-title-row"><span class="dash-card-name">' + name + '</span>' + simBadge + '</div>'
+      +   '<div class="dash-card-title-row"><span class="dash-card-name">' + name + '</span>' + simBadge + cardActions + '</div>'
       +   '<div class="dash-status-row">'
       +     '<span class="badge badge-' + esc(status) + '">' + esc(status) + '</span>'
       +     '<span class="' + elapsedClass + '" id="dash-elapsed-' + id + '" data-pipeline-id="' + id + '">' + elapsedStr + '</span>'
@@ -3024,8 +3093,8 @@ function buildPanel(id) {
     + '</div>'
     + '<div class="card" id="rightPanel">'
     +   '<div class="right-panel-tabs">'
-    +     '<button class="right-tab-btn" id="rightTabLog" onclick="switchRightPanel(\'log\')">Live Log</button>'
     +     '<button class="right-tab-btn active" id="rightTabGraph" onclick="switchRightPanel(\'graph\')">Graph</button>'
+    +     '<button class="right-tab-btn" id="rightTabLog" onclick="switchRightPanel(\'log\')">Live Log</button>'
     +   '</div>'
     +   '<div id="graphToolbarRow" class="graph-toolbar-row">'
     +     '<button class="dot-download-btn" onclick="downloadMonitorDot()" title="Download .dot file">&#8675;</button>'
@@ -3044,6 +3113,7 @@ function buildPanel(id) {
     gvEl.addEventListener('wheel', function(e) {
       if (e.ctrlKey || e.metaKey) { e.preventDefault(); zoomMonitor(e.deltaY < 0 ? 1 : -1); }
     }, { passive: false });
+    initDragPan(gvEl);
   }
   elapsedTimer = setInterval(tickElapsed, 1000);
   // Reset version history state on tab switch
@@ -3222,13 +3292,15 @@ function updatePanel(id) {
         html += '<div class="stage ' + esc(s.status) + (isLogOpen ? ' log-open' : '') + '" data-node-id="' + esc(s.nodeId) + '">'
           + '<div class="stage-row">'
           + '<span class="stage-icon ' + (s.status === 'running' || s.status === 'diagnosing' || s.status === 'repairing' ? 'pulse' : '') + '">' + icon + '</span>'
-          + '<span class="stage-name">' + esc(s.name) + '</span>';
+          + '<span class="stage-name' + (s.status === 'pending' ? ' not-run' : '') + '">' + esc(s.name) + '</span>';
         if (s.error) {
           html += '<button class="stage-err-btn" title="Click for full error details" data-pos="' + i + '">&#9888;</button>';
         }
         html += '<span class="stage-logs-slot">';
         if (hasNodeId && s.hasLog) {
           html += '<button class="stage-log-btn' + (isLogOpen ? ' active' : '') + '" data-node-id="' + esc(s.nodeId) + '" data-stage-name="' + esc(s.name) + '">' + (isLogOpen ? '\u25bc\u2002Logs' : 'Logs') + '</button>';
+        } else {
+          html += '<span class="stage-na">n/a</span>';
         }
         html += '</span>';
         var isLastStage = (i === d.stages.length - 1);
@@ -3250,6 +3322,8 @@ function updatePanel(id) {
             html += '<span class="stage-live-dur" data-started-at="' + s.startedAt + '">' + liveStr + '</span>';
           } else if (s.durationMs != null) {
             html += fmtDur(s.durationMs);
+          } else {
+            html += 'n/a';
           }
           html += '</span>';
         }
@@ -4167,6 +4241,7 @@ document.addEventListener('DOMContentLoaded', function() {
     gpEl.addEventListener('wheel', function(e) {
       if (e.ctrlKey || e.metaKey) { e.preventDefault(); zoomCreate(e.deltaY < 0 ? 1 : -1); }
     }, { passive: false });
+    initDragPan(gpEl);
   }
 });
 
@@ -4537,6 +4612,34 @@ function resetMonitorZoom() {
   applyMonitorZoom();
 }
 
+// ── Graph drag-to-pan ─────────────────────────────────────────────────────────
+function initDragPan(el) {
+  var dragging = false;
+  var startX, startY, scrollLeft, scrollTop;
+  el.addEventListener('mousedown', function(e) {
+    if (e.target.closest('button, a, input, select')) return;
+    dragging = true;
+    startX = e.clientX;
+    startY = e.clientY;
+    scrollLeft = el.scrollLeft;
+    scrollTop = el.scrollTop;
+    el.style.cursor = 'grabbing';
+    e.preventDefault();
+  });
+  el.addEventListener('mousemove', function(e) {
+    if (!dragging) return;
+    el.scrollLeft = scrollLeft - (e.clientX - startX);
+    el.scrollTop  = scrollTop  - (e.clientY - startY);
+  });
+  function stopDrag() {
+    if (!dragging) return;
+    dragging = false;
+    el.style.cursor = '';
+  }
+  el.addEventListener('mouseup', stopDrag);
+  el.addEventListener('mouseleave', stopDrag);
+}
+
 function downloadArtifacts() {
   if (!selectedId) return;
   var a = document.createElement('a');
@@ -4790,9 +4893,11 @@ function unarchiveFromList(id) {
 
 // ── Delete pipeline run ───────────────────────────────────────────────────────
 var pendingDeleteId = null;
+var pendingDeleteFamily = false;
 
 function showDeleteConfirm(id) {
   pendingDeleteId = id;
+  pendingDeleteFamily = false;
   var p = pipelines[id];
   var name = (p && p.state && p.state.pipeline) ? p.state.pipeline : (p ? p.fileName : id);
   var nameEl = document.getElementById('deleteModalName');
@@ -4805,34 +4910,76 @@ function showDeleteConfirm(id) {
 
 function closeDeleteModal() {
   pendingDeleteId = null;
+  pendingDeleteFamily = false;
   var modal = document.getElementById('deleteModal');
   if (modal) modal.classList.add('hidden');
+}
+
+// ── Dashboard card quick-actions ─────────────────────────────────────────────
+function dashCardArchive(tabKey, evt) {
+  evt.stopPropagation();
+  var p = pipelines[tabKey];
+  if (!p) return;
+  // If this run belongs to a family, archive all siblings; otherwise archive by run ID.
+  var familyId = p.familyId;
+  var runId = p.id || tabKey;
+  var reqBody = familyId ? { familyId: familyId } : { id: runId };
+  fetch('/api/archive', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(reqBody) })
+    .then(function(r) { return r.json(); })
+    .then(function(resp) {
+      if (resp.archived) {
+        if (pipelines[tabKey] && pipelines[tabKey].state) pipelines[tabKey].state.archived = true;
+        if (selectedId === tabKey) {
+          var ids = Object.keys(pipelines);
+          var nextId = null;
+          for (var i = 0; i < ids.length; i++) {
+            if (ids[i] !== tabKey && !(pipelines[ids[i]].state && pipelines[ids[i]].state.archived)) nextId = ids[i];
+          }
+          selectedId = nextId || DASHBOARD_TAB_ID;
+          panelBuiltFor = null;
+        }
+        renderTabs();
+        renderMain();
+        kickPoll();
+      }
+    });
+}
+
+function dashCardDelete(tabKey, evt) {
+  evt.stopPropagation();
+  pendingDeleteFamily = true;
+  showDeleteConfirm(tabKey);
 }
 
 function executeDelete() {
   var id = pendingDeleteId;
   if (!id) return;
+  // Resolve tab key
+  var tabKey = id;
+  for (var k in pipelines) {
+    if (k === id || (pipelines[k] && pipelines[k].id === id)) { tabKey = k; break; }
+  }
+  var p = pipelines[tabKey];
+  var familyId = p && p.familyId;
+  var runId = (p && p.id) || tabKey;
+  // Dashboard card deletes the whole family; run-page delete removes only the single run.
+  var reqBody = (pendingDeleteFamily && familyId) ? { familyId: familyId } : { id: runId };
   var btn = document.getElementById('deleteConfirmBtn');
   if (btn) { btn.disabled = true; btn.textContent = 'Deleting\u2026'; }
   fetch('/api/delete', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ id: id })
+    body: JSON.stringify(reqBody)
   })
   .then(function(r) { return r.json(); })
   .then(function(resp) {
     closeDeleteModal();
     if (resp.deleted) {
-      // Find the family tab key that contains this run (id may be a run ID inside a family tab).
-      var tabKey = id;
-      for (var k in pipelines) {
-        if (k === id || (pipelines[k] && pipelines[k].id === id)) { tabKey = k; break; }
-      }
       // Pick next visible tab before removing from local state
-      var ids = Object.keys(pipelines);
+      var allIds = Object.keys(pipelines);
       var nextId = null;
-      for (var i = 0; i < ids.length; i++) {
-        if (ids[i] !== tabKey) nextId = ids[i];
+      for (var i = 0; i < allIds.length; i++) {
+        if (allIds[i] !== tabKey) nextId = allIds[i];
       }
       delete pipelines[tabKey];
       if (selectedId === tabKey) {

@@ -20,7 +20,7 @@ A DOT-based pipeline runner that orchestrates multi-stage AI workflows. You defi
 - **Parallel execution** — fan-out / fan-in nodes run multiple branches concurrently
 - **Human gates** — `type="wait.human"` nodes pause execution for interactive approval/rejection
 - **Retry & back-off** — configurable per-node retry policy with exponential back-off
-- **Persist & resume** — run state is stored in SQLite; crashed runs can be resumed from checkpoints
+- **Persist & resume** — run state is stored in SQLite (default), MySQL, or PostgreSQL; configured via `ATTRACTOR_DB_*` environment variables; crashed runs can be resumed from checkpoints
 - **Web dashboard** — real-time SSE-powered UI at `http://localhost:7070`; supports multiple concurrent pipelines; upload `.dot` files via the browser
 - **In-app documentation** — built-in `/docs` page with four tabs (Web App, REST API, CLI, DOT Format); accessible from the Docs button in the nav bar; no external dependencies, works offline
 - **REST API v1** — 35-endpoint versioned REST API at `/api/v1/`; see [`docs/api/rest-v1.md`](docs/api/rest-v1.md) for the full reference
@@ -113,6 +113,60 @@ java -jar build/libs/coreys-attractor-1.0.0.jar [options]
 | `OPENAI_API_KEY` | API key for OpenAI GPT |
 | `GEMINI_API_KEY` | API key for Google Gemini |
 | `ATTRACTOR_DEBUG` | Set to any value to enable debug output and stack traces |
+
+## Database Configuration
+
+Attractor stores pipeline run history in a database. By default it uses a local SQLite file (`attractor.db`). Set `ATTRACTOR_DB_*` environment variables to switch to MySQL or PostgreSQL.
+
+The active backend is shown in the startup log:
+
+```
+[attractor] Database: SQLite (attractor.db)
+[attractor] Database: PostgreSQL at pg.internal:5432/attractor
+```
+
+### Connection String
+
+Set `ATTRACTOR_DB_URL` to a full JDBC URL. Simplified URLs without the `jdbc:` prefix are also accepted:
+
+```bash
+# PostgreSQL
+export ATTRACTOR_DB_URL="jdbc:postgresql://localhost:5432/attractor?user=app&password=secret"
+# also accepted:
+export ATTRACTOR_DB_URL="postgres://app:secret@localhost:5432/attractor"
+
+# MySQL
+export ATTRACTOR_DB_URL="jdbc:mysql://localhost:3306/attractor?user=app&password=secret"
+# also accepted:
+export ATTRACTOR_DB_URL="mysql://app:secret@localhost:3306/attractor"
+```
+
+### Individual Parameters
+
+Alternatively, set individual variables:
+
+| Variable | Default | Description |
+|---|---|---|
+| `ATTRACTOR_DB_TYPE` | `sqlite` | Backend: `sqlite`, `mysql`, or `postgresql` (or `postgres`) |
+| `ATTRACTOR_DB_HOST` | `localhost` | Database server hostname |
+| `ATTRACTOR_DB_PORT` | `3306` / `5432` | Port (default depends on type) |
+| `ATTRACTOR_DB_NAME` | `attractor.db` / `attractor` | Database name or SQLite file path |
+| `ATTRACTOR_DB_USER` | — | Database username |
+| `ATTRACTOR_DB_PASSWORD` | — | Database password |
+| `ATTRACTOR_DB_PARAMS` | — | Extra JDBC query params, e.g. `sslmode=require` |
+
+```bash
+# PostgreSQL via individual params
+export ATTRACTOR_DB_TYPE=postgresql
+export ATTRACTOR_DB_HOST=pg.internal
+export ATTRACTOR_DB_NAME=attractor
+export ATTRACTOR_DB_USER=app
+export ATTRACTOR_DB_PASSWORD=secret
+export ATTRACTOR_DB_PARAMS=sslmode=require
+make run
+```
+
+Attractor creates the database schema automatically on first start. A misconfigured `ATTRACTOR_DB_TYPE` causes a clear startup error and clean exit.
 
 Once running, open `http://localhost:7070` (or your chosen port) in a browser to start creating and executing pipelines. From the web interface you can describe a pipeline goal in natural language, review the generated DOT graph, and run it — all without touching the command line.
 

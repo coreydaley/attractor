@@ -1,6 +1,7 @@
 package attractor.web
 
 import attractor.db.RunStore
+import attractor.db.SqliteRunStore
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
@@ -22,7 +23,7 @@ class WebMonitorServerBrowserApiTest : FunSpec({
 
     beforeSpec {
         tmpDb = Files.createTempFile("browser-api-test-", ".db").toFile()
-        store = RunStore(tmpDb!!.absolutePath)
+        store = SqliteRunStore(tmpDb!!.absolutePath)
         val reg = PipelineRegistry(store!!)
         registry = reg
         // Pre-register a pipeline for happy-path tests

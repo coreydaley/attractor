@@ -1,6 +1,6 @@
 package attractor.web
 
-import attractor.db.RunStore
+import attractor.db.SqliteRunStore
 import com.sun.net.httpserver.HttpServer
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
@@ -23,7 +23,7 @@ class RestApiLlmTest : FunSpec({
 
     beforeSpec {
         tmpDb = Files.createTempFile("attractor-llm-test-", ".db").toFile()
-        val s = RunStore(tmpDb!!.absolutePath)
+        val s = SqliteRunStore(tmpDb!!.absolutePath)
         // Configure mock LLM: CLI mode with `echo` as the command
         s.setSetting("execution_mode", "cli")
         s.setSetting("provider_anthropic_enabled", "true")

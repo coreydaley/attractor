@@ -1,6 +1,7 @@
 package attractor.web
 
 import attractor.db.RunStore
+import attractor.db.SqliteRunStore
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
@@ -20,7 +21,7 @@ class DocsEndpointTest : FunSpec({
 
     beforeSpec {
         tmpDb = Files.createTempFile("docs-test-", ".db").toFile()
-        store = RunStore(tmpDb!!.absolutePath)
+        store = SqliteRunStore(tmpDb!!.absolutePath)
         server = WebMonitorServer(0, PipelineRegistry(store!!), store!!)
         server!!.start()
         port = server!!.port

@@ -1,6 +1,7 @@
 package attractor.llm
 
 import attractor.db.RunStore
+import attractor.db.SqliteRunStore
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 import java.nio.file.Files
@@ -12,7 +13,7 @@ class LlmExecutionConfigTest : FunSpec({
 
     beforeEach {
         tmpDb = Files.createTempFile("llm-config-test-", ".db").toFile()
-        store = RunStore(tmpDb.absolutePath)
+        store = SqliteRunStore(tmpDb.absolutePath)
     }
 
     afterEach {

@@ -37,8 +37,11 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.9.0")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("org.xerial:sqlite-jdbc:3.45.3.0")
+    runtimeOnly("com.mysql:mysql-connector-j:8.3.0")
+    runtimeOnly("org.postgresql:postgresql:42.7.2")
 
     testImplementation("org.junit.jupiter:junit-jupiter:5.11.0")
+    testImplementation("com.h2database:h2:2.2.224")
     testImplementation("io.kotest:kotest-runner-junit5:5.9.1")
     testImplementation("io.kotest:kotest-assertions-core:5.9.1")
     testImplementation(kotlin("test"))
