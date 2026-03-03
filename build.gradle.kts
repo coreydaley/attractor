@@ -1,6 +1,6 @@
 plugins {
-    kotlin("jvm") version "1.9.22"
-    kotlin("plugin.serialization") version "1.9.22"
+    kotlin("jvm") version "2.3.10"
+    kotlin("plugin.serialization") version "2.3.10"
     application
 }
 
@@ -33,17 +33,17 @@ repositories {
 }
 
 dependencies {
-    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.3")
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.9.0")
-    implementation("com.squareup.okhttp3:okhttp:4.12.0")
-    implementation("org.xerial:sqlite-jdbc:3.45.3.0")
-    runtimeOnly("com.mysql:mysql-connector-j:8.3.0")
-    runtimeOnly("org.postgresql:postgresql:42.7.2")
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.10.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.2")
+    implementation("com.squareup.okhttp3:okhttp:5.3.2")
+    implementation("org.xerial:sqlite-jdbc:3.51.2.0")
+    runtimeOnly("com.mysql:mysql-connector-j:9.6.0")
+    runtimeOnly("org.postgresql:postgresql:42.7.10")
 
-    testImplementation("org.junit.jupiter:junit-jupiter:5.11.0")
-    testImplementation("com.h2database:h2:2.2.224")
-    testImplementation("io.kotest:kotest-runner-junit5:5.9.1")
-    testImplementation("io.kotest:kotest-assertions-core:5.9.1")
+    testImplementation("org.junit.jupiter:junit-jupiter:6.0.3")
+    testImplementation("com.h2database:h2:2.4.240")
+    testImplementation("io.kotest:kotest-runner-junit5:6.1.4")
+    testImplementation("io.kotest:kotest-assertions-core:6.1.4")
     testImplementation(kotlin("test"))
 }
 
