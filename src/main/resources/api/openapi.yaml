@@ -153,6 +153,64 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+  /pipelines/dot:
+    post:
+      operationId: uploadDot
+      summary: Upload a raw DOT file to create and run a pipeline
+      description: 'Accepts the raw DOT source as the request body (`text/plain`). Options are passed as query parameters. Returns 201 with the new pipeline ID.'
+      tags:
+      - pipelines
+      parameters:
+      - name: fileName
+        in: query
+        schema:
+          type: string
+          default: ''
+      - name: simulate
+        in: query
+        schema:
+          type: boolean
+          default: false
+      - name: autoApprove
+        in: query
+        schema:
+          type: boolean
+          default: true
+      - name: originalPrompt
+        in: query
+        schema:
+          type: string
+          default: ''
+      requestBody:
+        required: true
+        content:
+          text/plain:
+            schema:
+              type: string
+      responses:
+        '201':
+          description: Pipeline created and started
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                  status:
+                    type: string
+        '400':
+          description: Empty or missing request body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /pipelines/{id}:
     get:
       operationId: getPipeline
@@ -715,6 +773,33 @@ paths:
                 $ref: '#/components/schemas/Error'
         '404':
           description: Resource not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /pipelines/{id}/dot:
+    get:
+      operationId: downloadPipelineDot
+      summary: Download a pipeline's DOT source as a plain-text file
+      tags:
+      - artifacts
+      parameters:
+      - *id001
+      responses:
+        '200':
+          description: DOT source file
+          content:
+            text/plain:
+              schema:
+                type: string
+        '404':
+          description: Pipeline not found or has no DOT source
           content:
             application/json:
               schema:

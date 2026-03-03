@@ -358,4 +358,83 @@ class RestApiRouterTest : FunSpec({
         resp.body() shouldContain "\"error\":"
         resp.body() shouldContain "\"code\":"
     }
+
+    // ── Pipeline Gap Coverage ──────────────────────────────────────────────────
+
+    test("POST /api/v1/pipelines with valid dotSource returns 201 with id and status") {
+        val dot = "digraph G { start [shape=Mdiamond] exit [shape=Msquare] start -> exit }"
+        val resp = post("/pipelines", """{"dotSource":${RestApiRouter.js(dot)},"fileName":"test.dot"}""")
+        resp.statusCode() shouldBe 201
+        resp.body() shouldContain "\"id\""
+        resp.body() shouldContain "\"status\""
+    }
+
+    test("GET /api/v1/pipelines/{id}/stages returns 200 with stages array") {
+        registry!!.register("stages-test-run", "stages.dot", "digraph S { start [shape=Mdiamond] exit [shape=Msquare] start -> exit }", familyId = "stages-family-1")
+        val resp = get("/pipelines/stages-test-run/stages")
+        resp.statusCode() shouldBe 200
+        resp.body().trimStart() shouldContain "["
+    }
+
+    test("POST /api/v1/pipelines/{id}/rerun on idle pipeline returns 200") {
+        registry!!.register("rerun-test-run", "rerun.dot", "digraph Re { start [shape=Mdiamond] exit [shape=Msquare] start -> exit }", familyId = "rerun-family-1")
+        val resp = post("/pipelines/rerun-test-run/rerun", "")
+        resp.statusCode() shouldBe 200
+        resp.body() shouldContain "\"status\":\"running\""
+    }
+
+    test("GET /api/v1/pipelines/{id}/dot returns 200 with text/plain and dotSource") {
+        val dotContent = "digraph Dot { start [shape=Mdiamond] exit [shape=Msquare] start -> exit }"
+        registry!!.register("dot-dl-test-run", "dot-dl.dot", dotContent, familyId = "dot-dl-family-1")
+        val req = HttpRequest.newBuilder()
+            .uri(URI.create("http://localhost:$port/api/v1/pipelines/dot-dl-test-run/dot"))
+            .GET().build()
+        val resp = client.send(req, HttpResponse.BodyHandlers.ofString())
+        resp.statusCode() shouldBe 200
+        resp.headers().firstValue("content-type").orElse("") shouldContain "text/plain"
+        resp.body() shouldContain "digraph"
+    }
+
+    test("POST /api/v1/pipelines/dot with raw DOT body returns 201") {
+        val dot = "digraph Upload { start [shape=Mdiamond] exit [shape=Msquare] start -> exit }"
+        val req = HttpRequest.newBuilder()
+            .uri(URI.create("http://localhost:$port/api/v1/pipelines/dot"))
+            .header("Content-Type", "text/plain")
+            .POST(HttpRequest.BodyPublishers.ofString(dot)).build()
+        val resp = client.send(req, HttpResponse.BodyHandlers.ofString())
+        resp.statusCode() shouldBe 201
+        resp.body() shouldContain "\"id\""
+    }
+
+    test("GET /api/v1/pipelines/{id}/artifacts.zip with no logsRoot returns 404") {
+        registry!!.register("zip-test-run", "zip.dot", "digraph Z { start [shape=Mdiamond] exit [shape=Msquare] start -> exit }", familyId = "zip-family-1")
+        val req = HttpRequest.newBuilder()
+            .uri(URI.create("http://localhost:$port/api/v1/pipelines/zip-test-run/artifacts.zip"))
+            .GET().build()
+        val resp = client.send(req, HttpResponse.BodyHandlers.ofByteArray())
+        resp.statusCode() shouldBe 404
+    }
+
+    test("GET /api/v1/pipelines/{id}/stages/{nodeId}/log with no logsRoot returns 404") {
+        registry!!.register("log-test-run", "log.dot", "digraph L { start [shape=Mdiamond] exit [shape=Msquare] start -> exit }", familyId = "log-family-1")
+        val resp = get("/pipelines/log-test-run/stages/start/log")
+        resp.statusCode() shouldBe 404
+        resp.body() shouldContain "NOT_FOUND"
+    }
+
+    test("GET /api/v1/pipelines/{id}/export returns 200 with application/zip") {
+        registry!!.register("export-test-run", "export.dot", "digraph E { start [shape=Mdiamond] exit [shape=Msquare] start -> exit }", familyId = "export-family-1")
+        val req = HttpRequest.newBuilder()
+            .uri(URI.create("http://localhost:$port/api/v1/pipelines/export-test-run/export"))
+            .GET().build()
+        val resp = client.send(req, HttpResponse.BodyHandlers.ofByteArray())
+        resp.statusCode() shouldBe 200
+        resp.headers().firstValue("content-type").orElse("") shouldContain "application/zip"
+    }
+
+    test("POST /api/v1/pipelines/import with empty body returns 400") {
+        val resp = post("/pipelines/import", "")
+        resp.statusCode() shouldBe 400
+        resp.body() shouldContain "BAD_REQUEST"
+    }
 })

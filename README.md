@@ -195,7 +195,7 @@ digraph Review {
 
 ## Web API
 
-The server exposes a versioned REST API at `/api/v1/` with 35 endpoints covering pipelines, artifacts, DOT operations, settings, models, and SSE event streams. All request and response bodies use JSON.
+The server exposes a versioned REST API at `/api/v1/` with 37 endpoints covering pipelines, artifacts, DOT operations, settings, models, and SSE event streams. All request and response bodies use JSON.
 
 Selected endpoints:
 
@@ -219,6 +219,8 @@ Selected endpoints:
 | `GET` | `/api/v1/pipelines/{id}/artifacts.zip` | Download all artifacts as a ZIP |
 | `GET` | `/api/v1/pipelines/{id}/export` | Export pipeline + artifacts as a ZIP |
 | `POST` | `/api/v1/pipelines/import` | Import a previously exported pipeline ZIP |
+| `GET` | `/api/v1/pipelines/{id}/dot` | Download pipeline DOT source as a `.dot` file |
+| `POST` | `/api/v1/pipelines/dot` | Upload raw DOT file to create and run a pipeline |
 | `POST` | `/api/v1/dot/generate` | Generate a DOT pipeline from a text prompt |
 | `POST` | `/api/v1/dot/validate` | Validate a DOT pipeline |
 | `GET` | `/api/v1/settings` | List all settings |

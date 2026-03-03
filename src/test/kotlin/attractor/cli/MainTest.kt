@@ -82,4 +82,10 @@ class MainTest : FunSpec({
         val ex = shouldThrow<CliException> { run(listOf("--output", "xml")) }
         ex.exitCode shouldBe 2
     }
+
+    test("--version exits 0 and produces some output") {
+        val output = captureStdout { run(listOf("--version")) }
+        // Version may be "unknown" in test context (no JAR manifest), but should not throw
+        output shouldContain "attractor-cli"
+    }
 })

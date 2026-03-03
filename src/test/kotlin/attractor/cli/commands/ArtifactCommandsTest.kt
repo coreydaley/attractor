@@ -91,4 +91,68 @@ class ArtifactCommandsTest : FunSpec({
             tmpFile.delete()
         }
     }
+
+    test("artifact get makes GET to /api/v1/pipelines/{id}/artifacts/{path} and prints content") {
+        var path: String? = null
+        val (srv, port) = startFakeServer { ex ->
+            path = ex.requestURI.path
+            val body = "log content here".toByteArray()
+            ex.sendResponseHeaders(200, body.size.toLong())
+            ex.responseBody.write(body)
+        }
+        try {
+            val output = captureStdout { cmdFor(port).dispatch(listOf("get", "run-1", "live.log")) }
+            path shouldBe "/api/v1/pipelines/run-1/artifacts/live.log"
+            output shouldContain "log content"
+        } finally { srv.stop(0) }
+    }
+
+    test("artifact stage-log makes GET to /api/v1/pipelines/{id}/stages/{nodeId}/log and prints content") {
+        var path: String? = null
+        val (srv, port) = startFakeServer { ex ->
+            path = ex.requestURI.path
+            val body = "stage output".toByteArray()
+            ex.sendResponseHeaders(200, body.size.toLong())
+            ex.responseBody.write(body)
+        }
+        try {
+            val output = captureStdout { cmdFor(port).dispatch(listOf("stage-log", "run-1", "writeTests")) }
+            path shouldBe "/api/v1/pipelines/run-1/stages/writeTests/log"
+            output shouldContain "stage output"
+        } finally { srv.stop(0) }
+    }
+
+    test("artifact failure-report makes GET to /api/v1/pipelines/{id}/failure-report and prints JSON") {
+        var path: String? = null
+        val (srv, port) = startFakeServer { ex ->
+            path = ex.requestURI.path
+            val body = """{"diagnosed":true,"summary":"error summary"}""".toByteArray()
+            ex.sendResponseHeaders(200, body.size.toLong())
+            ex.responseBody.write(body)
+        }
+        try {
+            val output = captureStdout { cmdFor(port).dispatch(listOf("failure-report", "run-1")) }
+            path shouldBe "/api/v1/pipelines/run-1/failure-report"
+            output shouldContain "diagnosed"
+        } finally { srv.stop(0) }
+    }
+
+    test("artifact export writes ZIP bytes to file and prints confirmation") {
+        val zipBytes = byteArrayOf(0x50, 0x4B, 0x03, 0x04, 0x00)
+        val (srv, port) = startFakeServer { ex ->
+            ex.sendResponseHeaders(200, zipBytes.size.toLong())
+            ex.responseBody.write(zipBytes)
+        }
+        val tmpDir = Files.createTempDirectory("export-test").toFile()
+        try {
+            val outFile = java.io.File(tmpDir, "pipeline-run-1.zip")
+            val output = captureStdout { cmdFor(port).dispatch(listOf("export", "run-1", "--output", outFile.absolutePath)) }
+            outFile.exists() shouldBe true
+            outFile.readBytes() shouldBe zipBytes
+            output shouldContain "Saved"
+        } finally {
+            srv.stop(0)
+            tmpDir.deleteRecursively()
+        }
+    }
 })

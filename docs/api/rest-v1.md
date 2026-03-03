@@ -607,7 +607,7 @@ curl http://localhost:8080/api/v1/pipelines/run-1700000000000-1/failure-report
 
 ---
 
-### Import / Export
+### Import / Export / DOT file
 
 #### 20. Export a pipeline
 
@@ -664,9 +664,62 @@ curl -X POST "http://localhost:8080/api/v1/pipelines/import?onConflict=skip" \
 
 ---
 
+#### 22. Download a pipeline's DOT file
+
+```
+GET /api/v1/pipelines/{id}/dot
+```
+
+Downloads the pipeline's DOT source as a plain-text `.dot` file.
+
+**Response 200:** `Content-Type: text/plain; charset=utf-8`, `Content-Disposition: attachment; filename="<fileName>"`
+
+**Response 404:** pipeline not found, or pipeline has no DOT source
+
+**curl:**
+```bash
+curl -o pipeline.dot http://localhost:8080/api/v1/pipelines/run-1700000000000-1/dot
+```
+
+---
+
+#### 23. Upload a DOT file to create a pipeline
+
+```
+POST /api/v1/pipelines/dot
+Content-Type: text/plain
+```
+
+Accepts a raw DOT source string as the request body and immediately submits it as a new pipeline run. Options are passed as query parameters.
+
+**Query parameters:**
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `fileName` | string | `""` | Display name / filename for the pipeline |
+| `simulate` | boolean | `false` | If `true`, runs without LLM calls |
+| `autoApprove` | boolean | `true` | If `false`, gates require manual approval |
+| `originalPrompt` | string | `""` | Natural-language prompt that produced the DOT |
+
+**Response 201:**
+```json
+{ "id": "run-1700000001000-3", "status": "running" }
+```
+
+**Response 400:** request body is empty
+
+**curl:**
+```bash
+curl -X POST "http://localhost:8080/api/v1/pipelines/dot?fileName=my-pipeline.dot" \
+  -H 'Content-Type: text/plain' \
+  --data-binary @my-pipeline.dot
+```
+
+---
+
 ### DOT operations
 
-#### 22. Render DOT to SVG
+#### 24. Render DOT to SVG
 
 ```
 POST /api/v1/dot/render
@@ -705,7 +758,7 @@ curl -X POST http://localhost:8080/api/v1/dot/render \
 
 ---
 
-#### 23. Validate DOT
+#### 25. Validate DOT
 
 ```
 POST /api/v1/dot/validate
@@ -745,7 +798,7 @@ curl -X POST http://localhost:8080/api/v1/dot/validate \
 
 ---
 
-#### 24. Generate DOT (blocking)
+#### 26. Generate DOT (blocking)
 
 ```
 POST /api/v1/dot/generate
@@ -779,7 +832,7 @@ curl -X POST http://localhost:8080/api/v1/dot/generate \
 
 ---
 
-#### 25. Generate DOT (streaming SSE)
+#### 27. Generate DOT (streaming SSE)
 
 ```
 GET /api/v1/dot/generate/stream?prompt=<encoded>
@@ -816,7 +869,7 @@ curl -N "http://localhost:8080/api/v1/dot/generate/stream?prompt=Build%20a%20CI%
 
 ---
 
-#### 26. Fix DOT (blocking)
+#### 28. Fix DOT (blocking)
 
 ```
 POST /api/v1/dot/fix
@@ -846,7 +899,7 @@ curl -X POST http://localhost:8080/api/v1/dot/fix \
 
 ---
 
-#### 27. Fix DOT (streaming SSE)
+#### 29. Fix DOT (streaming SSE)
 
 ```
 GET /api/v1/dot/fix/stream?dotSource=<encoded>&error=<encoded>
@@ -870,7 +923,7 @@ curl -N "http://localhost:8080/api/v1/dot/fix/stream?dotSource=digraph%20P%20%7B
 
 ---
 
-#### 28. Iterate DOT (blocking)
+#### 30. Iterate DOT (blocking)
 
 ```
 POST /api/v1/dot/iterate
@@ -900,7 +953,7 @@ curl -X POST http://localhost:8080/api/v1/dot/iterate \
 
 ---
 
-#### 29. Iterate DOT (streaming SSE)
+#### 31. Iterate DOT (streaming SSE)
 
 ```
 GET /api/v1/dot/iterate/stream?baseDot=<encoded>&changes=<encoded>
@@ -926,7 +979,7 @@ curl -N "http://localhost:8080/api/v1/dot/iterate/stream?baseDot=digraph%20P%20%
 
 ### Settings
 
-#### 30. Get all settings
+#### 32. Get all settings
 
 ```
 GET /api/v1/settings
@@ -946,7 +999,7 @@ curl http://localhost:8080/api/v1/settings
 
 ---
 
-#### 31. Get a single setting
+#### 33. Get a single setting
 
 ```
 GET /api/v1/settings/{key}
@@ -977,7 +1030,7 @@ curl http://localhost:8080/api/v1/settings/fireworks_enabled
 
 ---
 
-#### 32. Update a setting
+#### 34. Update a setting
 
 ```
 PUT /api/v1/settings/{key}
@@ -1013,7 +1066,7 @@ curl -X PUT http://localhost:8080/api/v1/settings/fireworks_enabled \
 
 ### Models
 
-#### 33. List available models
+#### 35. List available models
 
 ```
 GET /api/v1/models
@@ -1047,7 +1100,7 @@ curl http://localhost:8080/api/v1/models
 
 ### Events (Server-Sent Events)
 
-#### 34. Global event stream
+#### 36. Global event stream
 
 ```
 GET /api/v1/events
@@ -1075,7 +1128,7 @@ curl -N http://localhost:8080/api/v1/events
 
 ---
 
-#### 35. Per-pipeline event stream
+#### 37. Per-pipeline event stream
 
 ```
 GET /api/v1/events/{id}
@@ -1127,17 +1180,19 @@ curl -N http://localhost:8080/api/v1/events/run-1700000000000-1
 | 19 | GET | `/api/v1/pipelines/{id}/failure-report` | Get failure report JSON |
 | 20 | GET | `/api/v1/pipelines/{id}/export` | Export pipeline as ZIP |
 | 21 | POST | `/api/v1/pipelines/import` | Import pipeline from ZIP |
-| 22 | POST | `/api/v1/dot/render` | Render DOT to SVG (blocking) |
-| 23 | POST | `/api/v1/dot/validate` | Validate and lint DOT source |
-| 24 | POST | `/api/v1/dot/generate` | Generate DOT from prompt (blocking) |
-| 25 | GET | `/api/v1/dot/generate/stream` | Generate DOT from prompt (SSE) |
-| 26 | POST | `/api/v1/dot/fix` | Fix broken DOT (blocking) |
-| 27 | GET | `/api/v1/dot/fix/stream` | Fix broken DOT (SSE) |
-| 28 | POST | `/api/v1/dot/iterate` | Iterate on existing DOT (blocking) |
-| 29 | GET | `/api/v1/dot/iterate/stream` | Iterate on existing DOT (SSE) |
-| 30 | GET | `/api/v1/settings` | Get all settings |
-| 31 | GET | `/api/v1/settings/{key}` | Get a single setting |
-| 32 | PUT | `/api/v1/settings/{key}` | Update a setting |
-| 33 | GET | `/api/v1/models` | List available LLM models |
-| 34 | GET | `/api/v1/events` | Global SSE event stream |
-| 35 | GET | `/api/v1/events/{id}` | Per-pipeline SSE event stream |
+| 22 | GET | `/api/v1/pipelines/{id}/dot` | Download pipeline DOT source as a file |
+| 23 | POST | `/api/v1/pipelines/dot` | Upload raw DOT to create and run a pipeline |
+| 24 | POST | `/api/v1/dot/render` | Render DOT to SVG (blocking) |
+| 25 | POST | `/api/v1/dot/validate` | Validate and lint DOT source |
+| 26 | POST | `/api/v1/dot/generate` | Generate DOT from prompt (blocking) |
+| 27 | GET | `/api/v1/dot/generate/stream` | Generate DOT from prompt (SSE) |
+| 28 | POST | `/api/v1/dot/fix` | Fix broken DOT (blocking) |
+| 29 | GET | `/api/v1/dot/fix/stream` | Fix broken DOT (SSE) |
+| 30 | POST | `/api/v1/dot/iterate` | Iterate on existing DOT (blocking) |
+| 31 | GET | `/api/v1/dot/iterate/stream` | Iterate on existing DOT (SSE) |
+| 32 | GET | `/api/v1/settings` | Get all settings |
+| 33 | GET | `/api/v1/settings/{key}` | Get a single setting |
+| 34 | PUT | `/api/v1/settings/{key}` | Update a setting |
+| 35 | GET | `/api/v1/models` | List available LLM models |
+| 36 | GET | `/api/v1/events` | Global SSE event stream |
+| 37 | GET | `/api/v1/events/{id}` | Per-pipeline SSE event stream |
