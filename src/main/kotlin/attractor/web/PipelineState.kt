@@ -65,7 +65,11 @@ class PipelineState {
             }
             is PipelineEvent.StageFailed -> {
                 // Stage may be "running" or "retrying" when the final failure fires
-                val updated = updateStageAny(event.name) { it.copy(status = "failed", error = event.error, hasLog = checkHasLog(it.nodeId)) }
+                val now = System.currentTimeMillis()
+                val updated = updateStageAny(event.name) {
+                    val dur = if (it.startedAt != null) now - it.startedAt else null
+                    it.copy(status = "failed", durationMs = dur, error = event.error, hasLog = checkHasLog(it.nodeId))
+                }
                 if (!updated) stages.add(StageRecord(event.index, event.name, status = "failed", error = event.error))
                 log("[${event.index}] ✗ ${event.name}: ${event.error}")
             }

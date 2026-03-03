@@ -119,6 +119,10 @@ class RestApiRouter(
                 method == "POST" && segments == listOf("pipelines", "import") ->
                     handleImportPipeline(ex)
 
+                // POST /api/v1/pipelines/dot  (raw DOT body upload, must check before /{id})
+                method == "POST" && segments == listOf("pipelines", "dot") ->
+                    handleUploadDot(ex)
+
                 // POST /api/v1/pipelines
                 method == "POST" && segments == listOf("pipelines") ->
                     handleCreatePipeline(ex)
@@ -158,6 +162,10 @@ class RestApiRouter(
                 // GET /api/v1/pipelines/{id}/failure-report
                 method == "GET" && segments.size == 3 && segments[0] == "pipelines" && segments[2] == "failure-report" ->
                     handleGetFailureReport(ex, segments[1])
+
+                // GET /api/v1/pipelines/{id}/dot
+                method == "GET" && segments.size == 3 && segments[0] == "pipelines" && segments[2] == "dot" ->
+                    handleDownloadPipelineDot(ex, segments[1])
 
                 // GET /api/v1/pipelines/{id}/export
                 method == "GET" && segments.size == 3 && segments[0] == "pipelines" && segments[2] == "export" ->
@@ -335,6 +343,45 @@ class RestApiRouter(
             onUpdate = onUpdate
         )
         jsonResponse(ex, 201, """{"id":${js(id)},"status":"running"}""")
+    }
+
+    private fun handleUploadDot(ex: HttpExchange) {
+        val dotSource = readBody(ex)
+        if (dotSource.isBlank()) {
+            errorResponse(ex, 400, "request body (DOT source) is required", "BAD_REQUEST"); return
+        }
+        val query = parseQuery(ex)
+        val fileName    = query["fileName"]      ?: ""
+        val simulate    = query["simulate"]?.toBooleanStrictOrNull() ?: false
+        val autoApprove = query["autoApprove"]?.toBooleanStrictOrNull() ?: true
+        val originalPrompt = query["originalPrompt"] ?: ""
+        val id = PipelineRunner.submit(
+            dotSource      = dotSource,
+            fileName       = fileName,
+            options        = RunOptions(simulate = simulate, autoApprove = autoApprove),
+            registry       = registry,
+            store          = store,
+            originalPrompt = originalPrompt,
+            familyId       = "",
+            onUpdate       = onUpdate
+        )
+        jsonResponse(ex, 201, """{"id":${js(id)},"status":"running"}""")
+    }
+
+    private fun handleDownloadPipelineDot(ex: HttpExchange, id: String) {
+        val entry = registry.getOrHydrate(id, store)
+            ?: run { errorResponse(ex, 404, "pipeline not found", "NOT_FOUND"); return }
+        val dot = entry.dotSource
+        if (dot.isBlank()) {
+            errorResponse(ex, 404, "no DOT source available for this pipeline", "NOT_FOUND"); return
+        }
+        val bytes = dot.toByteArray(Charsets.UTF_8)
+        val filename = entry.fileName.ifBlank { "pipeline.dot" }
+        ex.responseHeaders.add("Content-Type", "text/plain; charset=utf-8")
+        ex.responseHeaders.add("Content-Disposition", "attachment; filename=\"$filename\"")
+        ex.responseHeaders.add("Access-Control-Allow-Origin", "*")
+        ex.sendResponseHeaders(200, bytes.size.toLong())
+        ex.responseBody.use { it.write(bytes, 0, bytes.size) }
     }
 
     private fun handleGetPipeline(ex: HttpExchange, id: String) {

@@ -3005,11 +3005,11 @@ function buildPanel(id) {
     +   '</div>'
     +   '<div class="action-bar-secondary">'
     +     '<button class="btn-download" id="downloadBtn" style="display:none;" onclick="downloadArtifacts()">&#8659;&ensp;Download Artifacts</button>'
-    +     '<button class="btn-download" id="failureReportBtn" style="display:none;" onclick="openArtifacts(selectedId,\'Failure Report\')">&#128203;&ensp;View Failure Report</button>'
+    +     '<button class="btn-download" id="failureReportBtn" style="display:none;" onclick="openArtifacts(currentRunId(),\'Failure Report\')">&#128203;&ensp;View Failure Report</button>'
     +     '<button class="btn-download" id="exportBtn" style="display:none;" onclick="exportRun()">&#8599;&ensp;Export</button>'
     +     '<button class="btn-archive" id="archiveBtn" style="display:none;" onclick="archivePipeline()">&#8595;&ensp;Archive</button>'
     +     '<button class="btn-unarchive" id="unarchiveBtn" style="display:none;" onclick="unarchivePipeline()">&#8593;&ensp;Unarchive</button>'
-    +     '<button class="btn-delete" id="deleteBtn" style="display:none;" onclick="showDeleteConfirm(selectedId)">&#10005;&ensp;Delete</button>'
+    +     '<button class="btn-delete" id="deleteBtn" style="display:none;" onclick="showDeleteConfirm(currentRunId())">&#10005;&ensp;Delete</button>'
     +   '</div>'
     + '</div>'
     + '<div id="pipelineDesc" style="display:none;" class="pipeline-desc-block"><div class="pipeline-desc-label">Prompt</div><div id="pipelineDescText"></div></div>'
@@ -3363,14 +3363,14 @@ function loadVersionHistory(runId) {
     });
 }
 
-function renderVersionHistory(currentRunId, members) {
+function renderVersionHistory(tabId, members) {
   var section = document.getElementById('versionHistory');
   var listEl  = document.getElementById('vhList');
   var label   = document.getElementById('vhLabel');
   if (!section || !listEl || !label) return;
-  // Show if 2+ members, or if 1 member and this run is an iterated version (familyId ≠ runId)
-  var p = pipelines[currentRunId];
-  var isIterateMember = p && p.familyId && p.familyId !== currentRunId;
+  // Show if 2+ members, or if 1 member and this run is an iterated version (familyId ≠ tabId)
+  var p = pipelines[tabId];
+  var isIterateMember = p && p.familyId && p.familyId !== tabId;
   if (!members || members.length < 1 || (members.length < 2 && !isIterateMember)) {
     section.style.display = 'none';
     return;
@@ -3383,12 +3383,14 @@ function renderVersionHistory(currentRunId, members) {
     return;
   }
   listEl.style.display = '';
+  // Resolve which run is actually being displayed (may differ from tab key for iterations).
+  var displayedRunId = (p && p.id) || tabId;
   var html = '';
   // Render newest-first
   for (var i = members.length - 1; i >= 0; i--) {
     var m = members[i];
     var vn = i + 1;
-    var isCurrent = m.id === currentRunId ? ' vh-current' : '';
+    var isCurrent = m.id === displayedRunId ? ' vh-current' : '';
     var ts = m.createdAt ? new Date(m.createdAt).toLocaleString() : '';
     var label = (m.displayName || m.originalPrompt || '').substring(0, 50) || '(no description)';
     var statusCls = 'badge-' + esc(m.status || 'idle');
@@ -3438,35 +3440,40 @@ function showViewError(msg) {
 }
 
 function applyPipelineEntry(entry) {
-  if (!pipelines[entry.id]) {
-    // Append to end so the tab appears after existing tabs
-    var ids = Object.keys(pipelines);
-    // pipelines is a plain object; orderedIds is implicit from applyUpdate's loop
-    // We mimic what applyUpdate does: just set pipelines[id] and let renderTabs sort
-  }
-  pipelines[entry.id] = entry;
+  // Use the family key so historical version loads don't create extra tabs.
+  var tabKey = entry.familyId || entry.id;
+  pipelines[tabKey] = entry;
 }
 
 function maybeAutoExpandVH(runId) {
   vhExpanded = true;
   var chevron = document.getElementById('vhChevron');
   if (chevron) chevron.innerHTML = '&#9660;';
-  if (vhData !== null && selectedId === runId) renderVersionHistory(runId, vhData);
+  if (vhData !== null && runId === currentRunId()) renderVersionHistory(selectedId, vhData);
 }
 
 function selectOrHydrateRun(runId) {
-  if (pipelines[runId]) {
-    selectTab(runId);
-    maybeAutoExpandVH(runId);
-    return;
+  // Check if this run is already the active run in some family tab.
+  for (var k in pipelines) {
+    if (k === runId || pipelines[k].id === runId) {
+      if (selectedId !== k) selectTab(k);
+      maybeAutoExpandVH(runId);
+      return;
+    }
   }
+  // Need to load the run from the server; update its family tab in-place (no new tab).
   fetch('/api/pipeline-view?id=' + encodeURIComponent(runId))
     .then(function(r) { return r.json(); })
     .then(function(data) {
       if (data.error) { showViewError('Load failed: ' + data.error); return; }
-      applyPipelineEntry(data);
-      renderTabs();
-      selectTab(runId);
+      var key = data.familyId || data.id;
+      pipelines[key] = data;
+      if (selectedId !== key) {
+        selectTab(key);
+      } else {
+        panelBuiltFor = null;
+        renderMain();
+      }
       maybeAutoExpandVH(runId);
     })
     .catch(function() { showViewError('Network error loading run'); });
@@ -3475,7 +3482,9 @@ function selectOrHydrateRun(runId) {
 function updateVersionNav(runId) {
   var el = document.getElementById('versionNav');
   if (!el) return;
-  var info = vhMembersById[runId];
+  // runId here is the tab key (familyId); resolve to actual current run ID for lookup.
+  var actualId = (pipelines[runId] && pipelines[runId].id) || runId;
+  var info = vhMembersById[actualId];
   if (!info || info.totalVersions < 2) { el.style.display = 'none'; return; }
   el.style.display = '';
   document.getElementById('vnLabel').textContent = 'v' + info.versionNum + ' of ' + info.totalVersions;
@@ -3484,7 +3493,7 @@ function updateVersionNav(runId) {
 }
 
 function navVersion(delta) {
-  var info = vhMembersById[selectedId];
+  var info = vhMembersById[currentRunId()];
   if (!info) return;
   var targetId = delta < 0 ? info.prevId : info.nextId;
   if (!targetId) return;
@@ -3553,27 +3562,62 @@ function closeArtifacts() {
 }
 
 // ── Data update ─────────────────────────────────────────────────────────────
+
+// Returns the actual run ID of the run currently displayed in the selected tab.
+// The tab key (selectedId) equals the familyId; the run stored there may be a newer iteration.
+function currentRunId() {
+  var p = selectedId && pipelines[selectedId];
+  return (p && p.id) ? p.id : (selectedId || '');
+}
+
+// True if candidate should replace current as the tab's displayed run.
+function shouldReplaceWith(current, candidate) {
+  var cArchived = current.state && current.state.archived;
+  var nArchived = candidate.state && candidate.state.archived;
+  if (cArchived && !nArchived) return true;
+  if (!cArchived && nArchived) return false;
+  var cActive = isActiveRun(current);
+  var nActive = isActiveRun(candidate);
+  if (nActive && !cActive) return true;
+  if (cActive && !nActive) return false;
+  var cTime = (current.state && current.state.startedAt) || 0;
+  var nTime = (candidate.state && candidate.state.startedAt) || 0;
+  return nTime > cTime;
+}
+
+function isActiveRun(p) {
+  var s = p && p.state && p.state.status;
+  return s === 'running' || s === 'retrying' || s === 'diagnosing' || s === 'repairing' || s === 'paused';
+}
+
 function applyUpdate(data) {
   if (!data.pipelines) return;
-  var incoming = {};
+  // Group by family: one tab per familyId, showing the best (active > most recent) run.
+  var familyBest = {};
   for (var i = 0; i < data.pipelines.length; i++) {
     var p = data.pipelines[i];
-    var isNew = !pipelines[p.id];
-    var prevStatus = pipelines[p.id] && pipelines[p.id].state && pipelines[p.id].state.status;
-    pipelines[p.id] = p;
-    incoming[p.id] = true;
-    if (isNew && selectedId === DASHBOARD_TAB_ID && _storedTab === null) selectedId = p.id;
+    var key = p.familyId || p.id;
+    if (!familyBest[key] || shouldReplaceWith(familyBest[key], p)) familyBest[key] = p;
+  }
+  var incoming = {};
+  for (var key in familyBest) {
+    var p = familyBest[key];
+    var isNew = !pipelines[key];
+    var prevStatus = pipelines[key] && pipelines[key].state && pipelines[key].state.status;
+    pipelines[key] = p;
+    incoming[key] = true;
+    if (isNew && selectedId === DASHBOARD_TAB_ID && _storedTab === null) selectedId = key;
     // Fireworks when the viewed pipeline transitions to completed
-    if (!isNew && prevStatus !== 'completed' && p.state && p.state.status === 'completed' && p.id === selectedId) {
+    if (!isNew && prevStatus !== 'completed' && p.state && p.state.status === 'completed' && key === selectedId) {
       var monitorView = document.getElementById('viewMonitor');
       if (monitorView && monitorView.style.display !== 'none' && appSettings.fireworks_enabled !== false) triggerFireworks();
     }
   }
   // Remove any local entries no longer reported by the server (e.g. deleted runs).
-  for (var existingId in pipelines) {
-    if (!incoming[existingId]) {
-      delete pipelines[existingId];
-      if (selectedId === existingId) {
+  for (var existingKey in pipelines) {
+    if (!incoming[existingKey]) {
+      delete pipelines[existingKey];
+      if (selectedId === existingKey) {
         selectedId = DASHBOARD_TAB_ID;
         panelBuiltFor = null;
       }
@@ -3768,9 +3812,10 @@ function confirmCancelIterate() {
 }
 
 function iteratePipeline() {
-  var id = selectedId;
-  if (!id || !pipelines[id] || !pipelines[id].dotSource) return;
-  enterIterateMode(id, pipelines[id].dotSource, pipelines[id].originalPrompt || '');
+  if (!selectedId || !pipelines[selectedId]) return;
+  var p = pipelines[selectedId];
+  if (!p.dotSource) return;
+  enterIterateMode(currentRunId(), p.dotSource, p.originalPrompt || '');
   showView('create');
 }
 
@@ -4321,7 +4366,7 @@ function showStageLog(nodeId, stageName) {
 
 function pollStageLog() {
   if (!selectedId || !stageLogNodeId) return;
-  fetch('/api/stage-log?id=' + encodeURIComponent(selectedId) + '&stage=' + encodeURIComponent(stageLogNodeId))
+  fetch('/api/stage-log?id=' + encodeURIComponent(currentRunId()) + '&stage=' + encodeURIComponent(stageLogNodeId))
     .then(function(r) { return r.text(); })
     .then(function(text) {
       stageLogContent = text || '';
@@ -4495,7 +4540,7 @@ function resetMonitorZoom() {
 function downloadArtifacts() {
   if (!selectedId) return;
   var a = document.createElement('a');
-  a.href = '/api/download-artifacts?id=' + encodeURIComponent(selectedId);
+  a.href = '/api/download-artifacts?id=' + encodeURIComponent(currentRunId());
   a.download = '';
   document.body.appendChild(a);
   a.click();
@@ -4505,7 +4550,7 @@ function downloadArtifacts() {
 function exportRun() {
   if (!selectedId) return;
   var a = document.createElement('a');
-  a.href = '/api/export-run?id=' + encodeURIComponent(selectedId);
+  a.href = '/api/export-run?id=' + encodeURIComponent(currentRunId());
   a.download = '';
   document.body.appendChild(a);
   a.click();
@@ -4520,7 +4565,7 @@ function cancelPipeline() {
   fetch('/api/cancel', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ id: selectedId })
+    body: JSON.stringify({ id: currentRunId() })
   })
   .then(function(r) { return r.json(); })
   .then(function(resp) {
@@ -4543,7 +4588,7 @@ function pausePipeline() {
   fetch('/api/pause', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ id: selectedId })
+    body: JSON.stringify({ id: currentRunId() })
   })
   .then(function(r) { return r.json(); })
   .then(function(resp) {
@@ -4566,7 +4611,7 @@ function resumePipeline() {
   fetch('/api/resume', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ id: selectedId })
+    body: JSON.stringify({ id: currentRunId() })
   })
   .then(function(r) { return r.json(); })
   .then(function(resp) {
@@ -4589,12 +4634,12 @@ function rerunPipeline() {
   fetch('/api/rerun', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ id: selectedId })
+    body: JSON.stringify({ id: currentRunId() })
   })
   .then(function(r) { return r.json(); })
   .then(function(resp) {
     if (resp.id) {
-      selectTab(resp.id);
+      kickPoll();
     } else {
       btn.disabled = false;
       btn.innerHTML = '&#8635;&ensp;Re-run';
@@ -4611,24 +4656,25 @@ function archivePipeline() {
   if (!btn || !selectedId) return;
   btn.disabled = true;
   btn.textContent = 'Archiving\u2026';
-  var archiveId = selectedId;
+  var archiveRunId = currentRunId();
+  var archiveTabKey = selectedId;
   fetch('/api/archive', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ id: archiveId })
+    body: JSON.stringify({ id: archiveRunId })
   })
   .then(function(r) { return r.json(); })
   .then(function(resp) {
     if (resp.archived) {
-      // Optimistically mark as archived in local state so renderTabs hides it
-      if (pipelines[archiveId] && pipelines[archiveId].state) {
-        pipelines[archiveId].state.archived = true;
+      // Optimistically mark the family tab as archived so renderTabs hides it
+      if (pipelines[archiveTabKey] && pipelines[archiveTabKey].state) {
+        pipelines[archiveTabKey].state.archived = true;
       }
       // Advance selectedId to next visible non-archived tab
       var ids = Object.keys(pipelines);
       var nextId = null;
       for (var i = 0; i < ids.length; i++) {
-        if (ids[i] !== archiveId && !pipelines[ids[i]].state.archived) {
+        if (ids[i] !== archiveTabKey && !pipelines[ids[i]].state.archived) {
           nextId = ids[i];
         }
       }
@@ -4653,17 +4699,18 @@ function unarchivePipeline() {
   if (!btn || !selectedId) return;
   btn.disabled = true;
   btn.textContent = 'Unarchiving\u2026';
-  var unarchiveId = selectedId;
+  var unarchiveRunId = currentRunId();
+  var unarchiveTabKey = selectedId;
   fetch('/api/unarchive', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ id: unarchiveId })
+    body: JSON.stringify({ id: unarchiveRunId })
   })
   .then(function(r) { return r.json(); })
   .then(function(resp) {
     if (resp.unarchived) {
-      if (pipelines[unarchiveId] && pipelines[unarchiveId].state) {
-        pipelines[unarchiveId].state.archived = false;
+      if (pipelines[unarchiveTabKey] && pipelines[unarchiveTabKey].state) {
+        pipelines[unarchiveTabKey].state.archived = false;
       }
       renderTabs();
       renderMain();
@@ -4776,14 +4823,19 @@ function executeDelete() {
   .then(function(resp) {
     closeDeleteModal();
     if (resp.deleted) {
+      // Find the family tab key that contains this run (id may be a run ID inside a family tab).
+      var tabKey = id;
+      for (var k in pipelines) {
+        if (k === id || (pipelines[k] && pipelines[k].id === id)) { tabKey = k; break; }
+      }
       // Pick next visible tab before removing from local state
       var ids = Object.keys(pipelines);
       var nextId = null;
       for (var i = 0; i < ids.length; i++) {
-        if (ids[i] !== id) nextId = ids[i];
+        if (ids[i] !== tabKey) nextId = ids[i];
       }
-      delete pipelines[id];
-      if (selectedId === id) {
+      delete pipelines[tabKey];
+      if (selectedId === tabKey) {
         selectedId = nextId;
         panelBuiltFor = null;
       }

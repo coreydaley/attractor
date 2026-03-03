@@ -186,4 +186,122 @@ class PipelineCommandsTest : FunSpec({
             output shouldContain "Falcon"
         } finally { srv.stop(0) }
     }
+
+    test("pipeline delete sends DELETE to /api/v1/pipelines/{id}") {
+        var method: String? = null
+        var path: String? = null
+        val (srv, port) = startFakeServer { ex ->
+            method = ex.requestMethod
+            path = ex.requestURI.path
+            val body = """{"deleted":true}""".toByteArray()
+            ex.sendResponseHeaders(200, body.size.toLong())
+            ex.responseBody.write(body)
+        }
+        try {
+            val output = captureStdout { cmdFor(port).dispatch(listOf("delete", "run-1")) }
+            method shouldBe "DELETE"
+            path shouldBe "/api/v1/pipelines/run-1"
+            output shouldContain "true"
+        } finally { srv.stop(0) }
+    }
+
+    test("pipeline rerun POSTs to /api/v1/pipelines/{id}/rerun") {
+        var path: String? = null
+        val (srv, port) = startFakeServer { ex ->
+            path = ex.requestURI.path
+            val body = """{"id":"run-1","status":"running"}""".toByteArray()
+            ex.sendResponseHeaders(200, body.size.toLong())
+            ex.responseBody.write(body)
+        }
+        try {
+            cmdFor(port).dispatch(listOf("rerun", "run-1"))
+            path shouldBe "/api/v1/pipelines/run-1/rerun"
+        } finally { srv.stop(0) }
+    }
+
+    test("pipeline resume POSTs to /api/v1/pipelines/{id}/resume") {
+        var path: String? = null
+        val (srv, port) = startFakeServer { ex ->
+            path = ex.requestURI.path
+            val body = """{"id":"run-1","status":"running"}""".toByteArray()
+            ex.sendResponseHeaders(200, body.size.toLong())
+            ex.responseBody.write(body)
+        }
+        try {
+            cmdFor(port).dispatch(listOf("resume", "run-1"))
+            path shouldBe "/api/v1/pipelines/run-1/resume"
+        } finally { srv.stop(0) }
+    }
+
+    test("pipeline cancel POSTs to /api/v1/pipelines/{id}/cancel and prints cancelled") {
+        var path: String? = null
+        val (srv, port) = startFakeServer { ex ->
+            path = ex.requestURI.path
+            val body = """{"cancelled":true}""".toByteArray()
+            ex.sendResponseHeaders(200, body.size.toLong())
+            ex.responseBody.write(body)
+        }
+        try {
+            val output = captureStdout { cmdFor(port).dispatch(listOf("cancel", "run-1")) }
+            path shouldBe "/api/v1/pipelines/run-1/cancel"
+            output shouldContain "cancelled"
+        } finally { srv.stop(0) }
+    }
+
+    test("pipeline archive POSTs to /api/v1/pipelines/{id}/archive and prints archived") {
+        var path: String? = null
+        val (srv, port) = startFakeServer { ex ->
+            path = ex.requestURI.path
+            val body = """{"archived":true}""".toByteArray()
+            ex.sendResponseHeaders(200, body.size.toLong())
+            ex.responseBody.write(body)
+        }
+        try {
+            val output = captureStdout { cmdFor(port).dispatch(listOf("archive", "run-1")) }
+            path shouldBe "/api/v1/pipelines/run-1/archive"
+            output shouldContain "archived"
+        } finally { srv.stop(0) }
+    }
+
+    test("pipeline unarchive POSTs to /api/v1/pipelines/{id}/unarchive and prints unarchived") {
+        var path: String? = null
+        val (srv, port) = startFakeServer { ex ->
+            path = ex.requestURI.path
+            val body = """{"unarchived":true}""".toByteArray()
+            ex.sendResponseHeaders(200, body.size.toLong())
+            ex.responseBody.write(body)
+        }
+        try {
+            val output = captureStdout { cmdFor(port).dispatch(listOf("unarchive", "run-1")) }
+            path shouldBe "/api/v1/pipelines/run-1/unarchive"
+            output shouldContain "unarchived"
+        } finally { srv.stop(0) }
+    }
+
+    test("pipeline iterate --file POSTs to /api/v1/pipelines/{id}/iterations with dotSource") {
+        var requestBody: String? = null
+        var path: String? = null
+        val (srv, port) = startFakeServer { ex ->
+            path = ex.requestURI.path
+            requestBody = ex.requestBody.bufferedReader().readText()
+            val body = """{"id":"run-new","status":"running","familyId":"fam-1"}""".toByteArray()
+            ex.sendResponseHeaders(201, body.size.toLong())
+            ex.responseBody.write(body)
+        }
+        val tmpFile = Files.createTempFile("iterate-test", ".dot").toFile()
+        try {
+            tmpFile.writeText("digraph G { a -> b }")
+            captureStdout { cmdFor(port).dispatch(listOf("iterate", "run-1", "--file", tmpFile.absolutePath)) }
+            path shouldBe "/api/v1/pipelines/run-1/iterations"
+            requestBody!! shouldContain "digraph G"
+        } finally {
+            srv.stop(0)
+            tmpFile.delete()
+        }
+    }
+
+    test("pipeline iterate without --file throws CliException exit code 2") {
+        val ex = shouldThrow<CliException> { cmdFor(9999).dispatch(listOf("iterate", "run-1")) }
+        ex.exitCode shouldBe 2
+    }
 })
