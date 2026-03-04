@@ -16,7 +16,7 @@ GRADLEW   := ./gradlew
 JAR        = build/libs/coreys-attractor-server-devel.jar
 WEB_PORT  ?= 7070
 
-.PHONY: help build test clean run run-jar jar cli-jar release dist check install-deps openapi
+.PHONY: help build test clean run run-jar dev jar cli-jar release dist check install-dev-deps openapi
 
 # Default target — show available targets
 help:
@@ -28,13 +28,14 @@ help:
 	@echo "  make clean          Delete all build output"
 	@echo "  make run            Run via Gradle (auto-reloads classpath)"
 	@echo "  make run-jar        Run the pre-built fat JAR directly"
+	@echo "  make dev            Dev mode: watch src/, rebuild + restart on change (requires entr)"
 	@echo "  make jar            Build server devel JAR  (coreys-attractor-server-devel.jar)"
 	@echo "  make cli-jar        Build CLI devel JAR     (coreys-attractor-cli-devel.jar)"
 	@echo "  make release        Build versioned server + CLI JARs (git tag or SHA[-dirty])"
 	@echo "  make dist           Build distribution archives (tar + zip)"
 	@echo "  make check          Run tests and static checks"
 	@echo "  make openapi        Generate OpenAPI 3.0 specs (JSON + YAML)"
-	@echo "  make install-deps   Install required dependencies (Java 21, git)"
+	@echo "  make install-dev-deps   Install dev dependencies (Java 21, git, entr)"
 	@echo ""
 	@echo "  Options (pass on command line):"
 	@echo "    WEB_PORT=<n>   Web UI port  (default: $(WEB_PORT))"
@@ -59,6 +60,11 @@ run:
 run-jar: jar
 	@test -n "$(JAR)" || (echo "ERROR: no JAR found in build/libs/" && exit 1)
 	$(JAVA_HOME)/bin/java -jar $(JAR) --web-port $(WEB_PORT)
+
+# Dev mode: watch src/**/*.kt and rebuild + restart the server on any change.
+# Requires entr — install with: brew install entr
+dev:
+	@WEB_PORT=$(WEB_PORT) JAVA_HOME=$(JAVA_HOME) ./dev.sh
 
 jar:
 	$(GRADLEW) jar
@@ -86,16 +92,16 @@ openapi:
 	python3 scripts/generate-openapi.py
 
 # Detect the OS, ask which package manager to use, show the install command,
-# and offer to run it. Dependencies: Java 21 JDK, git.
+# and offer to run it. Dependencies: Java 21 JDK, git, entr.
 #
 # Written as a single backslash-joined recipe line so it runs in one bash
 # invocation — compatible with GNU Make 3.81 (which pre-dates .ONESHELL).
-install-deps:
+install-dev-deps:
 	@set -e; \
 	OS=$$(uname -s 2>/dev/null || echo "Unknown"); \
 	echo ""; \
 	echo "  Detected OS: $$OS"; \
-	echo "  Dependencies: Java 21 JDK, git"; \
+	echo "  Dependencies: Java 21 JDK, git, entr"; \
 	echo ""; \
 	case "$$OS" in \
 	  Darwin) \
@@ -105,8 +111,8 @@ install-deps:
 	    echo ""; \
 	    read -rp "  Enter number [1-2]: " choice; \
 	    case "$$choice" in \
-	      1) CMD="brew install openjdk@21 git" ;; \
-	      2) CMD="sudo port install openjdk21 git" ;; \
+	      1) CMD="brew install openjdk@21 git entr" ;; \
+	      2) CMD="sudo port install openjdk21 git entr" ;; \
 	      *) echo "  Invalid choice." ; exit 1 ;; \
 	    esac \
 	    ;; \
@@ -122,17 +128,19 @@ install-deps:
 	    echo ""; \
 	    read -rp "  Enter number [1-7]: " choice; \
 	    case "$$choice" in \
-	      1) CMD="sudo apt-get install -y openjdk-21-jdk git" ;; \
-	      2) CMD="sudo dnf install -y java-21-openjdk-devel git" ;; \
-	      3) CMD="sudo yum install -y java-21-openjdk-devel git" ;; \
-	      4) CMD="sudo pacman -S --noconfirm jdk21-openjdk git" ;; \
-	      5) CMD="sudo apk add --no-cache openjdk21 git" ;; \
-	      6) CMD="sudo zypper install -y java-21-openjdk-devel git" ;; \
-	      7) CMD="brew install openjdk@21 git" ;; \
+	      1) CMD="sudo apt-get install -y openjdk-21-jdk git entr" ;; \
+	      2) CMD="sudo dnf install -y java-21-openjdk-devel git entr" ;; \
+	      3) CMD="sudo yum install -y java-21-openjdk-devel git entr" ;; \
+	      4) CMD="sudo pacman -S --noconfirm jdk21-openjdk git entr" ;; \
+	      5) CMD="sudo apk add --no-cache openjdk21 git entr" ;; \
+	      6) CMD="sudo zypper install -y java-21-openjdk-devel git entr" ;; \
+	      7) CMD="brew install openjdk@21 git entr" ;; \
 	      *) echo "  Invalid choice." ; exit 1 ;; \
 	    esac \
 	    ;; \
 	  MINGW*|CYGWIN*|MSYS*) \
+	    echo "  Note: 'entr' (required for make dev) is not available on Windows."; \
+	    echo ""; \
 	    echo "  Select your package manager:"; \
 	    echo "    1) winget   (Windows Package Manager)"; \
 	    echo "    2) choco    (Chocolatey)"; \
@@ -156,20 +164,20 @@ install-deps:
 	    echo "    6)  apk      (Alpine)"; \
 	    echo "    7)  zypper   (openSUSE)"; \
 	    echo "    8)  port     (MacPorts)"; \
-	    echo "    9)  winget   (Windows)"; \
-	    echo "   10)  choco    (Chocolatey)"; \
-	    echo "   11)  scoop    (Scoop)"; \
+	    echo "    9)  winget   (Windows — entr not available)"; \
+	    echo "   10)  choco    (Chocolatey — entr not available)"; \
+	    echo "   11)  scoop    (Scoop — entr not available)"; \
 	    echo ""; \
 	    read -rp "  Enter number [1-11]: " choice; \
 	    case "$$choice" in \
-	      1)  CMD="brew install openjdk@21 git" ;; \
-	      2)  CMD="sudo apt-get install -y openjdk-21-jdk git" ;; \
-	      3)  CMD="sudo dnf install -y java-21-openjdk-devel git" ;; \
-	      4)  CMD="sudo yum install -y java-21-openjdk-devel git" ;; \
-	      5)  CMD="sudo pacman -S --noconfirm jdk21-openjdk git" ;; \
-	      6)  CMD="sudo apk add --no-cache openjdk21 git" ;; \
-	      7)  CMD="sudo zypper install -y java-21-openjdk-devel git" ;; \
-	      8)  CMD="sudo port install openjdk21 git" ;; \
+	      1)  CMD="brew install openjdk@21 git entr" ;; \
+	      2)  CMD="sudo apt-get install -y openjdk-21-jdk git entr" ;; \
+	      3)  CMD="sudo dnf install -y java-21-openjdk-devel git entr" ;; \
+	      4)  CMD="sudo yum install -y java-21-openjdk-devel git entr" ;; \
+	      5)  CMD="sudo pacman -S --noconfirm jdk21-openjdk git entr" ;; \
+	      6)  CMD="sudo apk add --no-cache openjdk21 git entr" ;; \
+	      7)  CMD="sudo zypper install -y java-21-openjdk-devel git entr" ;; \
+	      8)  CMD="sudo port install openjdk21 git entr" ;; \
 	      9)  CMD="winget install Microsoft.OpenJDK.21 Git.Git" ;; \
 	      10) CMD="choco install openjdk21 git" ;; \
 	      11) CMD="scoop install openjdk21 git" ;; \
