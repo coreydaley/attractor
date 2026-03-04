@@ -7,7 +7,7 @@ import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
-class PipelineCommands(private val ctx: CliContext) {
+class ProjectCommands(private val ctx: CliContext) {
     private val client = ApiClient(ctx)
     private val fmt = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm").withZone(ZoneId.systemDefault())
 
@@ -29,12 +29,12 @@ class PipelineCommands(private val ctx: CliContext) {
             "iterate"   -> iterate(args.drop(1))
             "family"    -> family(args.drop(1))
             "--help", "-h", null -> printHelp()
-            else -> throw CliException("Unknown pipeline verb: '${args.first()}'\nRun 'attractor pipeline --help' for usage.", 2)
+            else -> throw CliException("Unknown project verb: '${args.first()}'\nRun 'attractor project --help' for usage.", 2)
         }
     }
 
     private fun list(@Suppress("UNUSED_PARAMETER") args: List<String>) {
-        val json = client.get("/api/v1/pipelines")
+        val json = client.get("/api/v1/projects")
         if (ctx.outputFormat == OutputFormat.JSON) { Formatter.printJson(json); return }
         val arr = Json.parseToJsonElement(json).jsonArray
         val rows = arr.map { p ->
@@ -52,8 +52,8 @@ class PipelineCommands(private val ctx: CliContext) {
     }
 
     private fun get(args: List<String>) {
-        val id = args.firstOrNull() ?: throw CliException("Usage: attractor pipeline get <id>", 2)
-        val json = client.get("/api/v1/pipelines/$id")
+        val id = args.firstOrNull() ?: throw CliException("Usage: attractor project get <id>", 2)
+        val json = client.get("/api/v1/projects/$id")
         if (ctx.outputFormat == OutputFormat.JSON) { Formatter.printJson(json); return }
         val obj = Json.parseToJsonElement(json).jsonObject
         val fields = listOf("id","displayName","fileName","status","archived","hasFailureReport",
@@ -86,7 +86,7 @@ class PipelineCommands(private val ctx: CliContext) {
             }
             i++
         }
-        if (filePath == null) throw CliException("Usage: attractor pipeline create --file <path>", 2)
+        if (filePath == null) throw CliException("Usage: attractor project create --file <path>", 2)
         val dotSource = File(filePath).also {
             if (!it.exists()) throw CliException("File not found: $filePath", 1)
         }.readText()
@@ -97,7 +97,7 @@ class PipelineCommands(private val ctx: CliContext) {
             put("autoApprove", autoApprove)
             if (prompt != null) put("originalPrompt", prompt)
         }.toString()
-        val resp = client.post("/api/v1/pipelines", body)
+        val resp = client.post("/api/v1/projects", body)
         if (ctx.outputFormat == OutputFormat.JSON) { Formatter.printJson(resp); return }
         val obj = Json.parseToJsonElement(resp).jsonObject
         println("id:     ${obj["id"]?.jsonPrimitive?.content}")
@@ -105,7 +105,7 @@ class PipelineCommands(private val ctx: CliContext) {
     }
 
     private fun update(args: List<String>) {
-        val id = args.firstOrNull() ?: throw CliException("Usage: attractor pipeline update <id> [--file <path>] [--prompt <text>]", 2)
+        val id = args.firstOrNull() ?: throw CliException("Usage: attractor project update <id> [--file <path>] [--prompt <text>]", 2)
         var filePath: String? = null
         var prompt: String? = null
         var i = 1
@@ -126,7 +126,7 @@ class PipelineCommands(private val ctx: CliContext) {
             }
             if (prompt != null) put("originalPrompt", prompt)
         }
-        val resp = client.patch("/api/v1/pipelines/$id", bodyObj.toString())
+        val resp = client.patch("/api/v1/projects/$id", bodyObj.toString())
         if (ctx.outputFormat == OutputFormat.JSON) { Formatter.printJson(resp); return }
         val obj = Json.parseToJsonElement(resp).jsonObject
         println("id:     ${obj["id"]?.jsonPrimitive?.content}")
@@ -134,16 +134,16 @@ class PipelineCommands(private val ctx: CliContext) {
     }
 
     private fun delete(args: List<String>) {
-        val id = args.firstOrNull() ?: throw CliException("Usage: attractor pipeline delete <id>", 2)
-        val resp = client.delete("/api/v1/pipelines/$id")
+        val id = args.firstOrNull() ?: throw CliException("Usage: attractor project delete <id>", 2)
+        val resp = client.delete("/api/v1/projects/$id")
         if (ctx.outputFormat == OutputFormat.JSON) { Formatter.printJson(resp); return }
         val obj = Json.parseToJsonElement(resp).jsonObject
         println("deleted: ${obj["deleted"]?.jsonPrimitive?.content}")
     }
 
     private fun lifecycle(args: List<String>, verb: String) {
-        val id = args.firstOrNull() ?: throw CliException("Usage: attractor pipeline $verb <id>", 2)
-        val resp = client.post("/api/v1/pipelines/$id/$verb")
+        val id = args.firstOrNull() ?: throw CliException("Usage: attractor project $verb <id>", 2)
+        val resp = client.post("/api/v1/projects/$id/$verb")
         if (ctx.outputFormat == OutputFormat.JSON) { Formatter.printJson(resp); return }
         val obj = Json.parseToJsonElement(resp).jsonObject
         // Print all fields in the response
@@ -154,8 +154,8 @@ class PipelineCommands(private val ctx: CliContext) {
     }
 
     private fun stages(args: List<String>) {
-        val id = args.firstOrNull() ?: throw CliException("Usage: attractor pipeline stages <id>", 2)
-        val json = client.get("/api/v1/pipelines/$id/stages")
+        val id = args.firstOrNull() ?: throw CliException("Usage: attractor project stages <id>", 2)
+        val json = client.get("/api/v1/projects/$id/stages")
         if (ctx.outputFormat == OutputFormat.JSON) { Formatter.printJson(json); return }
         val arr = Json.parseToJsonElement(json).jsonArray
         val rows = arr.map { s ->
@@ -175,7 +175,7 @@ class PipelineCommands(private val ctx: CliContext) {
     }
 
     private fun watch(args: List<String>) {
-        val id = args.firstOrNull() ?: throw CliException("Usage: attractor pipeline watch <id> [--interval-ms <n>] [--timeout-ms <n>]", 2)
+        val id = args.firstOrNull() ?: throw CliException("Usage: attractor project watch <id> [--interval-ms <n>] [--timeout-ms <n>]", 2)
         var intervalMs = 2000L
         var timeoutMs: Long? = null
         var i = 1
@@ -194,7 +194,7 @@ class PipelineCommands(private val ctx: CliContext) {
             if (timeoutMs != null && System.currentTimeMillis() - startTime > timeoutMs) {
                 throw CliException("Watch timed out after ${timeoutMs}ms", 1)
             }
-            val json = client.get("/api/v1/pipelines/$id")
+            val json = client.get("/api/v1/projects/$id")
             val obj = Json.parseToJsonElement(json).jsonObject
             val status = obj["status"]?.jsonPrimitive?.content ?: "unknown"
             val current = obj["currentNode"]?.let { if (it is JsonNull) "" else it.jsonPrimitive.content } ?: ""
@@ -206,7 +206,7 @@ class PipelineCommands(private val ctx: CliContext) {
             }
             if (status in terminal) {
                 if (status == "failed" || status == "cancelled") {
-                    throw CliException("Pipeline $status", 1)
+                    throw CliException("Project $status", 1)
                 }
                 return
             }
@@ -215,7 +215,7 @@ class PipelineCommands(private val ctx: CliContext) {
     }
 
     private fun iterate(args: List<String>) {
-        val id = args.firstOrNull() ?: throw CliException("Usage: attractor pipeline iterate <id> --file <path>", 2)
+        val id = args.firstOrNull() ?: throw CliException("Usage: attractor project iterate <id> --file <path>", 2)
         var filePath: String? = null
         var prompt: String? = null
         var i = 1
@@ -227,7 +227,7 @@ class PipelineCommands(private val ctx: CliContext) {
             }
             i++
         }
-        if (filePath == null) throw CliException("Usage: attractor pipeline iterate <id> --file <path>", 2)
+        if (filePath == null) throw CliException("Usage: attractor project iterate <id> --file <path>", 2)
         val dotSource = File(filePath).also {
             if (!it.exists()) throw CliException("File not found: $filePath", 1)
         }.readText()
@@ -235,7 +235,7 @@ class PipelineCommands(private val ctx: CliContext) {
             put("dotSource", dotSource)
             if (prompt != null) put("originalPrompt", prompt)
         }.toString()
-        val resp = client.post("/api/v1/pipelines/$id/iterations", body)
+        val resp = client.post("/api/v1/projects/$id/iterations", body)
         if (ctx.outputFormat == OutputFormat.JSON) { Formatter.printJson(resp); return }
         val obj = Json.parseToJsonElement(resp).jsonObject
         println("id:       ${obj["id"]?.jsonPrimitive?.content}")
@@ -244,8 +244,8 @@ class PipelineCommands(private val ctx: CliContext) {
     }
 
     private fun family(args: List<String>) {
-        val id = args.firstOrNull() ?: throw CliException("Usage: attractor pipeline family <id>", 2)
-        val json = client.get("/api/v1/pipelines/$id/family")
+        val id = args.firstOrNull() ?: throw CliException("Usage: attractor project family <id>", 2)
+        val json = client.get("/api/v1/projects/$id/family")
         if (ctx.outputFormat == OutputFormat.JSON) { Formatter.printJson(json); return }
         val obj = Json.parseToJsonElement(json).jsonObject
         val members = obj["members"]?.jsonArray ?: JsonArray(emptyList())
@@ -266,31 +266,31 @@ class PipelineCommands(private val ctx: CliContext) {
 
     private fun printHelp() {
         println("""
-attractor pipeline - Pipeline management commands
+attractor project - Project management commands
 
 Usage:
-  attractor pipeline <verb> [options]
+  attractor project <verb> [options]
 
 Verbs:
-  list                              List all pipelines
-  get <id>                          Get pipeline details
-  create --file <path>              Create and run a pipeline from a DOT file
+  list                              List all projects
+  get <id>                          Get project details
+  create --file <path>              Create and run a project from a DOT file
     [--name <name>]                   Display filename
     [--simulate]                      Run in simulation mode (no LLM calls)
     [--no-auto-approve]               Require manual approval at approval gates
     [--prompt <text>]                 Natural language prompt that generated the DOT
-  update <id>                       Update a pipeline's DOT source or prompt
+  update <id>                       Update a project's DOT source or prompt
     [--file <path>]                   New DOT source file
     [--prompt <text>]                 Updated prompt
-  delete <id>                       Delete a pipeline and its artifacts
-  rerun <id>                        Rerun a pipeline from the start
-  pause <id>                        Pause a running pipeline
-  resume <id>                       Resume a paused pipeline
-  cancel <id>                       Cancel a running or paused pipeline
-  archive <id>                      Archive a pipeline
-  unarchive <id>                    Unarchive a pipeline
-  stages <id>                       List pipeline stages
-  watch <id>                        Poll pipeline until it reaches terminal state
+  delete <id>                       Delete a project and its artifacts
+  rerun <id>                        Rerun a project from the start
+  pause <id>                        Pause a running project
+  resume <id>                       Resume a paused project
+  cancel <id>                       Cancel a running or paused project
+  archive <id>                      Archive a project
+  unarchive <id>                    Unarchive a project
+  stages <id>                       List project stages
+  watch <id>                        Poll project until it reaches terminal state
     [--interval-ms <n>]               Poll interval in ms (default: 2000)
     [--timeout-ms <n>]                Timeout in ms (no timeout by default)
   iterate <id> --file <path>        Create a new iteration in the same family

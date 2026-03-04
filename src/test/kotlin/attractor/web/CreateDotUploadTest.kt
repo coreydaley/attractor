@@ -22,7 +22,7 @@ class CreateDotUploadTest : FunSpec({
     beforeSpec {
         tmpDb = Files.createTempFile("dot-upload-test-", ".db").toFile()
         store = SqliteRunStore(tmpDb!!.absolutePath)
-        server = WebMonitorServer(0, PipelineRegistry(store!!), store!!)
+        server = WebMonitorServer(0, ProjectRegistry(store!!), store!!)
         server!!.start()
         port = server!!.port
     }
@@ -64,8 +64,8 @@ class CreateDotUploadTest : FunSpec({
 
     // ── Regression guard ──────────────────────────────────────────────────────
 
-    test("GET /api/v1/pipelines still returns 200") {
-        get("/api/v1/pipelines").statusCode() shouldBe 200
+    test("GET /api/v1/projects still returns 200") {
+        get("/api/v1/projects").statusCode() shouldBe 200
     }
 
     test("GET /docs still returns 200") {

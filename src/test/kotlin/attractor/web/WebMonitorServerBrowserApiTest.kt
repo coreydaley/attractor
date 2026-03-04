@@ -23,8 +23,8 @@ class WebMonitorServerBrowserApiTest : FunSpec({
     beforeSpec {
         tmpDb = Files.createTempFile("browser-api-test-", ".db").toFile()
         store = SqliteRunStore(tmpDb!!.absolutePath)
-        val reg = PipelineRegistry(store!!)
-        // Pre-register a pipeline for happy-path tests
+        val reg = ProjectRegistry(store!!)
+        // Pre-register a project for happy-path tests
         reg.register(testRunId, "test.dot", "digraph T { start [shape=Mdiamond] exit [shape=Msquare] start -> exit }", familyId = "browser-api-family-1")
         server = WebMonitorServer(0, reg, store!!)
         server!!.start()
@@ -54,23 +54,23 @@ class WebMonitorServerBrowserApiTest : FunSpec({
 
     // ── Read-only routes (GET) ────────────────────────────────────────────────
 
-    test("GET /api/pipelines returns 200 with JSON array") {
-        val resp = get("/api/pipelines")
+    test("GET /api/projects returns 200 with JSON array") {
+        val resp = get("/api/projects")
         resp.statusCode() shouldBe 200
     }
 
-    test("GET /api/pipeline-view?id=known returns 200") {
-        val resp = get("/api/pipeline-view?id=$testRunId")
+    test("GET /api/project-view?id=known returns 200") {
+        val resp = get("/api/project-view?id=$testRunId")
         resp.statusCode() shouldBe 200
     }
 
-    test("GET /api/pipeline-view without id returns 400") {
-        val resp = get("/api/pipeline-view")
+    test("GET /api/project-view without id returns 400") {
+        val resp = get("/api/project-view")
         resp.statusCode() shouldBe 400
     }
 
-    test("GET /api/pipeline-family?id=known returns 200") {
-        val resp = get("/api/pipeline-family?id=$testRunId")
+    test("GET /api/project-family?id=known returns 200") {
+        val resp = get("/api/project-family?id=$testRunId")
         resp.statusCode() shouldBe 200
     }
 
@@ -133,9 +133,9 @@ class WebMonitorServerBrowserApiTest : FunSpec({
         resp.statusCode() shouldBe 405
     }
 
-    test("GET /api/pipeline-view (GET-only) with wrong method returns 405") {
+    test("GET /api/project-view (GET-only) with wrong method returns 405") {
         val req = HttpRequest.newBuilder()
-            .uri(URI.create("http://localhost:$port/api/pipeline-view?id=$testRunId"))
+            .uri(URI.create("http://localhost:$port/api/project-view?id=$testRunId"))
             .POST(HttpRequest.BodyPublishers.noBody()).build()
         val resp = client.send(req, HttpResponse.BodyHandlers.ofString())
         resp.statusCode() shouldBe 405
@@ -148,8 +148,8 @@ class WebMonitorServerBrowserApiTest : FunSpec({
         resp.statusCode() shouldBe 200
     }
 
-    test("GET /api/v1/pipelines returns 200 (REST API still works)") {
-        val resp = get("/api/v1/pipelines")
+    test("GET /api/v1/projects returns 200 (REST API still works)") {
+        val resp = get("/api/v1/projects")
         resp.statusCode() shouldBe 200
     }
 
@@ -232,5 +232,17 @@ class WebMonitorServerBrowserApiTest : FunSpec({
     test("GET / body contains prevStatuses variable (completion transition tracking)") {
         val resp = get("/")
         resp.body() shouldContain "prevStatuses"
+    }
+
+    // ── Sprint 019: Pipeline → Project rename ─────────────────────────────────
+
+    test("GET /api/v1/projects returns 200 (project rename)") {
+        val resp = get("/api/v1/projects")
+        resp.statusCode() shouldBe 200
+    }
+
+    test("GET /api/v1/pipelines returns 404 (old path hard cut)") {
+        val resp = get("/api/v1/pipelines")
+        resp.statusCode() shouldBe 404
     }
 })

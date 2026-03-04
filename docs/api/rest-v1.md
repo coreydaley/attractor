@@ -2,7 +2,7 @@
 
 ## Overview
 
-The REST API v1 is mounted at `/api/v1/` and provides programmatic access to all pipeline management, DOT generation, validation, settings, model catalog, and real-time event streaming capabilities.
+The REST API v1 is mounted at `/api/v1/` and provides programmatic access to all project management, DOT generation, validation, settings, model catalog, and real-time event streaming capabilities.
 
 **Base URL:** `http://localhost:<port>/api/v1`
 
@@ -29,7 +29,7 @@ Common error codes:
 |---|---|---|
 | `NOT_FOUND` | 404 | Resource does not exist |
 | `BAD_REQUEST` | 400 | Missing or invalid request parameter |
-| `INVALID_STATE` | 409 | Operation not permitted in current pipeline state |
+| `INVALID_STATE` | 409 | Operation not permitted in current project state |
 | `INTERNAL_ERROR` | 500 | Unexpected server error |
 | `RENDER_ERROR` | 400 | Graphviz render failed |
 | `GENERATION_ERROR` | 500 | LLM DOT generation failed |
@@ -40,15 +40,15 @@ All endpoints return `Access-Control-Allow-Origin: *` and handle `OPTIONS` prefl
 
 ---
 
-## Pipeline JSON shape
+## Project JSON shape
 
-The pipeline object returned by most pipeline endpoints has the following shape:
+The project object returned by most project endpoints has the following shape:
 
 ```json
 {
   "id": "run-1234567890-1",
   "displayName": "Autumn Falcon",
-  "fileName": "my-pipeline.dot",
+  "fileName": "my-project.dot",
   "status": "running",
   "archived": false,
   "hasFailureReport": false,
@@ -72,16 +72,16 @@ The pipeline object returned by most pipeline endpoints has the following shape:
     }
   ],
   "logs": [
-    "[2025-01-01T00:00:00Z] Pipeline started: Autumn Falcon [run-1234567890-1]"
+    "[2025-01-01T00:00:00Z] Project started: Autumn Falcon [run-1234567890-1]"
   ]
 }
 ```
 
-When the `full` variant is returned (single-pipeline GET), the additional field `dotSource` is included:
+When the `full` variant is returned (single-project GET), the additional field `dotSource` is included:
 
 ```json
 {
-  "dotSource": "digraph MyPipeline { ... }"
+  "dotSource": "digraph MyProject { ... }"
 }
 ```
 
@@ -91,15 +91,15 @@ When the `full` variant is returned (single-pipeline GET), the additional field 
 
 ---
 
-## `pipeline-meta.json` schema (import / export)
+## `project-meta.json` schema (import / export)
 
-When exporting a pipeline the ZIP archive contains a single file `pipeline-meta.json`:
+When exporting a project the ZIP archive contains a single file `project-meta.json`:
 
 ```json
 {
   "id": "run-1234567890-1",
-  "fileName": "my-pipeline.dot",
-  "dotSource": "digraph MyPipeline { ... }",
+  "fileName": "my-project.dot",
+  "dotSource": "digraph MyProject { ... }",
   "originalPrompt": "original prompt text",
   "familyId": "run-1234567890-1",
   "simulate": false,
@@ -113,15 +113,15 @@ Required fields for import: `fileName`, `dotSource`. All other fields are option
 
 ## Endpoints
 
-### Pipelines
+### Projects
 
-#### 1. List all pipelines
+#### 1. List all projects
 
 ```
-GET /api/v1/pipelines
+GET /api/v1/projects
 ```
 
-Returns a JSON array of all pipeline objects (without `dotSource`).
+Returns a JSON array of all project objects (without `dotSource`).
 
 **Response 200:**
 ```json
@@ -132,15 +132,15 @@ Returns a JSON array of all pipeline objects (without `dotSource`).
 
 **curl:**
 ```bash
-curl http://localhost:8080/api/v1/pipelines
+curl http://localhost:8080/api/v1/projects
 ```
 
 ---
 
-#### 2. Create a pipeline
+#### 2. Create a project
 
 ```
-POST /api/v1/pipelines
+POST /api/v1/projects
 Content-Type: application/json
 ```
 
@@ -148,7 +148,7 @@ Content-Type: application/json
 
 | Field | Type | Required | Default | Description |
 |---|---|---|---|---|
-| `dotSource` | string | yes | — | DOT source for the pipeline |
+| `dotSource` | string | yes | — | DOT source for the project |
 | `fileName` | string | no | `""` | Display filename |
 | `simulate` | boolean | no | `false` | Run in simulation mode (no LLM calls) |
 | `autoApprove` | boolean | no | `true` | Skip human approval gates |
@@ -167,43 +167,43 @@ Content-Type: application/json
 
 **curl:**
 ```bash
-curl -X POST http://localhost:8080/api/v1/pipelines \
+curl -X POST http://localhost:8080/api/v1/projects \
   -H 'Content-Type: application/json' \
   -d '{"dotSource":"digraph P { graph[goal=\"test\",label=\"test\"] start[shape=Mdiamond,label=\"Start\"] exit[shape=Msquare,label=\"Done\"] start->exit }","fileName":"test.dot","simulate":true}'
 ```
 
 ---
 
-#### 3. Get a single pipeline
+#### 3. Get a single project
 
 ```
-GET /api/v1/pipelines/{id}
+GET /api/v1/projects/{id}
 ```
 
-Returns the full pipeline object including `dotSource`. Hydrates from the database if not in memory.
+Returns the full project object including `dotSource`. Hydrates from the database if not in memory.
 
-**Response 200:** Full pipeline object (see Pipeline JSON shape above, including `dotSource`)
+**Response 200:** Full project object (see Project JSON shape above, including `dotSource`)
 
 **Response 404:**
 ```json
-{ "error": "pipeline not found", "code": "NOT_FOUND" }
+{ "error": "project not found", "code": "NOT_FOUND" }
 ```
 
 **curl:**
 ```bash
-curl http://localhost:8080/api/v1/pipelines/run-1700000000000-1
+curl http://localhost:8080/api/v1/projects/run-1700000000000-1
 ```
 
 ---
 
-#### 4. Update a pipeline (PATCH)
+#### 4. Update a project (PATCH)
 
 ```
-PATCH /api/v1/pipelines/{id}
+PATCH /api/v1/projects/{id}
 Content-Type: application/json
 ```
 
-Allowed only when the pipeline is not `running` or `paused`.
+Allowed only when the project is not `running` or `paused`.
 
 **Request body:**
 
@@ -212,31 +212,31 @@ Allowed only when the pipeline is not `running` or `paused`.
 | `dotSource` | string | no | New DOT source |
 | `originalPrompt` | string | no | Updated prompt |
 
-**Response 200:** Updated full pipeline object
+**Response 200:** Updated full project object
 
 **Response 404:** `NOT_FOUND`
 
 **Response 409:**
 ```json
-{ "error": "cannot update dotSource while pipeline is running or paused", "code": "INVALID_STATE" }
+{ "error": "cannot update dotSource while project is running or paused", "code": "INVALID_STATE" }
 ```
 
 **curl:**
 ```bash
-curl -X PATCH http://localhost:8080/api/v1/pipelines/run-1700000000000-1 \
+curl -X PATCH http://localhost:8080/api/v1/projects/run-1700000000000-1 \
   -H 'Content-Type: application/json' \
   -d '{"dotSource":"digraph Updated { ... }"}'
 ```
 
 ---
 
-#### 5. Delete a pipeline
+#### 5. Delete a project
 
 ```
-DELETE /api/v1/pipelines/{id}
+DELETE /api/v1/projects/{id}
 ```
 
-Removes the pipeline from memory, database, and deletes its artifacts directory. Not allowed while `running` or `paused`.
+Removes the project from memory, database, and deletes its artifacts directory. Not allowed while `running` or `paused`.
 
 **Response 200:**
 ```json
@@ -245,25 +245,25 @@ Removes the pipeline from memory, database, and deletes its artifacts directory.
 
 **Response 409:**
 ```json
-{ "error": "cannot delete running or paused pipeline", "code": "INVALID_STATE" }
+{ "error": "cannot delete running or paused project", "code": "INVALID_STATE" }
 ```
 
 **curl:**
 ```bash
-curl -X DELETE http://localhost:8080/api/v1/pipelines/run-1700000000000-1
+curl -X DELETE http://localhost:8080/api/v1/projects/run-1700000000000-1
 ```
 
 ---
 
-### Pipeline lifecycle actions
+### Project lifecycle actions
 
-#### 6. Rerun a pipeline
+#### 6. Rerun a project
 
 ```
-POST /api/v1/pipelines/{id}/rerun
+POST /api/v1/projects/{id}/rerun
 ```
 
-Resets and re-executes an existing pipeline from the beginning. Not allowed if already `running`.
+Resets and re-executes an existing project from the beginning. Not allowed if already `running`.
 
 **Response 200:**
 ```json
@@ -272,23 +272,23 @@ Resets and re-executes an existing pipeline from the beginning. Not allowed if a
 
 **Response 409:**
 ```json
-{ "error": "pipeline is already running", "code": "INVALID_STATE" }
+{ "error": "project is already running", "code": "INVALID_STATE" }
 ```
 
 **curl:**
 ```bash
-curl -X POST http://localhost:8080/api/v1/pipelines/run-1700000000000-1/rerun
+curl -X POST http://localhost:8080/api/v1/projects/run-1700000000000-1/rerun
 ```
 
 ---
 
-#### 7. Pause a pipeline
+#### 7. Pause a project
 
 ```
-POST /api/v1/pipelines/{id}/pause
+POST /api/v1/projects/{id}/pause
 ```
 
-Signals a running pipeline to pause after completing its current stage. Pipeline must be `running`.
+Signals a running project to pause after completing its current stage. Project must be `running`.
 
 **Response 200:**
 ```json
@@ -297,23 +297,23 @@ Signals a running pipeline to pause after completing its current stage. Pipeline
 
 **Response 409:**
 ```json
-{ "error": "pipeline is not running", "code": "INVALID_STATE" }
+{ "error": "project is not running", "code": "INVALID_STATE" }
 ```
 
 **curl:**
 ```bash
-curl -X POST http://localhost:8080/api/v1/pipelines/run-1700000000000-1/pause
+curl -X POST http://localhost:8080/api/v1/projects/run-1700000000000-1/pause
 ```
 
 ---
 
-#### 8. Resume a pipeline
+#### 8. Resume a project
 
 ```
-POST /api/v1/pipelines/{id}/resume
+POST /api/v1/projects/{id}/resume
 ```
 
-Resumes a `paused` pipeline from the last checkpoint. Pipeline must be `paused`.
+Resumes a `paused` project from the last checkpoint. Project must be `paused`.
 
 **Response 200:**
 ```json
@@ -322,23 +322,23 @@ Resumes a `paused` pipeline from the last checkpoint. Pipeline must be `paused`.
 
 **Response 409:**
 ```json
-{ "error": "pipeline is not paused", "code": "INVALID_STATE" }
+{ "error": "project is not paused", "code": "INVALID_STATE" }
 ```
 
 **curl:**
 ```bash
-curl -X POST http://localhost:8080/api/v1/pipelines/run-1700000000000-1/resume
+curl -X POST http://localhost:8080/api/v1/projects/run-1700000000000-1/resume
 ```
 
 ---
 
-#### 9. Cancel a pipeline
+#### 9. Cancel a project
 
 ```
-POST /api/v1/pipelines/{id}/cancel
+POST /api/v1/projects/{id}/cancel
 ```
 
-Cancels a `running` or `paused` pipeline. The cancel token is set and the pipeline thread is interrupted.
+Cancels a `running` or `paused` project. The cancel token is set and the project thread is interrupted.
 
 **Response 200:**
 ```json
@@ -347,23 +347,23 @@ Cancels a `running` or `paused` pipeline. The cancel token is set and the pipeli
 
 **Response 409:**
 ```json
-{ "error": "pipeline is not running or paused", "code": "INVALID_STATE" }
+{ "error": "project is not running or paused", "code": "INVALID_STATE" }
 ```
 
 **curl:**
 ```bash
-curl -X POST http://localhost:8080/api/v1/pipelines/run-1700000000000-1/cancel
+curl -X POST http://localhost:8080/api/v1/projects/run-1700000000000-1/cancel
 ```
 
 ---
 
-#### 10. Archive a pipeline
+#### 10. Archive a project
 
 ```
-POST /api/v1/pipelines/{id}/archive
+POST /api/v1/projects/{id}/archive
 ```
 
-Marks a pipeline as archived (hidden from the default dashboard view). Can be archived regardless of status.
+Marks a project as archived (hidden from the default dashboard view). Can be archived regardless of status.
 
 **Response 200:**
 ```json
@@ -372,18 +372,18 @@ Marks a pipeline as archived (hidden from the default dashboard view). Can be ar
 
 **curl:**
 ```bash
-curl -X POST http://localhost:8080/api/v1/pipelines/run-1700000000000-1/archive
+curl -X POST http://localhost:8080/api/v1/projects/run-1700000000000-1/archive
 ```
 
 ---
 
-#### 11. Unarchive a pipeline
+#### 11. Unarchive a project
 
 ```
-POST /api/v1/pipelines/{id}/unarchive
+POST /api/v1/projects/{id}/unarchive
 ```
 
-Removes the archived flag, making the pipeline visible again.
+Removes the archived flag, making the project visible again.
 
 **Response 200:**
 ```json
@@ -392,19 +392,19 @@ Removes the archived flag, making the pipeline visible again.
 
 **curl:**
 ```bash
-curl -X POST http://localhost:8080/api/v1/pipelines/run-1700000000000-1/unarchive
+curl -X POST http://localhost:8080/api/v1/projects/run-1700000000000-1/unarchive
 ```
 
 ---
 
-#### 12. Create a pipeline iteration
+#### 12. Create a project iteration
 
 ```
-POST /api/v1/pipelines/{id}/iterations
+POST /api/v1/projects/{id}/iterations
 Content-Type: application/json
 ```
 
-Creates a new pipeline run in the same family as the given pipeline, using a new DOT source. Used to iterate on a pipeline design while keeping family history.
+Creates a new project run in the same family as the given project, using a new DOT source. Used to iterate on a project design while keeping family history.
 
 **Request body:**
 
@@ -421,7 +421,7 @@ Creates a new pipeline run in the same family as the given pipeline, using a new
 
 **curl:**
 ```bash
-curl -X POST http://localhost:8080/api/v1/pipelines/run-1700000000000-1/iterations \
+curl -X POST http://localhost:8080/api/v1/projects/run-1700000000000-1/iterations \
   -H 'Content-Type: application/json' \
   -d '{"dotSource":"digraph V2 { ... }"}'
 ```
@@ -430,13 +430,13 @@ curl -X POST http://localhost:8080/api/v1/pipelines/run-1700000000000-1/iteratio
 
 ### Family
 
-#### 13. Get pipeline family
+#### 13. Get project family
 
 ```
-GET /api/v1/pipelines/{id}/family
+GET /api/v1/projects/{id}/family
 ```
 
-Returns all pipeline runs in the same family as the given pipeline (up to 100 members), ordered by creation time.
+Returns all project runs in the same family as the given project (up to 100 members), ordered by creation time.
 
 **Response 200:**
 ```json
@@ -458,20 +458,20 @@ Returns all pipeline runs in the same family as the given pipeline (up to 100 me
 
 **curl:**
 ```bash
-curl http://localhost:8080/api/v1/pipelines/run-1700000000000-1/family
+curl http://localhost:8080/api/v1/projects/run-1700000000000-1/family
 ```
 
 ---
 
 ### Stages
 
-#### 14. Get pipeline stages
+#### 14. Get project stages
 
 ```
-GET /api/v1/pipelines/{id}/stages
+GET /api/v1/projects/{id}/stages
 ```
 
-Returns the list of stage records for the pipeline.
+Returns the list of stage records for the project.
 
 **Response 200:**
 ```json
@@ -491,7 +491,7 @@ Returns the list of stage records for the pipeline.
 
 **curl:**
 ```bash
-curl http://localhost:8080/api/v1/pipelines/run-1700000000000-1/stages
+curl http://localhost:8080/api/v1/projects/run-1700000000000-1/stages
 ```
 
 ---
@@ -499,7 +499,7 @@ curl http://localhost:8080/api/v1/pipelines/run-1700000000000-1/stages
 #### 15. Get stage log
 
 ```
-GET /api/v1/pipelines/{id}/stages/{nodeId}/log
+GET /api/v1/projects/{id}/stages/{nodeId}/log
 ```
 
 Returns the raw `live.log` text for the specified stage node. The `nodeId` corresponds to the node's `id` attribute in the DOT source.
@@ -515,7 +515,7 @@ Returns the raw `live.log` text for the specified stage node. The `nodeId` corre
 
 **curl:**
 ```bash
-curl http://localhost:8080/api/v1/pipelines/run-1700000000000-1/stages/writeTests/log
+curl http://localhost:8080/api/v1/projects/run-1700000000000-1/stages/writeTests/log
 ```
 
 ---
@@ -525,10 +525,10 @@ curl http://localhost:8080/api/v1/pipelines/run-1700000000000-1/stages/writeTest
 #### 16. List artifacts
 
 ```
-GET /api/v1/pipelines/{id}/artifacts
+GET /api/v1/projects/{id}/artifacts
 ```
 
-Lists all files in the pipeline's artifacts directory (up to 500 entries).
+Lists all files in the project's artifacts directory (up to 500 entries).
 
 **Response 200:**
 ```json
@@ -543,7 +543,7 @@ Lists all files in the pipeline's artifacts directory (up to 500 entries).
 
 **curl:**
 ```bash
-curl http://localhost:8080/api/v1/pipelines/run-1700000000000-1/artifacts
+curl http://localhost:8080/api/v1/projects/run-1700000000000-1/artifacts
 ```
 
 ---
@@ -551,7 +551,7 @@ curl http://localhost:8080/api/v1/pipelines/run-1700000000000-1/artifacts
 #### 17. Get artifact file
 
 ```
-GET /api/v1/pipelines/{id}/artifacts/{path...}
+GET /api/v1/projects/{id}/artifacts/{path...}
 ```
 
 Returns the raw content of a specific artifact file. Path traversal is blocked; requests that escape the artifacts root return 404. Text files (`log`, `txt`, `md`, `json`, `dot`, `kt`, `py`, `js`, `sh`, `yaml`, `yml`, `toml`, `xml`, `html`, `css`) are served as `text/plain; charset=utf-8`. All others are `application/octet-stream`.
@@ -562,7 +562,7 @@ Returns the raw content of a specific artifact file. Path traversal is blocked; 
 
 **curl:**
 ```bash
-curl http://localhost:8080/api/v1/pipelines/run-1700000000000-1/artifacts/writeTests/live.log
+curl http://localhost:8080/api/v1/projects/run-1700000000000-1/artifacts/writeTests/live.log
 ```
 
 ---
@@ -570,7 +570,7 @@ curl http://localhost:8080/api/v1/pipelines/run-1700000000000-1/artifacts/writeT
 #### 18. Download artifacts ZIP
 
 ```
-GET /api/v1/pipelines/{id}/artifacts.zip
+GET /api/v1/projects/{id}/artifacts.zip
 ```
 
 Streams all artifact files as a ZIP archive (`Content-Disposition: attachment; filename="artifacts-<name>.zip"`).
@@ -581,7 +581,7 @@ Streams all artifact files as a ZIP archive (`Content-Disposition: attachment; f
 
 **curl:**
 ```bash
-curl -o artifacts.zip http://localhost:8080/api/v1/pipelines/run-1700000000000-1/artifacts.zip
+curl -o artifacts.zip http://localhost:8080/api/v1/projects/run-1700000000000-1/artifacts.zip
 ```
 
 ---
@@ -591,10 +591,10 @@ curl -o artifacts.zip http://localhost:8080/api/v1/pipelines/run-1700000000000-1
 #### 19. Get failure report
 
 ```
-GET /api/v1/pipelines/{id}/failure-report
+GET /api/v1/projects/{id}/failure-report
 ```
 
-Returns the `failure_report.json` file from the pipeline's artifacts directory. Only available when `hasFailureReport` is `true`.
+Returns the `failure_report.json` file from the project's artifacts directory. Only available when `hasFailureReport` is `true`.
 
 **Response 200:** `Content-Type: application/json` — the raw failure report JSON
 
@@ -602,46 +602,46 @@ Returns the `failure_report.json` file from the pipeline's artifacts directory. 
 
 **curl:**
 ```bash
-curl http://localhost:8080/api/v1/pipelines/run-1700000000000-1/failure-report
+curl http://localhost:8080/api/v1/projects/run-1700000000000-1/failure-report
 ```
 
 ---
 
 ### Import / Export / DOT file
 
-#### 20. Export a pipeline
+#### 20. Export a project
 
 ```
-GET /api/v1/pipelines/{id}/export
+GET /api/v1/projects/{id}/export
 ```
 
-Downloads a ZIP archive containing `pipeline-meta.json` with the pipeline's DOT source and metadata. Use this to transfer a pipeline between Attractor instances.
+Downloads a ZIP archive containing `project-meta.json` with the project's DOT source and metadata. Use this to transfer a project between Attractor instances.
 
-**Response 200:** `Content-Type: application/zip`, `Content-Disposition: attachment; filename="pipeline-<id>.zip"`
+**Response 200:** `Content-Type: application/zip`, `Content-Disposition: attachment; filename="project-<id>.zip"`
 
 **curl:**
 ```bash
-curl -o pipeline.zip http://localhost:8080/api/v1/pipelines/run-1700000000000-1/export
+curl -o project.zip http://localhost:8080/api/v1/projects/run-1700000000000-1/export
 ```
 
 ---
 
-#### 21. Import a pipeline
+#### 21. Import a project
 
 ```
-POST /api/v1/pipelines/import?onConflict=skip
+POST /api/v1/projects/import?onConflict=skip
 Content-Type: application/zip
 ```
 
-Imports a pipeline from a ZIP archive previously exported via the export endpoint. The request body must be the raw ZIP bytes.
+Imports a project from a ZIP archive previously exported via the export endpoint. The request body must be the raw ZIP bytes.
 
 **Query parameters:**
 
 | Parameter | Values | Default | Description |
 |---|---|---|---|
-| `onConflict` | `skip`, `replace` | `skip` | If `skip`, returns `{"status":"skipped"}` when a pipeline with the same familyId already exists. If `replace`, always creates a new run. |
+| `onConflict` | `skip`, `replace` | `skip` | If `skip`, returns `{"status":"skipped"}` when a project with the same familyId already exists. If `replace`, always creates a new run. |
 
-The ZIP must contain a `pipeline-meta.json` with at minimum `fileName` and `dotSource` fields.
+The ZIP must contain a `project-meta.json` with at minimum `fileName` and `dotSource` fields.
 
 **Response 201 (imported):**
 ```json
@@ -653,50 +653,50 @@ The ZIP must contain a `pipeline-meta.json` with at minimum `fileName` and `dotS
 { "status": "skipped", "id": "run-1700000000000-1" }
 ```
 
-**Response 400:** ZIP is missing, corrupt, or `pipeline-meta.json` is invalid
+**Response 400:** ZIP is missing, corrupt, or `project-meta.json` is invalid
 
 **curl:**
 ```bash
-curl -X POST "http://localhost:8080/api/v1/pipelines/import?onConflict=skip" \
+curl -X POST "http://localhost:8080/api/v1/projects/import?onConflict=skip" \
   -H 'Content-Type: application/zip' \
-  --data-binary @pipeline.zip
+  --data-binary @project.zip
 ```
 
 ---
 
-#### 22. Download a pipeline's DOT file
+#### 22. Download a project's DOT file
 
 ```
-GET /api/v1/pipelines/{id}/dot
+GET /api/v1/projects/{id}/dot
 ```
 
-Downloads the pipeline's DOT source as a plain-text `.dot` file.
+Downloads the project's DOT source as a plain-text `.dot` file.
 
 **Response 200:** `Content-Type: text/plain; charset=utf-8`, `Content-Disposition: attachment; filename="<fileName>"`
 
-**Response 404:** pipeline not found, or pipeline has no DOT source
+**Response 404:** project not found, or project has no DOT source
 
 **curl:**
 ```bash
-curl -o pipeline.dot http://localhost:8080/api/v1/pipelines/run-1700000000000-1/dot
+curl -o project.dot http://localhost:8080/api/v1/projects/run-1700000000000-1/dot
 ```
 
 ---
 
-#### 23. Upload a DOT file to create a pipeline
+#### 23. Upload a DOT file to create a project
 
 ```
-POST /api/v1/pipelines/dot
+POST /api/v1/projects/dot
 Content-Type: text/plain
 ```
 
-Accepts a raw DOT source string as the request body and immediately submits it as a new pipeline run. Options are passed as query parameters.
+Accepts a raw DOT source string as the request body and immediately submits it as a new project run. Options are passed as query parameters.
 
 **Query parameters:**
 
 | Parameter | Type | Default | Description |
 |---|---|---|---|
-| `fileName` | string | `""` | Display name / filename for the pipeline |
+| `fileName` | string | `""` | Display name / filename for the project |
 | `simulate` | boolean | `false` | If `true`, runs without LLM calls |
 | `autoApprove` | boolean | `true` | If `false`, gates require manual approval |
 | `originalPrompt` | string | `""` | Natural-language prompt that produced the DOT |
@@ -710,9 +710,9 @@ Accepts a raw DOT source string as the request body and immediately submits it a
 
 **curl:**
 ```bash
-curl -X POST "http://localhost:8080/api/v1/pipelines/dot?fileName=my-pipeline.dot" \
+curl -X POST "http://localhost:8080/api/v1/projects/dot?fileName=my-project.dot" \
   -H 'Content-Type: text/plain' \
-  --data-binary @my-pipeline.dot
+  --data-binary @my-project.dot
 ```
 
 ---
@@ -805,17 +805,17 @@ POST /api/v1/dot/generate
 Content-Type: application/json
 ```
 
-Uses an LLM to generate an Attractor DOT pipeline from a natural language prompt. Blocks until generation is complete.
+Uses an LLM to generate an Attractor DOT project from a natural language prompt. Blocks until generation is complete.
 
 **Request body:**
 
 | Field | Type | Required | Description |
 |---|---|---|---|
-| `prompt` | string | yes | Natural language description of the desired pipeline |
+| `prompt` | string | yes | Natural language description of the desired project |
 
 **Response 200:**
 ```json
-{ "dotSource": "digraph MyPipeline { ... }" }
+{ "dotSource": "digraph MyProject { ... }" }
 ```
 
 **Response 500:**
@@ -852,9 +852,9 @@ Event stream format:
 ```
 data: {"delta":"digraph"}
 
-data: {"delta":" MyPipeline"}
+data: {"delta":" MyProject"}
 
-data: {"done":true,"dotSource":"digraph MyPipeline { ... }"}
+data: {"done":true,"dotSource":"digraph MyProject { ... }"}
 ```
 
 On error:
@@ -864,7 +864,7 @@ data: {"error":"No LLM API key configured."}
 
 **curl:**
 ```bash
-curl -N "http://localhost:8080/api/v1/dot/generate/stream?prompt=Build%20a%20CI%20pipeline"
+curl -N "http://localhost:8080/api/v1/dot/generate/stream?prompt=Build%20a%20CI%20project"
 ```
 
 ---
@@ -941,7 +941,7 @@ Uses an LLM to modify an existing DOT source according to a natural language cha
 
 **Response 200:**
 ```json
-{ "dotSource": "digraph UpdatedPipeline { ... }" }
+{ "dotSource": "digraph UpdatedProject { ... }" }
 ```
 
 **curl:**
@@ -1011,7 +1011,7 @@ Returns a single setting value. Returns 404 for unknown keys or unset values.
 
 | Key | Description |
 |---|---|
-| `fireworks_enabled` | Whether the fireworks animation plays on pipeline completion |
+| `fireworks_enabled` | Whether the fireworks animation plays on project completion |
 
 **Response 200:**
 ```json
@@ -1106,14 +1106,14 @@ curl http://localhost:8080/api/v1/models
 GET /api/v1/events
 ```
 
-Establishes a persistent SSE connection that receives real-time pipeline state updates for all pipelines. The first event is always the current full snapshot. Subsequent events are sent whenever any pipeline changes state.
+Establishes a persistent SSE connection that receives real-time project state updates for all projects. The first event is always the current full snapshot. Subsequent events are sent whenever any project changes state.
 
 **Response 200:** `Content-Type: text/event-stream`
 
 ```
-data: {"pipelines":[...]}
+data: {"projects":[...]}
 
-data: {"pipelines":[...]}
+data: {"projects":[...]}
 
 : heartbeat
 
@@ -1128,25 +1128,25 @@ curl -N http://localhost:8080/api/v1/events
 
 ---
 
-#### 37. Per-pipeline event stream
+#### 37. Per-project event stream
 
 ```
 GET /api/v1/events/{id}
 ```
 
-Establishes a persistent SSE connection scoped to a single pipeline. Returns 404 if the pipeline does not exist. The first event is a per-pipeline snapshot. Subsequent events are forwarded only when the given pipeline's id is present in the update payload.
+Establishes a persistent SSE connection scoped to a single project. Returns 404 if the project does not exist. The first event is a per-project snapshot. Subsequent events are forwarded only when the given project's id is present in the update payload.
 
 **Response 200:** `Content-Type: text/event-stream`
 
 First event:
 ```
-data: {"pipeline":{"id":"run-...","status":"running",...}}
+data: {"project":{"id":"run-...","status":"running",...}}
 
 ```
 
 Subsequent events follow the same format as the global stream.
 
-**Response 404:** Pipeline not found
+**Response 404:** Project not found
 
 **curl:**
 ```bash
@@ -1159,29 +1159,29 @@ curl -N http://localhost:8080/api/v1/events/run-1700000000000-1
 
 | # | Method | Path | Description |
 |---|---|---|---|
-| 1 | GET | `/api/v1/pipelines` | List all pipelines |
-| 2 | POST | `/api/v1/pipelines` | Create and run a pipeline |
-| 3 | GET | `/api/v1/pipelines/{id}` | Get a single pipeline (full) |
-| 4 | PATCH | `/api/v1/pipelines/{id}` | Update dotSource / originalPrompt |
-| 5 | DELETE | `/api/v1/pipelines/{id}` | Delete a pipeline and its artifacts |
-| 6 | POST | `/api/v1/pipelines/{id}/rerun` | Rerun from start |
-| 7 | POST | `/api/v1/pipelines/{id}/pause` | Pause a running pipeline |
-| 8 | POST | `/api/v1/pipelines/{id}/resume` | Resume a paused pipeline |
-| 9 | POST | `/api/v1/pipelines/{id}/cancel` | Cancel a running or paused pipeline |
-| 10 | POST | `/api/v1/pipelines/{id}/archive` | Archive a pipeline |
-| 11 | POST | `/api/v1/pipelines/{id}/unarchive` | Unarchive a pipeline |
-| 12 | POST | `/api/v1/pipelines/{id}/iterations` | Create a new iteration in the same family |
-| 13 | GET | `/api/v1/pipelines/{id}/family` | Get all runs in the same family |
-| 14 | GET | `/api/v1/pipelines/{id}/stages` | Get stage list |
-| 15 | GET | `/api/v1/pipelines/{id}/stages/{nodeId}/log` | Get stage log text |
-| 16 | GET | `/api/v1/pipelines/{id}/artifacts` | List artifact files |
-| 17 | GET | `/api/v1/pipelines/{id}/artifacts/{path...}` | Download a specific artifact |
-| 18 | GET | `/api/v1/pipelines/{id}/artifacts.zip` | Download all artifacts as ZIP |
-| 19 | GET | `/api/v1/pipelines/{id}/failure-report` | Get failure report JSON |
-| 20 | GET | `/api/v1/pipelines/{id}/export` | Export pipeline as ZIP |
-| 21 | POST | `/api/v1/pipelines/import` | Import pipeline from ZIP |
-| 22 | GET | `/api/v1/pipelines/{id}/dot` | Download pipeline DOT source as a file |
-| 23 | POST | `/api/v1/pipelines/dot` | Upload raw DOT to create and run a pipeline |
+| 1 | GET | `/api/v1/projects` | List all projects |
+| 2 | POST | `/api/v1/projects` | Create and run a project |
+| 3 | GET | `/api/v1/projects/{id}` | Get a single project (full) |
+| 4 | PATCH | `/api/v1/projects/{id}` | Update dotSource / originalPrompt |
+| 5 | DELETE | `/api/v1/projects/{id}` | Delete a project and its artifacts |
+| 6 | POST | `/api/v1/projects/{id}/rerun` | Rerun from start |
+| 7 | POST | `/api/v1/projects/{id}/pause` | Pause a running project |
+| 8 | POST | `/api/v1/projects/{id}/resume` | Resume a paused project |
+| 9 | POST | `/api/v1/projects/{id}/cancel` | Cancel a running or paused project |
+| 10 | POST | `/api/v1/projects/{id}/archive` | Archive a project |
+| 11 | POST | `/api/v1/projects/{id}/unarchive` | Unarchive a project |
+| 12 | POST | `/api/v1/projects/{id}/iterations` | Create a new iteration in the same family |
+| 13 | GET | `/api/v1/projects/{id}/family` | Get all runs in the same family |
+| 14 | GET | `/api/v1/projects/{id}/stages` | Get stage list |
+| 15 | GET | `/api/v1/projects/{id}/stages/{nodeId}/log` | Get stage log text |
+| 16 | GET | `/api/v1/projects/{id}/artifacts` | List artifact files |
+| 17 | GET | `/api/v1/projects/{id}/artifacts/{path...}` | Download a specific artifact |
+| 18 | GET | `/api/v1/projects/{id}/artifacts.zip` | Download all artifacts as ZIP |
+| 19 | GET | `/api/v1/projects/{id}/failure-report` | Get failure report JSON |
+| 20 | GET | `/api/v1/projects/{id}/export` | Export project as ZIP |
+| 21 | POST | `/api/v1/projects/import` | Import project from ZIP |
+| 22 | GET | `/api/v1/projects/{id}/dot` | Download project DOT source as a file |
+| 23 | POST | `/api/v1/projects/dot` | Upload raw DOT to create and run a project |
 | 24 | POST | `/api/v1/dot/render` | Render DOT to SVG (blocking) |
 | 25 | POST | `/api/v1/dot/validate` | Validate and lint DOT source |
 | 26 | POST | `/api/v1/dot/generate` | Generate DOT from prompt (blocking) |
@@ -1195,4 +1195,4 @@ curl -N http://localhost:8080/api/v1/events/run-1700000000000-1
 | 34 | PUT | `/api/v1/settings/{key}` | Update a setting |
 | 35 | GET | `/api/v1/models` | List available LLM models |
 | 36 | GET | `/api/v1/events` | Global SSE event stream |
-| 37 | GET | `/api/v1/events/{id}` | Per-pipeline SSE event stream |
+| 37 | GET | `/api/v1/events/{id}` | Per-project SSE event stream |

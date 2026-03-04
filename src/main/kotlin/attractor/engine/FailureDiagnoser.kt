@@ -57,7 +57,7 @@ class LlmFailureDiagnoser(
         private const val MAX_LOG_LINES = 30
 
         private val SYSTEM_PROMPT = """
-You are a pipeline failure analyst. Given information about a failed pipeline stage,
+You are a project failure analyst. Given information about a failed project stage,
 classify the failure and decide if an automatic repair is possible.
 
 Respond ONLY with a valid JSON object with these exact fields:

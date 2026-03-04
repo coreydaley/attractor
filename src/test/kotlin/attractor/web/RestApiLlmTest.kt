@@ -28,9 +28,9 @@ class RestApiLlmTest : FunSpec({
         s.setSetting("execution_mode", "cli")
         s.setSetting("provider_anthropic_enabled", "true")
         s.setSetting("cli_anthropic_command", "echo")
-        val r = PipelineRegistry(s)
+        val r = ProjectRegistry(s)
         val sseClients = CopyOnWriteArrayList<RestApiRouter.RestSseClient>()
-        val router = RestApiRouter(r, s, {}, { """{"pipelines":[]}""" }, sseClients)
+        val router = RestApiRouter(r, s, {}, { """{"projects":[]}""" }, sseClients)
         val srv = HttpServer.create(InetSocketAddress(0), 0)
         srv.executor = Executors.newCachedThreadPool()
         srv.createContext("/api/v1/") { ex -> router.handle(ex) }
@@ -88,7 +88,7 @@ class RestApiLlmTest : FunSpec({
     // ── Happy path with mock LLM (echo command) ──────────────────────────────
 
     test("POST /api/v1/dot/generate with prompt returns 200 with dotSource field") {
-        val resp = post("/dot/generate", """{"prompt":"simple pipeline"}""")
+        val resp = post("/dot/generate", """{"prompt":"simple project"}""")
         resp.statusCode() shouldBe 200
         resp.body() shouldContain "dotSource"
     }

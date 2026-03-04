@@ -1,6 +1,6 @@
 package attractor.web
 
-import attractor.events.PipelineEvent
+import attractor.events.ProjectEvent
 import java.time.Instant
 import java.util.concurrent.ConcurrentLinkedDeque
 import java.util.concurrent.CopyOnWriteArrayList
@@ -18,8 +18,8 @@ data class StageRecord(
     val hasLog: Boolean = false
 )
 
-class PipelineState {
-    val pipelineName = AtomicReference<String>("")
+class ProjectState {
+    val projectName  = AtomicReference<String>("")
     val runId        = AtomicReference<String>("")
     val currentNode  = AtomicReference<String>("")
     val status       = AtomicReference<String>("idle") // idle | running | completed | failed | cancelled
@@ -41,10 +41,10 @@ class PipelineState {
             java.io.File(lr, "$nodeId/live.log").let { it.exists() && it.length() > 0 }
     }
 
-    fun update(event: PipelineEvent) {
+    fun update(event: ProjectEvent) {
         when (event) {
-            is PipelineEvent.PipelineStarted -> {
-                pipelineName.set(event.name)
+            is ProjectEvent.ProjectStarted -> {
+                projectName.set(event.name)
                 runId.set(event.id)
                 status.set("running")
                 startedAt.set(System.currentTimeMillis())
@@ -52,18 +52,18 @@ class PipelineState {
                 stages.clear()
                 recentLogs.clear()
                 recentLogsSize.set(0)
-                log("Pipeline started: ${event.name} [${event.id}]")
+                log("Project started: ${event.name} [${event.id}]")
             }
-            is PipelineEvent.StageStarted -> {
+            is ProjectEvent.StageStarted -> {
                 currentNode.set(event.name)
                 stages.add(StageRecord(event.index, event.name, event.nodeId, "running", startedAt = System.currentTimeMillis()))
                 log("[${event.index}] ▶ ${event.name}")
             }
-            is PipelineEvent.StageCompleted -> {
+            is ProjectEvent.StageCompleted -> {
                 updateStage(event.name, "running") { it.copy(status = "completed", durationMs = event.durationMs, hasLog = checkHasLog(it.nodeId)) }
                 log("[${event.index}] ✓ ${event.name} (${event.durationMs}ms)")
             }
-            is PipelineEvent.StageFailed -> {
+            is ProjectEvent.StageFailed -> {
                 // Stage may be "running" or "retrying" when the final failure fires
                 val now = System.currentTimeMillis()
                 val updated = updateStageAny(event.name) {
@@ -73,66 +73,66 @@ class PipelineState {
                 if (!updated) stages.add(StageRecord(event.index, event.name, status = "failed", error = event.error))
                 log("[${event.index}] ✗ ${event.name}: ${event.error}")
             }
-            is PipelineEvent.StageRetrying -> {
+            is ProjectEvent.StageRetrying -> {
                 updateStage(event.name, "running") { it.copy(status = "retrying") }
                 log("[${event.index}] ↻ ${event.name} retry ${event.attempt} (delay ${event.delayMs}ms)")
             }
-            is PipelineEvent.PipelineCompleted -> {
+            is ProjectEvent.ProjectCompleted -> {
                 status.set("completed")
                 finishedAt.set(System.currentTimeMillis())
                 currentNode.set("")
-                log("Pipeline completed in ${event.durationMs}ms ✓")
+                log("Project completed in ${event.durationMs}ms ✓")
             }
-            is PipelineEvent.PipelineFailed -> {
+            is ProjectEvent.ProjectFailed -> {
                 status.set("failed")
                 finishedAt.set(System.currentTimeMillis())
-                log("Pipeline FAILED: ${event.error}")
+                log("Project FAILED: ${event.error}")
             }
-            is PipelineEvent.PipelineCancelled -> {
+            is ProjectEvent.ProjectCancelled -> {
                 status.set("cancelled")
                 finishedAt.set(System.currentTimeMillis())
                 currentNode.set("")
-                log("Pipeline cancelled after ${event.durationMs}ms")
+                log("Project cancelled after ${event.durationMs}ms")
             }
-            is PipelineEvent.PipelinePaused -> {
+            is ProjectEvent.ProjectPaused -> {
                 status.set("paused")
                 finishedAt.set(System.currentTimeMillis())
                 currentNode.set("")
-                log("Pipeline paused after ${event.durationMs}ms")
+                log("Project paused after ${event.durationMs}ms")
             }
-            is PipelineEvent.CheckpointSaved ->
+            is ProjectEvent.CheckpointSaved ->
                 log("Checkpoint → ${event.nodeId}")
-            is PipelineEvent.DiagnosticsStarted -> {
+            is ProjectEvent.DiagnosticsStarted -> {
                 val idx = stages.indexOfLast { it.nodeId == event.nodeId }
                 if (idx >= 0) stages[idx] = stages[idx].copy(status = "diagnosing")
                 log("[${event.stageIndex}] \uD83D\uDD0D Diagnosing failure: ${event.stageName}")
             }
-            is PipelineEvent.DiagnosticsCompleted -> {
+            is ProjectEvent.DiagnosticsCompleted -> {
                 val fixable = if (event.recoverable) "fixable" else "unrecoverable"
                 log("[${event.stageIndex}] \uD83D\uDCCB Diagnosis: $fixable — ${event.strategy}: ${event.explanation.take(120)}")
             }
-            is PipelineEvent.RepairAttempted -> {
+            is ProjectEvent.RepairAttempted -> {
                 val idx = stages.indexOfLast { it.name == event.stageName }
                 if (idx >= 0) stages[idx] = stages[idx].copy(status = "repairing")
                 log("[${event.stageIndex}] \uD83D\uDD27 Repair attempt: ${event.stageName}")
             }
-            is PipelineEvent.RepairSucceeded -> {
+            is ProjectEvent.RepairSucceeded -> {
                 val idx = stages.indexOfLast { it.name == event.stageName }
                 if (idx >= 0) stages[idx] = stages[idx].copy(status = "completed", durationMs = event.durationMs)
                 log("[${event.stageIndex}] ✓ Repair succeeded: ${event.stageName} (${event.durationMs}ms)")
             }
-            is PipelineEvent.RepairFailed -> {
+            is ProjectEvent.RepairFailed -> {
                 val idx = stages.indexOfLast { it.name == event.stageName }
                 if (idx >= 0) stages[idx] = stages[idx].copy(status = "failed", error = event.reason, hasLog = checkHasLog(stages[idx].nodeId))
                 log("[${event.stageIndex}] ✗ Repair failed: ${event.stageName}: ${event.reason}")
             }
-            is PipelineEvent.InterviewStarted ->
+            is ProjectEvent.InterviewStarted ->
                 log("Human gate: ${event.questionText}")
-            is PipelineEvent.InterviewCompleted ->
+            is ProjectEvent.InterviewCompleted ->
                 log("Answer received: ${event.answer}")
-            is PipelineEvent.ParallelStarted ->
+            is ProjectEvent.ParallelStarted ->
                 log("Parallel: ${event.branchCount} branches starting")
-            is PipelineEvent.ParallelCompleted ->
+            is ProjectEvent.ParallelCompleted ->
                 log("Parallel done: ${event.successCount} ok, ${event.failureCount} failed")
             else -> {}
         }
@@ -151,7 +151,7 @@ class PipelineState {
     }
 
     fun reset() {
-        pipelineName.set("")
+        projectName.set("")
         runId.set("")
         currentNode.set("")
         status.set("idle")
@@ -177,7 +177,7 @@ class PipelineState {
     fun toJson(): String {
         val sb = StringBuilder()
         sb.append("{")
-        sb.append("\"pipeline\":${js(pipelineName.get())},")
+        sb.append("\"project\":${js(projectName.get())},")
         sb.append("\"runId\":${js(runId.get())},")
         sb.append("\"currentNode\":${js(currentNode.get())},")
         sb.append("\"status\":${js(status.get())},")

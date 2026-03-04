@@ -66,7 +66,7 @@ abstract class RunStoreContractTest : FunSpec() {
         test("updateLog persists") {
             store.insert("id-log", "log.dot", "digraph Log {}", false, true)
             store.updateLog("id-log", "stage1 done\nstage2 done")
-            store.getById("id-log")!!.pipelineLog shouldBe "stage1 done\nstage2 done"
+            store.getById("id-log")!!.projectLog shouldBe "stage1 done\nstage2 done"
         }
 
         test("updateFinishedAt persists") {
@@ -150,7 +150,7 @@ abstract class RunStoreContractTest : FunSpec() {
                 simulate       = true,
                 autoApprove    = false,
                 createdAt      = 999L,
-                pipelineLog    = "log data",
+                projectLog     = "log data",
                 archived       = true,
                 originalPrompt = "replaced prompt",
                 finishedAt     = 12345L,

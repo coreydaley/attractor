@@ -12,7 +12,7 @@ import java.io.PrintStream
 import java.net.InetSocketAddress
 import java.nio.file.Files
 
-class PipelineCommandsTest : FunSpec({
+class ProjectCommandsTest : FunSpec({
 
     fun captureStdout(block: () -> Unit): String {
         val baos = ByteArrayOutputStream()
@@ -32,9 +32,9 @@ class PipelineCommandsTest : FunSpec({
     }
 
     fun cmdFor(port: Int, format: OutputFormat = OutputFormat.TEXT) =
-        PipelineCommands(CliContext("http://localhost:$port", format))
+        ProjectCommands(CliContext("http://localhost:$port", format))
 
-    test("pipeline list makes GET to /api/v1/pipelines and prints table headers") {
+    test("project list makes GET to /api/v1/projects and prints table headers") {
         val (srv, port) = startFakeServer { ex ->
             val body = """[{"id":"run-1","displayName":"Falcon","status":"completed","startedAt":1700000000000}]""".toByteArray()
             ex.sendResponseHeaders(200, body.size.toLong())
@@ -50,7 +50,7 @@ class PipelineCommandsTest : FunSpec({
         } finally { srv.stop(0) }
     }
 
-    test("pipeline get makes GET to /api/v1/pipelines/{id} and prints key-value pairs") {
+    test("project get makes GET to /api/v1/projects/{id} and prints key-value pairs") {
         val (srv, port) = startFakeServer { ex ->
             val body = """{"id":"run-1","displayName":"Falcon","status":"completed","archived":false}""".toByteArray()
             ex.sendResponseHeaders(200, body.size.toLong())
@@ -63,7 +63,7 @@ class PipelineCommandsTest : FunSpec({
         } finally { srv.stop(0) }
     }
 
-    test("pipeline create --file reads file and POSTs to /api/v1/pipelines") {
+    test("project create --file reads file and POSTs to /api/v1/projects") {
         var requestBody: String? = null
         val (srv, port) = startFakeServer { ex ->
             requestBody = ex.requestBody.bufferedReader().readText()
@@ -71,7 +71,7 @@ class PipelineCommandsTest : FunSpec({
             ex.sendResponseHeaders(201, body.size.toLong())
             ex.responseBody.write(body)
         }
-        val tmpFile = Files.createTempFile("test-pipeline", ".dot").toFile()
+        val tmpFile = Files.createTempFile("test-project", ".dot").toFile()
         try {
             tmpFile.writeText("digraph G { a -> b }")
             val output = captureStdout { cmdFor(port).dispatch(listOf("create", "--file", tmpFile.absolutePath)) }
@@ -83,12 +83,12 @@ class PipelineCommandsTest : FunSpec({
         }
     }
 
-    test("pipeline create without --file throws CliException exit code 2") {
+    test("project create without --file throws CliException exit code 2") {
         val ex = shouldThrow<CliException> { cmdFor(9999).dispatch(listOf("create")) }
         ex.exitCode shouldBe 2
     }
 
-    test("pipeline update PATCHes correct endpoint") {
+    test("project update PATCHes correct endpoint") {
         var method: String? = null
         var path: String? = null
         val (srv, port) = startFakeServer { ex ->
@@ -98,19 +98,19 @@ class PipelineCommandsTest : FunSpec({
             ex.sendResponseHeaders(200, body.size.toLong())
             ex.responseBody.write(body)
         }
-        val tmpFile = Files.createTempFile("test-pipeline", ".dot").toFile()
+        val tmpFile = Files.createTempFile("test-project", ".dot").toFile()
         try {
             tmpFile.writeText("digraph G { a -> b }")
             cmdFor(port).dispatch(listOf("update", "run-1", "--file", tmpFile.absolutePath))
             method shouldBe "PATCH"
-            path shouldBe "/api/v1/pipelines/run-1"
+            path shouldBe "/api/v1/projects/run-1"
         } finally {
             srv.stop(0)
             tmpFile.delete()
         }
     }
 
-    test("pipeline pause POSTs to /api/v1/pipelines/{id}/pause") {
+    test("project pause POSTs to /api/v1/projects/{id}/pause") {
         var path: String? = null
         val (srv, port) = startFakeServer { ex ->
             path = ex.requestURI.path
@@ -120,11 +120,11 @@ class PipelineCommandsTest : FunSpec({
         }
         try {
             cmdFor(port).dispatch(listOf("pause", "run-1"))
-            path shouldBe "/api/v1/pipelines/run-1/pause"
+            path shouldBe "/api/v1/projects/run-1/pause"
         } finally { srv.stop(0) }
     }
 
-    test("pipeline stages prints table with correct headers") {
+    test("project stages prints table with correct headers") {
         val (srv, port) = startFakeServer { ex ->
             val body = """[{"index":0,"nodeId":"start","status":"completed","durationMs":100,"error":null}]""".toByteArray()
             ex.sendResponseHeaders(200, body.size.toLong())
@@ -139,7 +139,7 @@ class PipelineCommandsTest : FunSpec({
         } finally { srv.stop(0) }
     }
 
-    test("pipeline watch exits 0 when status becomes completed") {
+    test("project watch exits 0 when status becomes completed") {
         var callCount = 0
         val (srv, port) = startFakeServer { ex ->
             callCount++
@@ -154,7 +154,7 @@ class PipelineCommandsTest : FunSpec({
         } finally { srv.stop(0) }
     }
 
-    test("pipeline watch throws CliException exit code 1 when status becomes failed") {
+    test("project watch throws CliException exit code 1 when status becomes failed") {
         val (srv, port) = startFakeServer { ex ->
             val body = """{"id":"run-1","status":"failed","currentNode":null}""".toByteArray()
             ex.sendResponseHeaders(200, body.size.toLong())
@@ -168,12 +168,12 @@ class PipelineCommandsTest : FunSpec({
         } finally { srv.stop(0) }
     }
 
-    test("unknown pipeline verb throws CliException exit code 2") {
+    test("unknown project verb throws CliException exit code 2") {
         val ex = shouldThrow<CliException> { cmdFor(9999).dispatch(listOf("notaverb")) }
         ex.exitCode shouldBe 2
     }
 
-    test("pipeline family prints table with VER, ID, NAME, STATUS, CREATED") {
+    test("project family prints table with VER, ID, NAME, STATUS, CREATED") {
         val (srv, port) = startFakeServer { ex ->
             val body = """{"familyId":"fam-1","members":[{"id":"run-1","displayName":"Falcon","status":"completed","versionNum":1,"createdAt":1700000000000,"fileName":"x.dot","originalPrompt":"test"}]}""".toByteArray()
             ex.sendResponseHeaders(200, body.size.toLong())
@@ -187,7 +187,7 @@ class PipelineCommandsTest : FunSpec({
         } finally { srv.stop(0) }
     }
 
-    test("pipeline delete sends DELETE to /api/v1/pipelines/{id}") {
+    test("project delete sends DELETE to /api/v1/projects/{id}") {
         var method: String? = null
         var path: String? = null
         val (srv, port) = startFakeServer { ex ->
@@ -200,12 +200,12 @@ class PipelineCommandsTest : FunSpec({
         try {
             val output = captureStdout { cmdFor(port).dispatch(listOf("delete", "run-1")) }
             method shouldBe "DELETE"
-            path shouldBe "/api/v1/pipelines/run-1"
+            path shouldBe "/api/v1/projects/run-1"
             output shouldContain "true"
         } finally { srv.stop(0) }
     }
 
-    test("pipeline rerun POSTs to /api/v1/pipelines/{id}/rerun") {
+    test("project rerun POSTs to /api/v1/projects/{id}/rerun") {
         var path: String? = null
         val (srv, port) = startFakeServer { ex ->
             path = ex.requestURI.path
@@ -215,11 +215,11 @@ class PipelineCommandsTest : FunSpec({
         }
         try {
             cmdFor(port).dispatch(listOf("rerun", "run-1"))
-            path shouldBe "/api/v1/pipelines/run-1/rerun"
+            path shouldBe "/api/v1/projects/run-1/rerun"
         } finally { srv.stop(0) }
     }
 
-    test("pipeline resume POSTs to /api/v1/pipelines/{id}/resume") {
+    test("project resume POSTs to /api/v1/projects/{id}/resume") {
         var path: String? = null
         val (srv, port) = startFakeServer { ex ->
             path = ex.requestURI.path
@@ -229,11 +229,11 @@ class PipelineCommandsTest : FunSpec({
         }
         try {
             cmdFor(port).dispatch(listOf("resume", "run-1"))
-            path shouldBe "/api/v1/pipelines/run-1/resume"
+            path shouldBe "/api/v1/projects/run-1/resume"
         } finally { srv.stop(0) }
     }
 
-    test("pipeline cancel POSTs to /api/v1/pipelines/{id}/cancel and prints cancelled") {
+    test("project cancel POSTs to /api/v1/projects/{id}/cancel and prints cancelled") {
         var path: String? = null
         val (srv, port) = startFakeServer { ex ->
             path = ex.requestURI.path
@@ -243,12 +243,12 @@ class PipelineCommandsTest : FunSpec({
         }
         try {
             val output = captureStdout { cmdFor(port).dispatch(listOf("cancel", "run-1")) }
-            path shouldBe "/api/v1/pipelines/run-1/cancel"
+            path shouldBe "/api/v1/projects/run-1/cancel"
             output shouldContain "cancelled"
         } finally { srv.stop(0) }
     }
 
-    test("pipeline archive POSTs to /api/v1/pipelines/{id}/archive and prints archived") {
+    test("project archive POSTs to /api/v1/projects/{id}/archive and prints archived") {
         var path: String? = null
         val (srv, port) = startFakeServer { ex ->
             path = ex.requestURI.path
@@ -258,12 +258,12 @@ class PipelineCommandsTest : FunSpec({
         }
         try {
             val output = captureStdout { cmdFor(port).dispatch(listOf("archive", "run-1")) }
-            path shouldBe "/api/v1/pipelines/run-1/archive"
+            path shouldBe "/api/v1/projects/run-1/archive"
             output shouldContain "archived"
         } finally { srv.stop(0) }
     }
 
-    test("pipeline unarchive POSTs to /api/v1/pipelines/{id}/unarchive and prints unarchived") {
+    test("project unarchive POSTs to /api/v1/projects/{id}/unarchive and prints unarchived") {
         var path: String? = null
         val (srv, port) = startFakeServer { ex ->
             path = ex.requestURI.path
@@ -273,12 +273,12 @@ class PipelineCommandsTest : FunSpec({
         }
         try {
             val output = captureStdout { cmdFor(port).dispatch(listOf("unarchive", "run-1")) }
-            path shouldBe "/api/v1/pipelines/run-1/unarchive"
+            path shouldBe "/api/v1/projects/run-1/unarchive"
             output shouldContain "unarchived"
         } finally { srv.stop(0) }
     }
 
-    test("pipeline iterate --file POSTs to /api/v1/pipelines/{id}/iterations with dotSource") {
+    test("project iterate --file POSTs to /api/v1/projects/{id}/iterations with dotSource") {
         var requestBody: String? = null
         var path: String? = null
         val (srv, port) = startFakeServer { ex ->
@@ -292,7 +292,7 @@ class PipelineCommandsTest : FunSpec({
         try {
             tmpFile.writeText("digraph G { a -> b }")
             captureStdout { cmdFor(port).dispatch(listOf("iterate", "run-1", "--file", tmpFile.absolutePath)) }
-            path shouldBe "/api/v1/pipelines/run-1/iterations"
+            path shouldBe "/api/v1/projects/run-1/iterations"
             requestBody!! shouldContain "digraph G"
         } finally {
             srv.stop(0)
@@ -300,7 +300,7 @@ class PipelineCommandsTest : FunSpec({
         }
     }
 
-    test("pipeline iterate without --file throws CliException exit code 2") {
+    test("project iterate without --file throws CliException exit code 2") {
         val ex = shouldThrow<CliException> { cmdFor(9999).dispatch(listOf("iterate", "run-1")) }
         ex.exitCode shouldBe 2
     }

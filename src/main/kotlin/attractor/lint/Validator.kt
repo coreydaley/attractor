@@ -12,7 +12,7 @@ object Validator {
         val diagnostics = validate(graph, extraRules)
         val errors = diagnostics.filter { it.severity == Severity.ERROR }
         if (errors.isNotEmpty()) {
-            val msg = "Pipeline validation failed with ${errors.size} error(s):\n" +
+            val msg = "Project validation failed with ${errors.size} error(s):\n" +
                     errors.joinToString("\n") { "  [${it.rule}] ${it.message}" }
             throw ValidationException(msg, errors)
         }

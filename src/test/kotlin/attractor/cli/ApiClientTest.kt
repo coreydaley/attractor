@@ -28,27 +28,27 @@ class ApiClientTest : FunSpec({
             ex.responseBody.write(body)
         }
         try {
-            val result = clientFor(port).get("/api/v1/pipelines")
+            val result = clientFor(port).get("/api/v1/projects")
             result shouldBe """[{"id":"run-1"}]"""
         } finally { srv.stop(0) }
     }
 
     test("GET on 404 with JSON error throws CliException with API message") {
         val (srv, port) = startFakeServer { ex ->
-            val body = """{"error":"pipeline not found","code":"NOT_FOUND"}""".toByteArray()
+            val body = """{"error":"project not found","code":"NOT_FOUND"}""".toByteArray()
             ex.sendResponseHeaders(404, body.size.toLong())
             ex.responseBody.write(body)
         }
         try {
-            val ex = shouldThrow<CliException> { clientFor(port).get("/api/v1/pipelines/bad") }
-            ex.message shouldBe "pipeline not found"
+            val ex = shouldThrow<CliException> { clientFor(port).get("/api/v1/projects/bad") }
+            ex.message shouldBe "project not found"
             ex.exitCode shouldBe 1
         } finally { srv.stop(0) }
     }
 
     test("connection refused throws CliException with cannot connect message") {
         val client = ApiClient(CliContext(baseUrl = "http://localhost:19999"))
-        val ex = shouldThrow<CliException> { client.get("/api/v1/pipelines") }
+        val ex = shouldThrow<CliException> { client.get("/api/v1/projects") }
         ex.message!! shouldContain "Cannot connect to"
         ex.exitCode shouldBe 1
     }
@@ -60,7 +60,7 @@ class ApiClientTest : FunSpec({
             ex.responseBody.write(expected)
         }
         try {
-            val bytes = clientFor(port).getBinary("/api/v1/pipelines/x/artifacts.zip")
+            val bytes = clientFor(port).getBinary("/api/v1/projects/x/artifacts.zip")
             bytes shouldBe expected
         } finally { srv.stop(0) }
     }
@@ -75,7 +75,7 @@ class ApiClientTest : FunSpec({
             ex.responseBody.write(resp)
         }
         try {
-            clientFor(port).postBinary("/api/v1/pipelines/import", sentBytes)
+            clientFor(port).postBinary("/api/v1/projects/import", sentBytes)
             receivedBytes shouldBe sentBytes
         } finally { srv.stop(0) }
     }

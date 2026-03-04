@@ -7,10 +7,10 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.Future
 
-data class PipelineEntry(
+data class ProjectEntry(
     val id: String,
     val fileName: String,
-    val state: PipelineState,
+    val state: ProjectState,
     val dotSource: String = "",
     val options: RunOptions = RunOptions(),
     val logsRoot: String = "",
@@ -20,15 +20,15 @@ data class PipelineEntry(
     var isHydratedViewOnly: Boolean = false
 )
 
-class PipelineRegistry(private val store: RunStore) {
-    private val entries = ConcurrentHashMap<String, PipelineEntry>()
+class ProjectRegistry(private val store: RunStore) {
+    private val entries = ConcurrentHashMap<String, ProjectEntry>()
     private val orderedIds = CopyOnWriteArrayList<String>()
     private val futures = ConcurrentHashMap<String, Future<*>>()
 
-    fun register(id: String, fileName: String, dotSource: String = "", options: RunOptions = RunOptions(), originalPrompt: String = "", displayName: String = "", familyId: String = ""): PipelineState {
-        val state = PipelineState()
-        state.pipelineName.set(displayName.ifBlank { fileName.removeSuffix(".dot") })
-        entries[id] = PipelineEntry(id, fileName, state, dotSource, options, originalPrompt = originalPrompt, displayName = displayName, familyId = familyId)
+    fun register(id: String, fileName: String, dotSource: String = "", options: RunOptions = RunOptions(), originalPrompt: String = "", displayName: String = "", familyId: String = ""): ProjectState {
+        val state = ProjectState()
+        state.projectName.set(displayName.ifBlank { fileName.removeSuffix(".dot") })
+        entries[id] = ProjectEntry(id, fileName, state, dotSource, options, originalPrompt = originalPrompt, displayName = displayName, familyId = familyId)
         orderedIds.add(id)
         store.insert(id, fileName, dotSource, options.simulate, options.autoApprove, originalPrompt, displayName, familyId)
         return state
@@ -90,7 +90,7 @@ class PipelineRegistry(private val store: RunStore) {
         return true
     }
 
-    /** Permanently removes a pipeline from memory and DB. Returns (success, logsRoot). */
+    /** Permanently removes a project from memory and DB. Returns (success, logsRoot). */
     fun delete(id: String): Pair<Boolean, String> {
         val entry = entries[id] ?: return Pair(false, "")
         val logsRoot = entry.logsRoot
@@ -116,13 +116,13 @@ class PipelineRegistry(private val store: RunStore) {
         return Pair(true, logsRoots)
     }
 
-    fun get(id: String): PipelineEntry? = entries[id]
+    fun get(id: String): ProjectEntry? = entries[id]
 
     /**
      * Returns the entry if already in memory, or hydrates it from the DB and adds it
      * to the registry (marked view-only). Idempotent — safe to call concurrently.
      */
-    fun getOrHydrate(id: String, store: RunStore): PipelineEntry? {
+    fun getOrHydrate(id: String, store: RunStore): ProjectEntry? {
         entries[id]?.let { return it }
         val run = store.getById(id) ?: return null
         val entry = hydrateEntry(run).also { it.isHydratedViewOnly = true }
@@ -135,20 +135,20 @@ class PipelineRegistry(private val store: RunStore) {
         return entries[id]
     }
 
-    fun getAll(): List<PipelineEntry> = orderedIds.mapNotNull { entries[it] }
+    fun getAll(): List<ProjectEntry> = orderedIds.mapNotNull { entries[it] }
 
-    private fun hydrateEntry(run: attractor.db.StoredRun): PipelineEntry {
-        val state = PipelineState()
+    private fun hydrateEntry(run: attractor.db.StoredRun): ProjectEntry {
+        val state = ProjectState()
         val displayStatus = if (run.status == "running") "failed" else run.status
         state.status.set(displayStatus)
-        state.pipelineName.set(run.displayName.ifBlank { run.fileName.removeSuffix(".dot") })
+        state.projectName.set(run.displayName.ifBlank { run.fileName.removeSuffix(".dot") })
         state.runId.set(run.id)
         state.archived.set(run.archived)
         state.startedAt.set(run.createdAt)
         if (run.finishedAt > 0L) state.finishedAt.set(run.finishedAt)
 
-        if (run.pipelineLog.isNotBlank()) {
-            run.pipelineLog.split("\n").filter { it.isNotBlank() }.forEach {
+        if (run.projectLog.isNotBlank()) {
+            run.projectLog.split("\n").filter { it.isNotBlank() }.forEach {
                 state.recentLogs.addLast(it)
                 state.recentLogsSize.incrementAndGet()
             }
@@ -169,9 +169,6 @@ class PipelineRegistry(private val store: RunStore) {
                         state.stages.add(StageRecord(idx, node.label, node.id, nodeStatus, durationMs = durationMs, hasLog = hLog))
                     }
                 } catch (_: Exception) {}
-                // Derive total duration from sum of step durations so the displayed
-                // runtime equals actual execution time, not wall-clock (which would
-                // include server downtime, pauses, etc.)
                 val totalDuration = checkpoint.stageDurations.values.sum()
                 if (totalDuration > 0L) {
                     state.finishedAt.set(run.createdAt + totalDuration)
@@ -179,7 +176,7 @@ class PipelineRegistry(private val store: RunStore) {
             }
         }
 
-        return PipelineEntry(
+        return ProjectEntry(
             id = run.id,
             fileName = run.fileName,
             state = state,
@@ -193,7 +190,7 @@ class PipelineRegistry(private val store: RunStore) {
     }
 
     /**
-     * Reconstruct pipeline history from the database on startup.
+     * Reconstruct project history from the database on startup.
      * Runs with "running" status are treated as crashed and shown as "failed".
      */
     fun loadFromDB(onUpdate: () -> Unit) {

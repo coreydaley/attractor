@@ -1,8 +1,8 @@
 package attractor.engine
 
 import attractor.dot.DotGraph
-import attractor.events.PipelineEvent
-import attractor.events.PipelineEventBus
+import attractor.events.ProjectEvent
+import attractor.events.ProjectEventBus
 import attractor.handlers.HandlerRegistry
 import attractor.lint.Validator
 import attractor.state.Checkpoint
@@ -34,13 +34,13 @@ data class EngineConfig(
 class Engine(
     private val registry: HandlerRegistry,
     private val config: EngineConfig = EngineConfig(),
-    private val eventBus: PipelineEventBus = PipelineEventBus()
+    private val eventBus: ProjectEventBus = ProjectEventBus()
 ) {
     private val startTime = System.currentTimeMillis()
 
-    private class PausedException : RuntimeException("Pipeline paused")
+    private class PausedException : RuntimeException("Project paused")
 
-    fun subscribe(observer: attractor.events.PipelineEventObserver) = eventBus.subscribe(observer)
+    fun subscribe(observer: attractor.events.ProjectEventObserver) = eventBus.subscribe(observer)
 
     /**
      * Prepare the graph: transforms -> validate.
@@ -60,7 +60,7 @@ class Engine(
     fun run(graph: DotGraph): Outcome {
         val startNode = graph.startNode()
             ?: return Outcome.fail("No start node found in graph").also {
-                eventBus.emit(PipelineEvent.PipelineFailed("No start node", elapsed()))
+                eventBus.emit(ProjectEvent.ProjectFailed("No start node", elapsed()))
             }
         return runLoop(graph, startNode.id)
     }
@@ -78,7 +78,7 @@ class Engine(
         val graphName = graph.id
 
         File(config.logsRoot).mkdirs()
-        eventBus.emit(PipelineEvent.PipelineStarted(graphName, runId))
+        eventBus.emit(ProjectEvent.ProjectStarted(graphName, runId))
 
         val context = Context()
         mirrorGraphAttributes(graph, context)
@@ -109,25 +109,25 @@ class Engine(
         try {
             while (true) {
                 if (config.cancelCheck() || Thread.currentThread().isInterrupted) {
-                    eventBus.emit(PipelineEvent.PipelineCancelled(elapsed()))
-                    return Outcome.fail("Pipeline cancelled")
+                    eventBus.emit(ProjectEvent.ProjectCancelled(elapsed()))
+                    return Outcome.fail("Project cancelled")
                 }
 
                 if (config.pauseCheck()) {
-                    eventBus.emit(PipelineEvent.PipelinePaused(elapsed()))
-                    return Outcome.fail("Pipeline paused")
+                    eventBus.emit(ProjectEvent.ProjectPaused(elapsed()))
+                    return Outcome.fail("Project paused")
                 }
 
                 val node = graph.nodes[currentNodeId]
                     ?: return Outcome.fail("Node '$currentNodeId' not found in graph").also {
-                        eventBus.emit(PipelineEvent.PipelineFailed("Node not found: $currentNodeId", elapsed()))
+                        eventBus.emit(ProjectEvent.ProjectFailed("Node not found: $currentNodeId", elapsed()))
                     }
 
                 context.set("current_node", currentNodeId)
 
                 // Step 1: Check for terminal node
                 if (node.isTerminal()) {
-                    eventBus.emit(PipelineEvent.StageStarted(node.label, stageIndex, nodeId = node.id))
+                    eventBus.emit(ProjectEvent.StageStarted(node.label, stageIndex, nodeId = node.id))
                     val terminalStart = System.currentTimeMillis()
                     val exitOutcome = executeNodeWithRetry(node, context, graph, stageIndex)
                     val terminalDuration = System.currentTimeMillis() - terminalStart
@@ -137,12 +137,12 @@ class Engine(
                         StageStatus.SUCCESS, StageStatus.PARTIAL_SUCCESS -> {
                             completedNodes.add(node.id)
                             nodeDurations[node.id] = terminalDuration
-                            eventBus.emit(PipelineEvent.StageCompleted(node.label, stageIndex, terminalDuration))
+                            eventBus.emit(ProjectEvent.StageCompleted(node.label, stageIndex, terminalDuration))
                             val finalCheckpoint = Checkpoint.create(context, node.id, completedNodes.toList(), nodeDurations.toMap())
                             finalCheckpoint.save(config.logsRoot)
                         }
                         StageStatus.FAIL ->
-                            eventBus.emit(PipelineEvent.StageFailed(node.label, stageIndex, exitOutcome.failureReason))
+                            eventBus.emit(ProjectEvent.StageFailed(node.label, stageIndex, exitOutcome.failureReason))
                         else -> {}
                     }
 
@@ -156,7 +156,7 @@ class Engine(
                             continue
                         } else {
                             val errMsg = "Goal gate '${failedGate.id}' unsatisfied and no retry target"
-                            eventBus.emit(PipelineEvent.PipelineFailed(errMsg, elapsed()))
+                            eventBus.emit(ProjectEvent.ProjectFailed(errMsg, elapsed()))
                             return Outcome.fail(errMsg)
                         }
                     }
@@ -164,7 +164,7 @@ class Engine(
                 }
 
                 // Step 2: Execute node handler with retry policy
-                eventBus.emit(PipelineEvent.StageStarted(node.label, stageIndex, nodeId = node.id))
+                eventBus.emit(ProjectEvent.StageStarted(node.label, stageIndex, nodeId = node.id))
                 val nodeStart = System.currentTimeMillis()
 
                 val outcome = executeNodeWithRetry(node, context, graph, stageIndex)
@@ -179,9 +179,9 @@ class Engine(
 
                 when (outcome.status) {
                     StageStatus.SUCCESS, StageStatus.PARTIAL_SUCCESS ->
-                        eventBus.emit(PipelineEvent.StageCompleted(node.label, stageIndex, nodeDuration))
+                        eventBus.emit(ProjectEvent.StageCompleted(node.label, stageIndex, nodeDuration))
                     StageStatus.FAIL ->
-                        eventBus.emit(PipelineEvent.StageFailed(node.label, stageIndex, outcome.failureReason))
+                        eventBus.emit(ProjectEvent.StageFailed(node.label, stageIndex, outcome.failureReason))
                     else -> {}
                 }
 
@@ -195,7 +195,7 @@ class Engine(
                 // Step 5: Save checkpoint
                 val checkpoint = Checkpoint.create(context, node.id, completedNodes.toList(), nodeDurations.toMap())
                 checkpoint.save(config.logsRoot)
-                eventBus.emit(PipelineEvent.CheckpointSaved(node.id))
+                eventBus.emit(ProjectEvent.CheckpointSaved(node.id))
 
                 // Step 6: Select next edge
                 val nextEdge = EdgeSelector.select(node, outcome, context, graph)
@@ -218,13 +218,13 @@ class Engine(
                                 context.set("repair.hint", diagnosis.repairHint ?: "")
                                 context.set("repair.explanation", diagnosis.explanation)
                                 context.set("repair.attempt", "1")
-                                eventBus.emit(PipelineEvent.RepairAttempted(node.label, stageIndex))
+                                eventBus.emit(ProjectEvent.RepairAttempted(node.label, stageIndex))
                                 val repairLogsRoot = "${config.logsRoot}/${node.id}_repair"
                                 val repairStart = System.currentTimeMillis()
                                 val repairOutcome = executeSingleRepairAttempt(node, context, graph, repairLogsRoot)
                                 val repairDuration = System.currentTimeMillis() - repairStart
                                 if (repairOutcome.status.isSuccess) {
-                                    eventBus.emit(PipelineEvent.RepairSucceeded(node.label, stageIndex, repairDuration))
+                                    eventBus.emit(ProjectEvent.RepairSucceeded(node.label, stageIndex, repairDuration))
                                     completedNodes.add(node.id)
                                     nodeOutcomes[node.id] = repairOutcome
                                     nodeDurations[node.id] = repairDuration
@@ -235,15 +235,15 @@ class Engine(
                                     }
                                     val repairCheckpoint = Checkpoint.create(context, node.id, completedNodes.toList(), nodeDurations.toMap())
                                     repairCheckpoint.save(config.logsRoot)
-                                    eventBus.emit(PipelineEvent.CheckpointSaved(node.id))
+                                    eventBus.emit(ProjectEvent.CheckpointSaved(node.id))
                                     lastOutcome = repairOutcome
                                     val repairEdge = EdgeSelector.select(node, repairOutcome, context, graph)
                                     if (repairEdge == null) break
                                     else { currentNodeId = repairEdge.to; stageIndex++; continue }
                                 } else {
-                                    eventBus.emit(PipelineEvent.RepairFailed(node.label, stageIndex, repairOutcome.failureReason))
+                                    eventBus.emit(ProjectEvent.RepairFailed(node.label, stageIndex, repairOutcome.failureReason))
                                     writeFailureReport(node, repairOutcome, diagnosis, repairAttempted = true)
-                                    eventBus.emit(PipelineEvent.PipelineFailed("Repair failed: ${repairOutcome.failureReason}", elapsed()))
+                                    eventBus.emit(ProjectEvent.ProjectFailed("Repair failed: ${repairOutcome.failureReason}", elapsed()))
                                     return repairOutcome
                                 }
                             }
@@ -255,14 +255,14 @@ class Engine(
                                 lastOutcome = skipOutcome
                                 val skipCheckpoint = Checkpoint.create(context, node.id, completedNodes.toList(), nodeDurations.toMap())
                                 skipCheckpoint.save(config.logsRoot)
-                                eventBus.emit(PipelineEvent.CheckpointSaved(node.id))
+                                eventBus.emit(ProjectEvent.CheckpointSaved(node.id))
                                 val skipEdge = EdgeSelector.select(node, skipOutcome, context, graph)
                                 if (skipEdge == null) break
                                 else { currentNodeId = skipEdge.to; stageIndex++; continue }
                             }
                             FixStrategy.ABORT -> {
                                 writeFailureReport(node, outcome, diagnosis, repairAttempted = false)
-                                eventBus.emit(PipelineEvent.PipelineFailed(
+                                eventBus.emit(ProjectEvent.ProjectFailed(
                                     diagnosis.explanation.ifBlank { outcome.failureReason }, elapsed()
                                 ))
                                 return outcome
@@ -287,19 +287,19 @@ class Engine(
                 stageIndex++
             }
 
-            eventBus.emit(PipelineEvent.PipelineCompleted(elapsed()))
+            eventBus.emit(ProjectEvent.ProjectCompleted(elapsed()))
             return lastOutcome
 
         } catch (e: PausedException) {
-            eventBus.emit(PipelineEvent.PipelinePaused(elapsed()))
-            return Outcome.fail("Pipeline paused")
+            eventBus.emit(ProjectEvent.ProjectPaused(elapsed()))
+            return Outcome.fail("Project paused")
         } catch (e: InterruptedException) {
             Thread.currentThread().interrupt()
-            eventBus.emit(PipelineEvent.PipelineCancelled(elapsed()))
-            return Outcome.fail("Pipeline cancelled")
+            eventBus.emit(ProjectEvent.ProjectCancelled(elapsed()))
+            return Outcome.fail("Project cancelled")
         } catch (e: Exception) {
-            val errMsg = "Pipeline crashed: ${e.message}"
-            eventBus.emit(PipelineEvent.PipelineFailed(errMsg, elapsed()))
+            val errMsg = "Project crashed: ${e.message}"
+            eventBus.emit(ProjectEvent.ProjectFailed(errMsg, elapsed()))
             return Outcome.fail(errMsg)
         }
     }
@@ -347,7 +347,7 @@ class Engine(
             } catch (e: Exception) {
                 if (attempt < maxAttempts) {
                     val delay = retryPolicy.backoff.delayForAttempt(attempt)
-                    eventBus.emit(PipelineEvent.StageRetrying(node.label, stageIndex, attempt, delay))
+                    eventBus.emit(ProjectEvent.StageRetrying(node.label, stageIndex, attempt, delay))
                     Thread.sleep(delay)
                     if (config.pauseCheck()) throw PausedException()
                     continue
@@ -364,7 +364,7 @@ class Engine(
                 StageStatus.RETRY -> {
                     if (attempt < maxAttempts) {
                         val delay = retryPolicy.backoff.delayForAttempt(attempt)
-                        eventBus.emit(PipelineEvent.StageRetrying(node.label, stageIndex, attempt, delay))
+                        eventBus.emit(ProjectEvent.StageRetrying(node.label, stageIndex, attempt, delay))
                         context.incrementInt("internal.retry_count.${node.id}")
                         Thread.sleep(delay)
                         if (config.pauseCheck()) throw PausedException()
@@ -448,7 +448,7 @@ class Engine(
             logsRoot = config.logsRoot,
             contextSnapshot = context.snapshot()
         )
-        eventBus.emit(PipelineEvent.DiagnosticsStarted(node.id, node.label, stageIndex))
+        eventBus.emit(ProjectEvent.DiagnosticsStarted(node.id, node.label, stageIndex))
         val result = config.diagnoser.analyze(ctx)
         val finalResult = if (result.strategy == "SKIP" &&
             node.attrOrDefault("failure_diagnosis_allow_skip", "false") != "true") {
@@ -456,7 +456,7 @@ class Engine(
         } else {
             result
         }
-        eventBus.emit(PipelineEvent.DiagnosticsCompleted(
+        eventBus.emit(ProjectEvent.DiagnosticsCompleted(
             node.id, node.label, stageIndex,
             finalResult.recoverable, finalResult.strategy, finalResult.explanation
         ))

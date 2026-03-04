@@ -13,8 +13,8 @@ class EventsCommand(private val ctx: CliContext) {
         }
     }
 
-    private fun stream(pipelineId: String?) {
-        val path = if (pipelineId != null) "/api/v1/events/$pipelineId" else "/api/v1/events"
+    private fun stream(projectId: String?) {
+        val path = if (projectId != null) "/api/v1/events/$projectId" else "/api/v1/events"
         for (line in client.getStream(path)) {
             println(line)
         }
@@ -22,13 +22,13 @@ class EventsCommand(private val ctx: CliContext) {
 
     private fun printHelp() {
         println("""
-attractor events - Stream real-time pipeline events (SSE)
+attractor events - Stream real-time project events (SSE)
 
 Usage:
-  attractor events [<pipeline-id>]
+  attractor events [<project-id>]
 
 Arguments:
-  <pipeline-id>   Optional. Stream events for a specific pipeline only.
+  <project-id>   Optional. Stream events for a specific project only.
                   Without an ID, streams all events. Press Ctrl+C to stop.
         """.trimIndent())
     }

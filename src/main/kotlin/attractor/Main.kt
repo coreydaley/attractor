@@ -2,7 +2,7 @@ package attractor
 
 import attractor.db.DatabaseConfig
 import attractor.db.RunStoreFactory
-import attractor.web.PipelineRegistry
+import attractor.web.ProjectRegistry
 import attractor.web.WebMonitorServer
 
 private const val DEFAULT_WEB_PORT = 7070
@@ -14,7 +14,7 @@ fun main(args: Array<String>) {
     val dbConfig = DatabaseConfig.fromEnv()
     println("[attractor] Database: ${dbConfig.displayName}")
     val store = RunStoreFactory.create(dbConfig)
-    val registry = PipelineRegistry(store)
+    val registry = ProjectRegistry(store)
     val webServer = WebMonitorServer(webPort, registry, store)
     registry.loadFromDB { webServer.broadcastUpdate() }
     webServer.start()

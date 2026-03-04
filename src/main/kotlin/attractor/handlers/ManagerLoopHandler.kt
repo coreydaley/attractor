@@ -21,11 +21,11 @@ class ManagerLoopHandler(
         val steerCooldownMs = node.attrs["manager.steer_cooldown"]?.asMillis() ?: 300_000L
         var lastSteerTime = 0L
 
-        // Auto-start child pipeline if configured (Section 4.11)
+        // Auto-start child project if configured (Section 4.11)
         val childAutostart = node.attrOrDefault("stack.child_autostart", "true") == "true"
         val childDotfile = graph.attr("stack.child_dotfile") ?: ""
         if (childAutostart && childDotfile.isNotBlank()) {
-            startChildPipeline(childDotfile, logsRoot, context)
+            startChildProject(childDotfile, logsRoot, context)
         }
 
         for (cycle in 1..maxCycles) {
@@ -44,9 +44,9 @@ class ManagerLoopHandler(
             if (childStatus in setOf("completed", "failed")) {
                 val childOutcome = context.getString("context.stack.child.outcome")
                 return if (childOutcome == "success") {
-                    Outcome.success(notes = "Child pipeline completed successfully")
+                    Outcome.success(notes = "Child project completed successfully")
                 } else {
-                    Outcome.fail("Child pipeline failed: $childOutcome")
+                    Outcome.fail("Child project failed: $childOutcome")
                 }
             }
 
@@ -66,7 +66,7 @@ class ManagerLoopHandler(
         return Outcome.fail("Manager loop exceeded max cycles ($maxCycles)")
     }
 
-    private fun startChildPipeline(dotfile: String, logsRoot: String, context: Context) {
+    private fun startChildProject(dotfile: String, logsRoot: String, context: Context) {
         try {
             val process = if (childLauncher != null) {
                 childLauncher.invoke(dotfile, logsRoot)
@@ -87,9 +87,9 @@ class ManagerLoopHandler(
                 }
             }
             context.set("stack.child.pid", process.pid().toString())
-            context.appendLog("Child pipeline started (PID ${process.pid()}): $dotfile")
+            context.appendLog("Child project started (PID ${process.pid()}): $dotfile")
         } catch (e: Exception) {
-            context.appendLog("Failed to start child pipeline '$dotfile': ${e.message}")
+            context.appendLog("Failed to start child project '$dotfile': ${e.message}")
         }
     }
 

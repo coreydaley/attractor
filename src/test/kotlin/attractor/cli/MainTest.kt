@@ -31,7 +31,7 @@ class MainTest : FunSpec({
 
     test("--help prints global usage with all resource groups") {
         val output = captureStdout { run(listOf("--help")) }
-        output shouldContain "pipeline"
+        output shouldContain "project"
         output shouldContain "artifact"
         output shouldContain "dot"
         output shouldContain "settings"
@@ -60,7 +60,7 @@ class MainTest : FunSpec({
         }
         try {
             // Should use the custom host, not the default
-            captureStdout { run(listOf("--host", "http://localhost:$port", "pipeline", "list")) }
+            captureStdout { run(listOf("--host", "http://localhost:$port", "project", "list")) }
         } finally { srv.stop(0) }
     }
 
@@ -72,7 +72,7 @@ class MainTest : FunSpec({
         }
         try {
             val output = captureStdout {
-                run(listOf("--host", "http://localhost:$port", "--output", "json", "pipeline", "list"))
+                run(listOf("--host", "http://localhost:$port", "--output", "json", "project", "list"))
             }
             output.trim() shouldBe "[]"
         } finally { srv.stop(0) }

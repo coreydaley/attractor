@@ -1,28 +1,28 @@
 package attractor.web
 
-import attractor.events.PipelineEvent
+import attractor.events.ProjectEvent
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.ints.shouldBeLessThanOrEqual
 import java.io.File
 import java.nio.file.Files
 
-class PipelineStateTest : FunSpec({
+class ProjectStateTest : FunSpec({
 
     test("recentLogs never exceeds 200 entries under burst logging") {
-        val state = PipelineState()
+        val state = ProjectState()
         // Trigger 300 log entries via StageStarted events
         repeat(300) { i ->
-            state.update(PipelineEvent.StageStarted("stage-$i", i, "node-$i"))
+            state.update(ProjectEvent.StageStarted("stage-$i", i, "node-$i"))
         }
         val size = state.recentLogs.toList().size
         size shouldBeLessThanOrEqual 200
     }
 
     test("recentLogsSize stays in sync with recentLogs after burst") {
-        val state = PipelineState()
+        val state = ProjectState()
         repeat(250) { i ->
-            state.update(PipelineEvent.StageStarted("stage-$i", i, "node-$i"))
+            state.update(ProjectEvent.StageStarted("stage-$i", i, "node-$i"))
         }
         val dequeSize = state.recentLogs.toList().size
         val counterSize = state.recentLogsSize.get()
@@ -30,10 +30,10 @@ class PipelineStateTest : FunSpec({
     }
 
     test("toJson() does not hit filesystem — hasLog is false by default") {
-        val state = PipelineState()
-        state.update(PipelineEvent.PipelineStarted("test-pipeline", "run-1"))
-        state.update(PipelineEvent.StageStarted("stage-a", 0, "node-a"))
-        state.update(PipelineEvent.StageCompleted("stage-a", 0, 100L))
+        val state = ProjectState()
+        state.update(ProjectEvent.ProjectStarted("test-pipeline", "run-1"))
+        state.update(ProjectEvent.StageStarted("stage-a", 0, "node-a"))
+        state.update(ProjectEvent.StageCompleted("stage-a", 0, 100L))
 
         val json = state.toJson()
         // logsRoot is blank so hasLog should be false — no filesystem access occurred
@@ -48,11 +48,11 @@ class PipelineStateTest : FunSpec({
             logFile.parentFile.mkdirs()
             logFile.writeText("some log content")
 
-            val state = PipelineState()
+            val state = ProjectState()
             state.logsRoot = tmpDir.absolutePath
-            state.update(PipelineEvent.PipelineStarted("test-pipeline", "run-2"))
-            state.update(PipelineEvent.StageStarted("stage-b", 0, nodeId))
-            state.update(PipelineEvent.StageCompleted("stage-b", 0, 200L))
+            state.update(ProjectEvent.ProjectStarted("test-pipeline", "run-2"))
+            state.update(ProjectEvent.StageStarted("stage-b", 0, nodeId))
+            state.update(ProjectEvent.StageCompleted("stage-b", 0, 200L))
 
             val json = state.toJson()
             json.contains("\"hasLog\":true") shouldBe true
@@ -69,11 +69,11 @@ class PipelineStateTest : FunSpec({
             logFile.parentFile.mkdirs()
             logFile.writeText("error output")
 
-            val state = PipelineState()
+            val state = ProjectState()
             state.logsRoot = tmpDir.absolutePath
-            state.update(PipelineEvent.PipelineStarted("test-pipeline", "run-3"))
-            state.update(PipelineEvent.StageStarted("stage-c", 0, nodeId))
-            state.update(PipelineEvent.StageFailed("stage-c", 0, "something went wrong"))
+            state.update(ProjectEvent.ProjectStarted("test-pipeline", "run-3"))
+            state.update(ProjectEvent.StageStarted("stage-c", 0, nodeId))
+            state.update(ProjectEvent.StageFailed("stage-c", 0, "something went wrong"))
 
             val json = state.toJson()
             json.contains("\"hasLog\":true") shouldBe true
@@ -83,9 +83,9 @@ class PipelineStateTest : FunSpec({
     }
 
     test("reset clears recentLogs and resets size counter") {
-        val state = PipelineState()
+        val state = ProjectState()
         repeat(50) { i ->
-            state.update(PipelineEvent.StageStarted("stage-$i", i, "node-$i"))
+            state.update(ProjectEvent.StageStarted("stage-$i", i, "node-$i"))
         }
         state.reset()
         state.recentLogs.toList().size shouldBe 0

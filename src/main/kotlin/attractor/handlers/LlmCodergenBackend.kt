@@ -56,7 +56,7 @@ class LlmCodergenBackend(private val client: Client) : CodergenBackend {
     }
 
     private fun buildSystemPrompt(workspaceDir: File): String = """
-You are an expert software engineer executing a stage in an automated pipeline.
+You are an expert software engineer executing a stage in an automated project.
 
 Workspace directory: ${workspaceDir.absolutePath}
 

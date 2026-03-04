@@ -14,7 +14,7 @@ import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 
-class WebMonitorServer(private val requestedPort: Int, private val registry: PipelineRegistry, private val store: RunStore) {
+class WebMonitorServer(private val requestedPort: Int, private val registry: ProjectRegistry, private val store: RunStore) {
 
     private val dotGenerator = DotGenerator(store)
 
@@ -48,10 +48,10 @@ class WebMonitorServer(private val requestedPort: Int, private val registry: Pip
             }
         }
 
-        // ── All pipelines JSON snapshot ──────────────────────────────────────
-        httpServer.createContext("/api/pipelines") { ex ->
+        // ── All projects JSON snapshot ──────────────────────────────────────
+        httpServer.createContext("/api/projects") { ex ->
             if (ex.requestMethod == "GET") {
-                val body = allPipelinesJson().toByteArray()
+                val body = allProjectsJson().toByteArray()
                 ex.responseHeaders.add("Content-Type", "application/json")
                 ex.responseHeaders.add("Access-Control-Allow-Origin", "*")
                 ex.sendResponseHeaders(200, body.size.toLong())
@@ -59,9 +59,9 @@ class WebMonitorServer(private val requestedPort: Int, private val registry: Pip
             }
         }
 
-        // ── Single pipeline view (on-demand hydration from DB) ───────────────
-        // GET /api/pipeline-view?id={runId}
-        httpServer.createContext("/api/pipeline-view") { ex ->
+        // ── Single project view (on-demand hydration from DB) ───────────────
+        // GET /api/project-view?id={runId}
+        httpServer.createContext("/api/project-view") { ex ->
             ex.responseHeaders.add("Access-Control-Allow-Origin", "*")
             if (ex.requestMethod != "GET") {
                 ex.sendResponseHeaders(405, 0); ex.responseBody.close(); return@createContext
@@ -89,7 +89,7 @@ class WebMonitorServer(private val requestedPort: Int, private val registry: Pip
             ex.sendResponseHeaders(200, body.size.toLong()); ex.responseBody.use { it.write(body) }
         }
 
-        // ── Submit and run a pipeline ────────────────────────────────────────
+        // ── Submit and run a project ────────────────────────────────────────
         httpServer.createContext("/api/run") { ex ->
             ex.responseHeaders.add("Access-Control-Allow-Origin", "*")
             ex.responseHeaders.add("Access-Control-Allow-Methods", "POST, OPTIONS")
@@ -106,7 +106,7 @@ class WebMonitorServer(private val requestedPort: Int, private val registry: Pip
             try {
                 val body = ex.requestBody.readBytes().toString(Charsets.UTF_8)
                 val dotSource = jsonField(body, "dotSource")
-                val fileName = jsonField(body, "fileName").ifEmpty { "pipeline.dot" }
+                val fileName = jsonField(body, "fileName").ifEmpty { "project.dot" }
                 val simulate = jsonBool(body, "simulate")
                 val autoApprove = jsonBool(body, "autoApprove", default = true)
                 val originalPrompt = jsonField(body, "originalPrompt")
@@ -120,11 +120,11 @@ class WebMonitorServer(private val requestedPort: Int, private val registry: Pip
                 }
 
                 val options = RunOptions(simulate = simulate, autoApprove = autoApprove)
-                val id = PipelineRunner.submit(dotSource, fileName, options, registry, store, originalPrompt) {
+                val id = ProjectRunner.submit(dotSource, fileName, options, registry, store, originalPrompt) {
                     broadcastUpdate()
                 }
 
-                println("[attractor] Pipeline submitted: $id ($fileName)")
+                println("[attractor] Project submitted: $id ($fileName)")
                 val resp = """{"id":"$id"}""".toByteArray()
                 ex.responseHeaders.add("Content-Type", "application/json")
                 ex.sendResponseHeaders(200, resp.size.toLong())
@@ -137,7 +137,7 @@ class WebMonitorServer(private val requestedPort: Int, private val registry: Pip
             }
         }
 
-        // ── Re-run an existing pipeline ──────────────────────────────────────
+        // ── Re-run an existing project ──────────────────────────────────────
         httpServer.createContext("/api/rerun") { ex ->
             ex.responseHeaders.add("Access-Control-Allow-Origin", "*")
             ex.responseHeaders.add("Access-Control-Allow-Methods", "POST, OPTIONS")
@@ -153,14 +153,14 @@ class WebMonitorServer(private val requestedPort: Int, private val registry: Pip
                 val body = ex.requestBody.readBytes().toString(Charsets.UTF_8)
                 val id = jsonField(body, "id")
                 if (registry.get(id) == null) {
-                    val err = """{"error":"Pipeline not found"}""".toByteArray()
+                    val err = """{"error":"Project not found"}""".toByteArray()
                     ex.responseHeaders.add("Content-Type", "application/json")
                     ex.sendResponseHeaders(404, err.size.toLong())
                     ex.responseBody.use { it.write(err) }
                     return@createContext
                 }
-                PipelineRunner.resubmit(id, registry, store) { broadcastUpdate() }
-                println("[attractor] Pipeline re-run (in-place): $id")
+                ProjectRunner.resubmit(id, registry, store) { broadcastUpdate() }
+                println("[attractor] Project re-run (in-place): $id")
                 val resp = """{"id":"$id"}""".toByteArray()
                 ex.responseHeaders.add("Content-Type", "application/json")
                 ex.sendResponseHeaders(200, resp.size.toLong())
@@ -173,7 +173,7 @@ class WebMonitorServer(private val requestedPort: Int, private val registry: Pip
             }
         }
 
-        // ── Cancel a running pipeline ─────────────────────────────────────────
+        // ── Cancel a running project ─────────────────────────────────────────
         httpServer.createContext("/api/cancel") { ex ->
             ex.responseHeaders.add("Access-Control-Allow-Origin", "*")
             ex.responseHeaders.add("Access-Control-Allow-Methods", "POST, OPTIONS")
@@ -189,7 +189,7 @@ class WebMonitorServer(private val requestedPort: Int, private val registry: Pip
                 val body = ex.requestBody.readBytes().toString(Charsets.UTF_8)
                 val id = jsonField(body, "id")
                 val cancelled = registry.cancel(id)
-                println("[attractor] Pipeline cancel requested: $id (cancelled=$cancelled)")
+                println("[attractor] Project cancel requested: $id (cancelled=$cancelled)")
                 val resp = """{"cancelled":$cancelled}""".toByteArray()
                 ex.responseHeaders.add("Content-Type", "application/json")
                 ex.sendResponseHeaders(200, resp.size.toLong())
@@ -202,7 +202,7 @@ class WebMonitorServer(private val requestedPort: Int, private val registry: Pip
             }
         }
 
-        // ── Pause a running pipeline ──────────────────────────────────────────
+        // ── Pause a running project ──────────────────────────────────────────
         httpServer.createContext("/api/pause") { ex ->
             ex.responseHeaders.add("Access-Control-Allow-Origin", "*")
             ex.responseHeaders.add("Access-Control-Allow-Methods", "POST, OPTIONS")
@@ -218,7 +218,7 @@ class WebMonitorServer(private val requestedPort: Int, private val registry: Pip
                 val body = ex.requestBody.readBytes().toString(Charsets.UTF_8)
                 val id = jsonField(body, "id")
                 val paused = registry.pause(id)
-                println("[attractor] Pipeline pause requested: $id (paused=$paused)")
+                println("[attractor] Project pause requested: $id (paused=$paused)")
                 val resp = """{"paused":$paused}""".toByteArray()
                 ex.responseHeaders.add("Content-Type", "application/json")
                 ex.sendResponseHeaders(200, resp.size.toLong())
@@ -231,7 +231,7 @@ class WebMonitorServer(private val requestedPort: Int, private val registry: Pip
             }
         }
 
-        // ── Resume a paused pipeline ──────────────────────────────────────────
+        // ── Resume a paused project ──────────────────────────────────────────
         httpServer.createContext("/api/resume") { ex ->
             ex.responseHeaders.add("Access-Control-Allow-Origin", "*")
             ex.responseHeaders.add("Access-Control-Allow-Methods", "POST, OPTIONS")
@@ -248,21 +248,21 @@ class WebMonitorServer(private val requestedPort: Int, private val registry: Pip
                 val id = jsonField(body, "id")
                 val entry = registry.get(id)
                 if (entry == null) {
-                    val err = """{"error":"Pipeline not found"}""".toByteArray()
+                    val err = """{"error":"Project not found"}""".toByteArray()
                     ex.responseHeaders.add("Content-Type", "application/json")
                     ex.sendResponseHeaders(404, err.size.toLong())
                     ex.responseBody.use { it.write(err) }
                     return@createContext
                 }
                 if (entry.state.status.get() != "paused") {
-                    val err = """{"error":"Pipeline is not paused"}""".toByteArray()
+                    val err = """{"error":"Project is not paused"}""".toByteArray()
                     ex.responseHeaders.add("Content-Type", "application/json")
                     ex.sendResponseHeaders(400, err.size.toLong())
                     ex.responseBody.use { it.write(err) }
                     return@createContext
                 }
-                PipelineRunner.resumePipeline(id, registry, store) { broadcastUpdate() }
-                println("[attractor] Pipeline resume requested: $id")
+                ProjectRunner.resumeProject(id, registry, store) { broadcastUpdate() }
+                println("[attractor] Project resume requested: $id")
                 val resp = """{"id":"$id"}""".toByteArray()
                 ex.responseHeaders.add("Content-Type", "application/json")
                 ex.sendResponseHeaders(200, resp.size.toLong())
@@ -275,7 +275,7 @@ class WebMonitorServer(private val requestedPort: Int, private val registry: Pip
             }
         }
 
-        // ── Archive a pipeline run ────────────────────────────────────────────
+        // ── Archive a project run ────────────────────────────────────────────
         httpServer.createContext("/api/archive") { ex ->
             ex.responseHeaders.add("Access-Control-Allow-Origin", "*")
             ex.responseHeaders.add("Access-Control-Allow-Methods", "POST, OPTIONS")
@@ -308,7 +308,7 @@ class WebMonitorServer(private val requestedPort: Int, private val registry: Pip
             }
         }
 
-        // ── Unarchive a pipeline run ──────────────────────────────────────────
+        // ── Unarchive a project run ──────────────────────────────────────────
         httpServer.createContext("/api/unarchive") { ex ->
             ex.responseHeaders.add("Access-Control-Allow-Origin", "*")
             ex.responseHeaders.add("Access-Control-Allow-Methods", "POST, OPTIONS")
@@ -392,7 +392,7 @@ class WebMonitorServer(private val requestedPort: Int, private val registry: Pip
             }
         }
 
-        // ── Permanently delete a pipeline run and its artifacts ──────────────
+        // ── Permanently delete a project run and its artifacts ──────────────
         httpServer.createContext("/api/delete") { ex ->
             ex.responseHeaders.add("Access-Control-Allow-Origin", "*")
             ex.responseHeaders.add("Access-Control-Allow-Methods", "POST, OPTIONS")
@@ -413,7 +413,7 @@ class WebMonitorServer(private val requestedPort: Int, private val registry: Pip
                     val members = registry.getAll().filter { it.familyId == familyId }
                     val blocked = members.any { it.state.status.get().let { s -> s == "running" || s == "paused" } }
                     if (blocked) {
-                        val err = """{"error":"Cannot delete a running or paused pipeline"}""".toByteArray()
+                        val err = """{"error":"Cannot delete a running or paused project"}""".toByteArray()
                         ex.responseHeaders.add("Content-Type", "application/json")
                         ex.sendResponseHeaders(400, err.size.toLong())
                         ex.responseBody.use { it.write(err) }
@@ -427,7 +427,7 @@ class WebMonitorServer(private val requestedPort: Int, private val registry: Pip
                             ?.forEach { runCatching { it.deleteRecursively() } }
                     }
                     broadcastUpdate()
-                    println("[attractor] Pipeline family deleted: $familyId (${logsRoots.size} runs)")
+                    println("[attractor] Project family deleted: $familyId (${logsRoots.size} runs)")
                     val resp = """{"deleted":$deleted}""".toByteArray()
                     ex.responseHeaders.add("Content-Type", "application/json")
                     ex.sendResponseHeaders(200, resp.size.toLong())
@@ -435,7 +435,7 @@ class WebMonitorServer(private val requestedPort: Int, private val registry: Pip
                 } else {
                     val entry = registry.get(id)
                     if (entry == null) {
-                        val err = """{"error":"Pipeline not found"}""".toByteArray()
+                        val err = """{"error":"Project not found"}""".toByteArray()
                         ex.responseHeaders.add("Content-Type", "application/json")
                         ex.sendResponseHeaders(404, err.size.toLong())
                         ex.responseBody.use { it.write(err) }
@@ -443,7 +443,7 @@ class WebMonitorServer(private val requestedPort: Int, private val registry: Pip
                     }
                     val status = entry.state.status.get()
                     if (status == "running" || status == "paused") {
-                        val err = """{"error":"Cannot delete a running or paused pipeline"}""".toByteArray()
+                        val err = """{"error":"Cannot delete a running or paused project"}""".toByteArray()
                         ex.responseHeaders.add("Content-Type", "application/json")
                         ex.sendResponseHeaders(400, err.size.toLong())
                         ex.responseBody.use { it.write(err) }
@@ -457,7 +457,7 @@ class WebMonitorServer(private val requestedPort: Int, private val registry: Pip
                             ?.forEach { runCatching { it.deleteRecursively() } }
                     }
                     broadcastUpdate()
-                    println("[attractor] Pipeline deleted: $id (logsRoot=${logsRoot.ifBlank { "none" }})")
+                    println("[attractor] Project deleted: $id (logsRoot=${logsRoot.ifBlank { "none" }})")
                     val resp = """{"deleted":$deleted}""".toByteArray()
                     ex.responseHeaders.add("Content-Type", "application/json")
                     ex.sendResponseHeaders(200, resp.size.toLong())
@@ -560,7 +560,7 @@ class WebMonitorServer(private val requestedPort: Int, private val registry: Pip
             }
         }
 
-        // ── Describe DOT pipeline in natural language (SSE) ─────────────────
+        // ── Describe DOT project in natural language (SSE) ─────────────────
         httpServer.createContext("/api/describe-dot/stream") { ex ->
             ex.responseHeaders.add("Access-Control-Allow-Origin", "*")
             ex.responseHeaders.add("Access-Control-Allow-Methods", "POST, OPTIONS")
@@ -744,7 +744,7 @@ class WebMonitorServer(private val requestedPort: Int, private val registry: Pip
                 val originalPrompt = jsonField(body, "originalPrompt")
                 val sourceEntry = registry.get(sourceId)
                 if (sourceEntry == null) {
-                    val err = """{"error":"Pipeline not found"}""".toByteArray()
+                    val err = """{"error":"Project not found"}""".toByteArray()
                     ex.responseHeaders.add("Content-Type", "application/json")
                     ex.sendResponseHeaders(404, err.size.toLong())
                     ex.responseBody.use { it.write(err) }
@@ -758,7 +758,7 @@ class WebMonitorServer(private val requestedPort: Int, private val registry: Pip
                     return@createContext
                 }
                 if (sourceEntry.state.status.get() == "running") {
-                    val err = """{"error":"Pipeline is currently running"}""".toByteArray()
+                    val err = """{"error":"Project is currently running"}""".toByteArray()
                     ex.responseHeaders.add("Content-Type", "application/json")
                     ex.sendResponseHeaders(409, err.size.toLong())
                     ex.responseBody.use { it.write(err) }
@@ -772,7 +772,7 @@ class WebMonitorServer(private val requestedPort: Int, private val registry: Pip
                     registry.setFamilyId(sourceId, sourceId)
                 }
                 // Create a new run for this iteration — source run is preserved untouched
-                val newId = PipelineRunner.submit(
+                val newId = ProjectRunner.submit(
                     dotSource = dotSource,
                     fileName = sourceEntry.fileName,
                     options = sourceEntry.options,
@@ -782,7 +782,7 @@ class WebMonitorServer(private val requestedPort: Int, private val registry: Pip
                     familyId = familyId,
                     displayNameOverride = sourceEntry.displayName
                 ) { broadcastUpdate() }
-                println("[attractor] Pipeline iterated (new run): $sourceId -> $newId (family: $familyId)")
+                println("[attractor] Project iterated (new run): $sourceId -> $newId (family: $familyId)")
                 val resp = """{"newId":${js(newId)}}""".toByteArray()
                 ex.responseHeaders.add("Content-Type", "application/json")
                 ex.sendResponseHeaders(200, resp.size.toLong())
@@ -795,9 +795,9 @@ class WebMonitorServer(private val requestedPort: Int, private val registry: Pip
             }
         }
 
-        // ── Pipeline family: all runs sharing the same familyId ──────────────
-        // GET /api/pipeline-family?id={runId}
-        httpServer.createContext("/api/pipeline-family") { ex ->
+        // ── Project family: all runs sharing the same familyId ──────────────
+        // GET /api/project-family?id={runId}
+        httpServer.createContext("/api/project-family") { ex ->
             ex.responseHeaders.add("Access-Control-Allow-Origin", "*")
             if (ex.requestMethod != "GET") {
                 ex.sendResponseHeaders(405, 0); ex.responseBody.close(); return@createContext
@@ -810,7 +810,7 @@ class WebMonitorServer(private val requestedPort: Int, private val registry: Pip
             val runId = params["id"] ?: ""
             val entry = registry.get(runId)
             if (runId.isBlank() || entry == null) {
-                val msg = """{"error":"Pipeline not found"}""".toByteArray()
+                val msg = """{"error":"Project not found"}""".toByteArray()
                 ex.responseHeaders.add("Content-Type", "application/json")
                 ex.sendResponseHeaders(404, msg.size.toLong())
                 ex.responseBody.use { it.write(msg) }
@@ -854,7 +854,7 @@ class WebMonitorServer(private val requestedPort: Int, private val registry: Pip
             val runId = params["id"] ?: ""
             val entry = registry.get(runId)
             if (runId.isBlank() || entry == null) {
-                val msg = """{"error":"Pipeline not found"}""".toByteArray()
+                val msg = """{"error":"Project not found"}""".toByteArray()
                 ex.responseHeaders.add("Content-Type", "application/json")
                 ex.sendResponseHeaders(404, msg.size.toLong())
                 ex.responseBody.use { it.write(msg) }
@@ -927,7 +927,7 @@ class WebMonitorServer(private val requestedPort: Int, private val registry: Pip
         }
 
         // ── Stage live log ───────────────────────────────────────────────────
-        // GET /api/stage-log?id={pipelineId}&stage={nodeId}
+        // GET /api/stage-log?id={projectId}&stage={nodeId}
         httpServer.createContext("/api/stage-log") { ex ->
             ex.responseHeaders.add("Access-Control-Allow-Origin", "*")
             if (ex.requestMethod != "GET") {
@@ -938,14 +938,14 @@ class WebMonitorServer(private val requestedPort: Int, private val registry: Pip
                 val kv = p.split("=", limit = 2)
                 (kv.getOrElse(0) { "" }) to java.net.URLDecoder.decode(kv.getOrElse(1) { "" }, "UTF-8")
             }
-            val pipelineId = params["id"] ?: ""
+            val projectId = params["id"] ?: ""
             val stageNodeId = params["stage"] ?: ""
-            val entry = registry.get(pipelineId)
+            val entry = registry.get(projectId)
             val logsRoot = entry?.logsRoot ?: ""
             val logFile = if (logsRoot.isNotBlank() && stageNodeId.isNotBlank())
                 java.io.File(logsRoot, "$stageNodeId/live.log") else null
             val content = when {
-                pipelineId.isBlank() || stageNodeId.isBlank() -> "(missing id or stage parameter)"
+                projectId.isBlank() || stageNodeId.isBlank() -> "(missing id or stage parameter)"
                 logFile == null || !logFile.exists() -> "(no log yet — stage may not have started)"
                 else -> logFile.readText()
             }
@@ -956,7 +956,7 @@ class WebMonitorServer(private val requestedPort: Int, private val registry: Pip
         }
 
         // ── Download artifacts as ZIP ────────────────────────────────────────
-        // GET /api/download-artifacts?id={pipelineId}
+        // GET /api/download-artifacts?id={projectId}
         // Zips the entire logsRoot directory (workspace files + stage planning docs).
         httpServer.createContext("/api/download-artifacts") { ex ->
             ex.responseHeaders.add("Access-Control-Allow-Origin", "*")
@@ -968,10 +968,10 @@ class WebMonitorServer(private val requestedPort: Int, private val registry: Pip
                 val kv = p.split("=", limit = 2)
                 (kv.getOrElse(0) { "" }) to java.net.URLDecoder.decode(kv.getOrElse(1) { "" }, "UTF-8")
             }
-            val pipelineId = params["id"] ?: ""
-            val entry = registry.get(pipelineId)
+            val projectId = params["id"] ?: ""
+            val entry = registry.get(projectId)
             val logsRoot = entry?.logsRoot ?: ""
-            if (pipelineId.isBlank() || entry == null || logsRoot.isBlank()) {
+            if (projectId.isBlank() || entry == null || logsRoot.isBlank()) {
                 val msg = "No artifacts available".toByteArray(Charsets.UTF_8)
                 ex.responseHeaders.add("Content-Type", "text/plain; charset=utf-8")
                 ex.sendResponseHeaders(404, msg.size.toLong())
@@ -981,13 +981,13 @@ class WebMonitorServer(private val requestedPort: Int, private val registry: Pip
             val artifactRoot = java.io.File(logsRoot)
             val files = artifactRoot.walkTopDown().filter { it.isFile }.toList()
             if (files.isEmpty()) {
-                val msg = "No files found for this pipeline run".toByteArray(Charsets.UTF_8)
+                val msg = "No files found for this project run".toByteArray(Charsets.UTF_8)
                 ex.responseHeaders.add("Content-Type", "text/plain; charset=utf-8")
                 ex.sendResponseHeaders(404, msg.size.toLong())
                 ex.responseBody.use { it.write(msg) }
                 return@createContext
             }
-            val safeName = (entry.state.pipelineName.get().ifEmpty { entry.fileName })
+            val safeName = (entry.state.projectName.get().ifEmpty { entry.fileName })
                 .replace(Regex("[^a-zA-Z0-9_.-]"), "_")
             ex.responseHeaders.add("Content-Type", "application/zip")
             ex.responseHeaders.add("Content-Disposition", "attachment; filename=\"artifacts-$safeName.zip\"")
@@ -1004,8 +1004,8 @@ class WebMonitorServer(private val requestedPort: Int, private val registry: Pip
             } catch (_: Exception) { /* client disconnected */ }
         }
 
-        // ── Export a pipeline run as a self-contained ZIP ────────────────────
-        // GET /api/export-run?id={pipelineId}
+        // ── Export a project run as a self-contained ZIP ────────────────────
+        // GET /api/export-run?id={projectId}
         httpServer.createContext("/api/export-run") { ex ->
             ex.responseHeaders.add("Access-Control-Allow-Origin", "*")
             if (ex.requestMethod != "GET") {
@@ -1016,16 +1016,16 @@ class WebMonitorServer(private val requestedPort: Int, private val registry: Pip
                 val kv = p.split("=", limit = 2)
                 (kv.getOrElse(0) { "" }) to java.net.URLDecoder.decode(kv.getOrElse(1) { "" }, "UTF-8")
             }
-            val pipelineId = params["id"] ?: ""
-            val entry = registry.get(pipelineId)
-            if (pipelineId.isBlank() || entry == null) {
-                val msg = """{"error":"Pipeline not found"}""".toByteArray()
+            val projectId = params["id"] ?: ""
+            val entry = registry.get(projectId)
+            if (projectId.isBlank() || entry == null) {
+                val msg = """{"error":"Project not found"}""".toByteArray()
                 ex.responseHeaders.add("Content-Type", "application/json")
                 ex.sendResponseHeaders(404, msg.size.toLong())
                 ex.responseBody.use { it.write(msg) }
                 return@createContext
             }
-            val run = store.getById(pipelineId)
+            val run = store.getById(projectId)
             if (run == null) {
                 val msg = """{"error":"Run not found in database"}""".toByteArray()
                 ex.responseHeaders.add("Content-Type", "application/json")
@@ -1043,22 +1043,22 @@ class WebMonitorServer(private val requestedPort: Int, private val registry: Pip
                 append("\"autoApprove\":${run.autoApprove}")
                 append("}")
             }
-            val safeName = (entry.state.pipelineName.get().ifEmpty { entry.fileName })
+            val safeName = (entry.state.projectName.get().ifEmpty { entry.fileName })
                 .replace(Regex("[^a-zA-Z0-9_.-]"), "_")
-            val idSuffix = pipelineId.takeLast(8)
+            val idSuffix = projectId.takeLast(8)
             ex.responseHeaders.add("Content-Type", "application/zip")
-            ex.responseHeaders.add("Content-Disposition", "attachment; filename=\"pipeline-$safeName-$idSuffix.zip\"")
+            ex.responseHeaders.add("Content-Disposition", "attachment; filename=\"project-$safeName-$idSuffix.zip\"")
             ex.sendResponseHeaders(200, 0)
             try {
                 java.util.zip.ZipOutputStream(ex.responseBody).use { zip ->
-                    zip.putNextEntry(java.util.zip.ZipEntry("pipeline-meta.json"))
+                    zip.putNextEntry(java.util.zip.ZipEntry("project-meta.json"))
                     zip.write(metaJson.toByteArray(Charsets.UTF_8))
                     zip.closeEntry()
                 }
             } catch (_: Exception) { /* client disconnected */ }
         }
 
-        // ── Import a pipeline run from an exported ZIP ───────────────────────
+        // ── Import a project run from an exported ZIP ───────────────────────
         // POST /api/import-run?onConflict=overwrite|skip
         httpServer.createContext("/api/import-run") { ex ->
             ex.responseHeaders.add("Access-Control-Allow-Origin", "*")
@@ -1078,7 +1078,7 @@ class WebMonitorServer(private val requestedPort: Int, private val registry: Pip
                         java.util.zip.ZipInputStream(ex.requestBody).use { zis ->
                             var zipEntry = zis.nextEntry
                             while (zipEntry != null) {
-                                if (zipEntry.name.trimStart('/') == "pipeline-meta.json") {
+                                if (zipEntry.name.trimStart('/') == "project-meta.json") {
                                     text = zis.readBytes().toString(Charsets.UTF_8)
                                 }
                                 zis.closeEntry()
@@ -1098,7 +1098,7 @@ class WebMonitorServer(private val requestedPort: Int, private val registry: Pip
                 }
 
                 if (metaText == null) {
-                    val err = """{"error":"pipeline-meta.json not found in zip"}""".toByteArray()
+                    val err = """{"error":"project-meta.json not found in zip"}""".toByteArray()
                     ex.responseHeaders.add("Content-Type", "application/json")
                     ex.sendResponseHeaders(400, err.size.toLong())
                     ex.responseBody.use { it.write(err) }
@@ -1108,7 +1108,7 @@ class WebMonitorServer(private val requestedPort: Int, private val registry: Pip
                 val fileName  = jsonField(metaText, "fileName")
                 val dotSource = jsonField(metaText, "dotSource")
                 if (fileName.isBlank() || dotSource.isBlank()) {
-                    val err = """{"error":"Missing required field(s) in pipeline-meta.json: fileName, dotSource"}""".toByteArray()
+                    val err = """{"error":"Missing required field(s) in project-meta.json: fileName, dotSource"}""".toByteArray()
                     ex.responseHeaders.add("Content-Type", "application/json")
                     ex.sendResponseHeaders(400, err.size.toLong())
                     ex.responseBody.use { it.write(err) }
@@ -1120,7 +1120,7 @@ class WebMonitorServer(private val requestedPort: Int, private val registry: Pip
                 val originalPrompt = jsonField(metaText, "originalPrompt")
                 val importFamilyId = jsonField(metaText, "familyId")
 
-                val newId = PipelineRunner.submit(
+                val newId = ProjectRunner.submit(
                     dotSource      = dotSource,
                     fileName       = fileName,
                     options        = RunOptions(simulate = simulate, autoApprove = autoApprove),
@@ -1130,7 +1130,7 @@ class WebMonitorServer(private val requestedPort: Int, private val registry: Pip
                     familyId       = importFamilyId,
                     onUpdate       = { broadcastUpdate() }
                 )
-                println("[attractor] Pipeline imported and started: $newId ($fileName)")
+                println("[attractor] Project imported and started: $newId ($fileName)")
                 val resp = """{"status":"started","id":${js(newId)}}""".toByteArray()
                 ex.responseHeaders.add("Content-Type", "application/json")
                 ex.sendResponseHeaders(200, resp.size.toLong())
@@ -1239,7 +1239,7 @@ class WebMonitorServer(private val requestedPort: Int, private val registry: Pip
             ex.sendResponseHeaders(200, 0)
             val client = SseClient(ex)
             sseClients.add(client)
-            client.offer(allPipelinesJson())          // initial snapshot
+            client.offer(allProjectsJson())          // initial snapshot
             try {
                 while (client.alive) {
                     val json = client.queue.poll(2, TimeUnit.SECONDS)
@@ -1263,7 +1263,7 @@ class WebMonitorServer(private val requestedPort: Int, private val registry: Pip
             }
         }
 
-        val restApi = RestApiRouter(registry, store, { broadcastUpdate() }, { allPipelinesJson() }, restSseClients)
+        val restApi = RestApiRouter(registry, store, { broadcastUpdate() }, { allProjectsJson() }, restSseClients)
         httpServer.createContext("/api/v1/") { ex -> restApi.handle(ex) }
 
         httpServer.createContext("/docs") { ex ->
@@ -1279,7 +1279,7 @@ class WebMonitorServer(private val requestedPort: Int, private val registry: Pip
     }
 
     fun broadcastUpdate() {
-        val json = allPipelinesJson()
+        val json = allProjectsJson()
         val dead = mutableListOf<SseClient>()
         for (client in sseClients) {
             if (!client.alive) dead.add(client) else client.offer(json)
@@ -1395,7 +1395,7 @@ window.onload = function() {
 
     private fun webAppTabContent(): String = """
 <h2>Getting Started</h2>
-<p>Attractor is an AI pipeline orchestration system. You define your workflow as a DOT graph — a directed graph where each node is an LLM-powered stage — and Attractor executes it, handling retries, failure diagnosis, and real-time progress monitoring.</p>
+<p>Attractor is an AI project orchestration system. You define your workflow as a DOT graph — a directed graph where each node is an LLM-powered stage — and Attractor executes it, handling retries, failure diagnosis, and real-time progress monitoring.</p>
 <p><strong>Start the server:</strong></p>
 <pre><code># Via Makefile
 make run
@@ -1408,31 +1408,31 @@ java -jar coreys-attractor-*.jar --web-port 7070</code></pre>
 <p>The top navigation bar has five views:</p>
 <table>
 <tr><th>View</th><th>Purpose</th></tr>
-<tr><td><strong>Monitor</strong></td><td>Real-time status of all active pipelines. Each pipeline gets a tab showing its stage list, live log, and graph.</td></tr>
-<tr><td><strong>🚀 Create</strong></td><td>Write or generate a DOT pipeline and submit it for execution.</td></tr>
-<tr><td><strong>&#128193; Archived</strong></td><td>Table of archived completed, failed, or cancelled pipelines.</td></tr>
-<tr><td><strong>&#128229; Import</strong></td><td>Upload a previously exported pipeline ZIP file.</td></tr>
+<tr><td><strong>Monitor</strong></td><td>Real-time status of all active projects. Each project gets a tab showing its stage list, live log, and graph.</td></tr>
+<tr><td><strong>🚀 Create</strong></td><td>Write or generate a DOT project and submit it for execution.</td></tr>
+<tr><td><strong>&#128193; Archived</strong></td><td>Table of archived completed, failed, or cancelled projects.</td></tr>
+<tr><td><strong>&#128229; Import</strong></td><td>Upload a previously exported project ZIP file.</td></tr>
 <tr><td><strong>&#9881; Settings</strong></td><td>Configure execution mode, provider toggles, CLI commands, and UI preferences.</td></tr>
 </table>
 
-<h2>Creating a Pipeline</h2>
-<p>There are three ways to create a pipeline:</p>
+<h2>Creating a Project</h2>
+<p>There are three ways to create a project:</p>
 <h3>Option A — Generate from natural language</h3>
 <ol>
 <li>Type a description in the natural language input (e.g., <em>"Build a Go application and run its tests"</em>)</li>
 <li>Click <strong>Generate</strong> — the LLM produces a DOT graph</li>
 <li>Review the graph in the preview pane (toggle between Source and Graph views)</li>
-<li>Optionally click <strong>Iterate</strong> to refine the pipeline via LLM</li>
-<li>Click <strong>Run Pipeline</strong></li>
+<li>Optionally click <strong>Iterate</strong> to refine the project via LLM</li>
+<li>Click <strong>Run Project</strong></li>
 </ol>
 
 <h3>Option B — Write DOT directly</h3>
-<p>Paste or type a valid DOT graph into the editor in the Create view, then click <strong>Run Pipeline</strong>.</p>
+<p>Paste or type a valid DOT graph into the editor in the Create view, then click <strong>Run Project</strong>.</p>
 
 <h3>Option C — Upload a .dot file</h3>
-<p>Click <strong>&#128194; Upload .dot</strong> in the Generated DOT section to open a file picker. Select a <code>.dot</code> file from disk — the DOT source loads into the editor, the NL prompt is cleared, and the graph renders automatically. Click <strong>Run Pipeline</strong> to execute it. The original filename is preserved and used for artifact labelling.</p>
+<p>Click <strong>&#128194; Upload .dot</strong> in the Generated DOT section to open a file picker. Select a <code>.dot</code> file from disk — the DOT source loads into the editor, the NL prompt is cleared, and the graph renders automatically. Click <strong>Run Project</strong> to execute it. The original filename is preserved and used for artifact labelling.</p>
 
-<h2>Pipeline States</h2>
+<h2>Project States</h2>
 <table class="status-table">
 <tr><th>Status</th><th>Meaning</th></tr>
 <tr><td><code>idle</code></td><td>Created but not yet started</td></tr>
@@ -1443,11 +1443,11 @@ java -jar coreys-attractor-*.jar --web-port 7070</code></pre>
 <tr><td><code>cancelled</code></td><td>Manually stopped by the user</td></tr>
 </table>
 
-<h2>Monitoring a Pipeline</h2>
-<p>Click a pipeline tab in the Monitor view to open its detail panel:</p>
+<h2>Monitoring a Project</h2>
+<p>Click a project tab in the Monitor view to open its detail panel:</p>
 <ul>
 <li><strong>Stage list</strong> — each stage shown with status badge, duration, and a log icon</li>
-<li><strong>Log panel</strong> — scrollable live log of pipeline events and LLM output</li>
+<li><strong>Log panel</strong> — scrollable live log of project events and LLM output</li>
 <li><strong>Graph panel</strong> — rendered SVG of the DOT graph with stage status colors overlaid</li>
 </ul>
 <h3>Action buttons</h3>
@@ -1456,27 +1456,27 @@ java -jar coreys-attractor-*.jar --web-port 7070</code></pre>
 <tr><td>Cancel</td><td>Running or paused</td><td>Immediately terminates execution</td></tr>
 <tr><td>Pause</td><td>Running</td><td>Suspends after current stage completes</td></tr>
 <tr><td>Resume</td><td>Paused</td><td>Resumes from the paused stage</td></tr>
-<tr><td>Re-run</td><td>Completed or failed</td><td>Restarts the pipeline from the beginning</td></tr>
+<tr><td>Re-run</td><td>Completed or failed</td><td>Restarts the project from the beginning</td></tr>
 <tr><td>Iterate</td><td>Completed or failed</td><td>Opens the Create view for a new version</td></tr>
 <tr><td>Download Artifacts</td><td>Completed</td><td>Downloads a ZIP of all stage output files and workspace contents — see <em>Downloading Artifacts</em> below</td></tr>
 <tr><td>View Failure Report</td><td>Failed</td><td>Shows the AI-generated failure diagnosis</td></tr>
-<tr><td>Export</td><td>Any terminal state</td><td>Downloads a ZIP with pipeline metadata for import elsewhere</td></tr>
+<tr><td>Export</td><td>Any terminal state</td><td>Downloads a ZIP with project metadata for import elsewhere</td></tr>
 <tr><td>Archive</td><td>Completed or failed</td><td>Moves to the Archived view</td></tr>
-<tr><td>Delete</td><td>Completed, failed, or cancelled</td><td>Permanently removes the pipeline and its artifacts</td></tr>
+<tr><td>Delete</td><td>Completed, failed, or cancelled</td><td>Permanently removes the project and its artifacts</td></tr>
 </table>
 
-<h2>Pipeline Versions (Iterate)</h2>
-<p>Clicking <strong>Iterate</strong> on a completed or failed pipeline opens the Create view pre-filled with the pipeline's DOT source. When you submit, a new pipeline is created in the same <em>family</em> — sharing the same <code>familyId</code>. Use the <code>&lt;&lt;</code> and <code>&gt;&gt;</code> arrows in the pipeline panel header to navigate between family members.</p>
+<h2>Project Versions (Iterate)</h2>
+<p>Clicking <strong>Iterate</strong> on a completed or failed project opens the Create view pre-filled with the project's DOT source. When you submit, a new project is created in the same <em>family</em> — sharing the same <code>familyId</code>. Use the <code>&lt;&lt;</code> and <code>&gt;&gt;</code> arrows in the project panel header to navigate between family members.</p>
 
 <h2>Downloading Artifacts</h2>
-<p>Click <strong>Download Artifacts</strong> on a completed pipeline to download a ZIP archive of everything the pipeline produced. The ZIP contains the entire artifact workspace for the run.</p>
+<p>Click <strong>Download Artifacts</strong> on a completed project to download a ZIP archive of everything the project produced. The ZIP contains the entire artifact workspace for the run.</p>
 
 <h3>ZIP contents</h3>
 <table>
 <tr><th>Path</th><th>Description</th></tr>
-<tr><td><code>manifest.json</code></td><td>Pipeline completion summary: final status, stage count, finish time</td></tr>
-<tr><td><code>failure_report.json</code></td><td>AI-generated failure diagnosis (only present when the pipeline failed)</td></tr>
-<tr><td><code>checkpoint.json</code></td><td>Internal pipeline checkpoint used for resume and re-run</td></tr>
+<tr><td><code>manifest.json</code></td><td>Project completion summary: final status, stage count, finish time</td></tr>
+<tr><td><code>failure_report.json</code></td><td>AI-generated failure diagnosis (only present when the project failed)</td></tr>
+<tr><td><code>checkpoint.json</code></td><td>Internal project checkpoint used for resume and re-run</td></tr>
 <tr><td><code>workspace/</code></td><td>Shared working directory — all files the LLM created or modified during execution (source code, build output, test results, etc.)</td></tr>
 <tr><td><code>{nodeId}/prompt.md</code></td><td>The exact prompt sent to the LLM for this stage</td></tr>
 <tr><td><code>{nodeId}/response.md</code></td><td>The LLM's full response for this stage</td></tr>
@@ -1487,20 +1487,20 @@ java -jar coreys-attractor-*.jar --web-port 7070</code></pre>
 <div class="tip-box">&#128161; The <code>workspace/</code> directory is where you'll find the actual deliverables — code, reports, compiled binaries, or any other files the LLM was instructed to produce.</div>
 
 <h3>Artifact browser</h3>
-<p>Before downloading, you can browse individual files directly in the UI. Click the log icon next to any stage in the stage list to open the artifact browser for that stage, or use the REST API (<code>GET /api/v1/pipelines/{id}/artifacts</code>) to list and fetch individual files programmatically.</p>
+<p>Before downloading, you can browse individual files directly in the UI. Click the log icon next to any stage in the stage list to open the artifact browser for that stage, or use the REST API (<code>GET /api/v1/projects/{id}/artifacts</code>) to list and fetch individual files programmatically.</p>
 
 <h2>Failure Diagnosis</h2>
-<p>When a stage fails, Attractor automatically asks the LLM to diagnose the failure and generates a <code>failure_report.json</code> in the pipeline's artifact directory. Click <strong>View Failure Report</strong> to see the structured diagnosis. The report is also included in the artifacts ZIP download.</p>
+<p>When a stage fails, Attractor automatically asks the LLM to diagnose the failure and generates a <code>failure_report.json</code> in the project's artifact directory. Click <strong>View Failure Report</strong> to see the structured diagnosis. The report is also included in the artifacts ZIP download.</p>
 
 <h2>Import / Export</h2>
 <ul>
-<li><strong>Export</strong> — downloads a ZIP archive containing <code>pipeline-meta.json</code> (the pipeline's DOT source, options, and metadata). Use this to move a pipeline definition between Attractor instances.</li>
+<li><strong>Export</strong> — downloads a ZIP archive containing <code>project-meta.json</code> (the project's DOT source, options, and metadata). Use this to move a project definition between Attractor instances.</li>
 <li><strong>Import</strong> — upload an exported ZIP via the Import button in the nav; use <code>onConflict=skip</code> (default) or <code>onConflict=overwrite</code> to control conflict behavior</li>
 </ul>
-<div class="tip-box">&#9432; <strong>Export vs Download Artifacts:</strong> Export saves the pipeline <em>definition</em> (DOT graph + metadata) for re-importing. Download Artifacts saves the pipeline <em>outputs</em> (files, logs, workspace). They serve different purposes.</div>
+<div class="tip-box">&#9432; <strong>Export vs Download Artifacts:</strong> Export saves the project <em>definition</em> (DOT graph + metadata) for re-importing. Download Artifacts saves the project <em>outputs</em> (files, logs, workspace). They serve different purposes.</div>
 
 <h2>Database Configuration</h2>
-<p>Attractor stores pipeline run history in a database. By default it uses a local SQLite file (<code>attractor.db</code>). Set <code>ATTRACTOR_DB_*</code> environment variables at startup to switch to MySQL or PostgreSQL.</p>
+<p>Attractor stores project run history in a database. By default it uses a local SQLite file (<code>attractor.db</code>). Set <code>ATTRACTOR_DB_*</code> environment variables at startup to switch to MySQL or PostgreSQL.</p>
 <p>The active backend is shown in the startup log: <code>[attractor] Database: SQLite (attractor.db)</code></p>
 <h3>Connection string (ATTRACTOR_DB_URL)</h3>
 <p>Set <code>ATTRACTOR_DB_URL</code> to a JDBC URL. Simplified URLs without the <code>jdbc:</code> prefix are also accepted:</p>
@@ -1533,13 +1533,13 @@ export ATTRACTOR_DB_URL="mysql://app:secret@localhost:3306/attractor"</code></pr
 <tr><td>Execution Mode</td><td><strong>API</strong> (default) — HTTP REST calls to LLM providers; <strong>CLI</strong> — invoke <code>claude</code>, <code>codex</code>, or <code>gemini</code> CLI binaries</td></tr>
 <tr><td>Provider toggles</td><td>Enable or disable Anthropic, OpenAI, and Gemini independently</td></tr>
 <tr><td>CLI command templates</td><td>Customize the CLI invocation command per provider (shown in CLI mode)</td></tr>
-<tr><td>Fireworks</td><td>Toggle celebratory animation when a pipeline completes successfully</td></tr>
+<tr><td>Fireworks</td><td>Toggle celebratory animation when a project completes successfully</td></tr>
 </table>
 """
 
     private fun restApiTabContent(): String = """
 <h2>Overview</h2>
-<p>The REST API v1 is mounted at <code>/api/v1/</code> and provides programmatic access to all pipeline management, DOT generation, validation, settings, model catalog, and real-time event streaming capabilities.</p>
+<p>The REST API v1 is mounted at <code>/api/v1/</code> and provides programmatic access to all project management, DOT generation, validation, settings, model catalog, and real-time event streaming capabilities.</p>
 <p><strong>Base URL:</strong> <code>http://localhost:7070/api/v1</code></p>
 <p>All request and response bodies are JSON (<code>Content-Type: application/json</code>) unless noted otherwise (ZIP downloads, plain-text logs, SSE streams). CORS headers (<code>Access-Control-Allow-Origin: *</code>) are present on all endpoints.</p>
 
@@ -1555,10 +1555,10 @@ export ATTRACTOR_DB_URL="mysql://app:secret@localhost:3306/attractor"</code></pr
 <tr><td><code>GENERATION_ERROR</code></td><td>500</td><td>LLM generation failed</td></tr>
 </table>
 
-<h3>Pipeline JSON shape</h3>
+<h3>Project JSON shape</h3>
 <table>
 <tr><th>Field</th><th>Type</th><th>Notes</th></tr>
-<tr><td><code>id</code></td><td>string</td><td>Unique pipeline identifier</td></tr>
+<tr><td><code>id</code></td><td>string</td><td>Unique project identifier</td></tr>
 <tr><td><code>displayName</code></td><td>string</td><td>Human-readable name (auto-generated)</td></tr>
 <tr><td><code>fileName</code></td><td>string</td><td>Source DOT filename</td></tr>
 <tr><td><code>status</code></td><td>string</td><td>idle | running | paused | completed | failed | cancelled</td></tr>
@@ -1566,154 +1566,154 @@ export ATTRACTOR_DB_URL="mysql://app:secret@localhost:3306/attractor"</code></pr
 <tr><td><code>hasFailureReport</code></td><td>boolean</td><td>Whether a failure_report.json exists</td></tr>
 <tr><td><code>simulate</code></td><td>boolean</td><td>Simulation mode (no real LLM calls)</td></tr>
 <tr><td><code>autoApprove</code></td><td>boolean</td><td>Skip human review gates automatically</td></tr>
-<tr><td><code>familyId</code></td><td>string</td><td>Groups pipeline versions (iterations)</td></tr>
+<tr><td><code>familyId</code></td><td>string</td><td>Groups project versions (iterations)</td></tr>
 <tr><td><code>originalPrompt</code></td><td>string</td><td>Natural language prompt that generated the DOT</td></tr>
 <tr><td><code>startedAt</code></td><td>long</td><td>Unix epoch milliseconds</td></tr>
 <tr><td><code>finishedAt</code></td><td>long|null</td><td>Unix epoch milliseconds, null if still running</td></tr>
 <tr><td><code>currentNode</code></td><td>string|null</td><td>Node ID of currently executing stage</td></tr>
 <tr><td><code>stages</code></td><td>array</td><td>Stage execution records</td></tr>
 <tr><td><code>logs</code></td><td>array</td><td>Recent log lines (up to 200)</td></tr>
-<tr><td><code>dotSource</code></td><td>string</td><td>Only in single-pipeline GET responses</td></tr>
+<tr><td><code>dotSource</code></td><td>string</td><td>Only in single-project GET responses</td></tr>
 </table>
 
 <h2>Endpoints</h2>
 
-<details open><summary>Pipeline CRUD (5 endpoints)</summary>
+<details open><summary>Project CRUD (5 endpoints)</summary>
 <div class="endpoint">
-<div class="endpoint-sig"><span class="badge badge-get">GET</span><span class="endpoint-path">/api/v1/pipelines</span></div>
-<p>Returns a JSON array of all pipelines (without <code>dotSource</code>).</p>
-<pre><code>curl http://localhost:7070/api/v1/pipelines</code></pre>
+<div class="endpoint-sig"><span class="badge badge-get">GET</span><span class="endpoint-path">/api/v1/projects</span></div>
+<p>Returns a JSON array of all projects (without <code>dotSource</code>).</p>
+<pre><code>curl http://localhost:7070/api/v1/projects</code></pre>
 </div>
 <div class="endpoint">
-<div class="endpoint-sig"><span class="badge badge-post">POST</span><span class="endpoint-path">/api/v1/pipelines</span></div>
-<p>Create and immediately run a new pipeline. Returns 201 with the new pipeline ID.</p>
+<div class="endpoint-sig"><span class="badge badge-post">POST</span><span class="endpoint-path">/api/v1/projects</span></div>
+<p>Create and immediately run a new project. Returns 201 with the new project ID.</p>
 <p>Body: <code>{"dotSource":"...","fileName":"","simulate":false,"autoApprove":true,"originalPrompt":""}</code> (<code>dotSource</code> required)</p>
-<pre><code>curl -X POST http://localhost:7070/api/v1/pipelines \
+<pre><code>curl -X POST http://localhost:7070/api/v1/projects \
   -H 'Content-Type: application/json' \
   -d '{"dotSource":"digraph P { graph[goal=\"test\"] start[shape=Mdiamond] exit[shape=Msquare] start->exit }","simulate":true}'</code></pre>
 </div>
 <div class="endpoint">
-<div class="endpoint-sig"><span class="badge badge-get">GET</span><span class="endpoint-path">/api/v1/pipelines/{id}</span></div>
-<p>Get a single pipeline including <code>dotSource</code>. Hydrates from database if not in memory.</p>
-<pre><code>curl http://localhost:7070/api/v1/pipelines/run-1700000000000-1</code></pre>
+<div class="endpoint-sig"><span class="badge badge-get">GET</span><span class="endpoint-path">/api/v1/projects/{id}</span></div>
+<p>Get a single project including <code>dotSource</code>. Hydrates from database if not in memory.</p>
+<pre><code>curl http://localhost:7070/api/v1/projects/run-1700000000000-1</code></pre>
 </div>
 <div class="endpoint">
-<div class="endpoint-sig"><span class="badge badge-patch">PATCH</span><span class="endpoint-path">/api/v1/pipelines/{id}</span></div>
+<div class="endpoint-sig"><span class="badge badge-patch">PATCH</span><span class="endpoint-path">/api/v1/projects/{id}</span></div>
 <p>Update <code>dotSource</code> or <code>originalPrompt</code>. Not allowed while running or paused (returns 409).</p>
-<pre><code>curl -X PATCH http://localhost:7070/api/v1/pipelines/run-1700000000000-1 \
+<pre><code>curl -X PATCH http://localhost:7070/api/v1/projects/run-1700000000000-1 \
   -H 'Content-Type: application/json' \
   -d '{"dotSource":"digraph Updated { ... }"}'</code></pre>
 </div>
 <div class="endpoint">
-<div class="endpoint-sig"><span class="badge badge-delete">DELETE</span><span class="endpoint-path">/api/v1/pipelines/{id}</span></div>
-<p>Delete pipeline and artifacts. Not allowed while running or paused (returns 409).</p>
-<pre><code>curl -X DELETE http://localhost:7070/api/v1/pipelines/run-1700000000000-1</code></pre>
+<div class="endpoint-sig"><span class="badge badge-delete">DELETE</span><span class="endpoint-path">/api/v1/projects/{id}</span></div>
+<p>Delete project and artifacts. Not allowed while running or paused (returns 409).</p>
+<pre><code>curl -X DELETE http://localhost:7070/api/v1/projects/run-1700000000000-1</code></pre>
 </div>
 </details>
 
-<details><summary>Pipeline Lifecycle (6 endpoints)</summary>
+<details><summary>Project Lifecycle (6 endpoints)</summary>
 <div class="endpoint">
-<div class="endpoint-sig"><span class="badge badge-post">POST</span><span class="endpoint-path">/api/v1/pipelines/{id}/rerun</span></div>
+<div class="endpoint-sig"><span class="badge badge-post">POST</span><span class="endpoint-path">/api/v1/projects/{id}/rerun</span></div>
 <p>Reset and re-execute from the beginning. Not allowed if already running (409).</p>
-<pre><code>curl -X POST http://localhost:7070/api/v1/pipelines/{id}/rerun</code></pre>
+<pre><code>curl -X POST http://localhost:7070/api/v1/projects/{id}/rerun</code></pre>
 </div>
 <div class="endpoint">
-<div class="endpoint-sig"><span class="badge badge-post">POST</span><span class="endpoint-path">/api/v1/pipelines/{id}/pause</span></div>
-<p>Signal a running pipeline to pause after its current stage. Returns <code>{"paused":true}</code>. Pipeline must be running (409 otherwise).</p>
-<pre><code>curl -X POST http://localhost:7070/api/v1/pipelines/{id}/pause</code></pre>
+<div class="endpoint-sig"><span class="badge badge-post">POST</span><span class="endpoint-path">/api/v1/projects/{id}/pause</span></div>
+<p>Signal a running project to pause after its current stage. Returns <code>{"paused":true}</code>. Project must be running (409 otherwise).</p>
+<pre><code>curl -X POST http://localhost:7070/api/v1/projects/{id}/pause</code></pre>
 </div>
 <div class="endpoint">
-<div class="endpoint-sig"><span class="badge badge-post">POST</span><span class="endpoint-path">/api/v1/pipelines/{id}/resume</span></div>
-<p>Resume a paused pipeline. Creates a new pipeline ID. Returns <code>{"id":"...","status":"running"}</code>.</p>
-<pre><code>curl -X POST http://localhost:7070/api/v1/pipelines/{id}/resume</code></pre>
+<div class="endpoint-sig"><span class="badge badge-post">POST</span><span class="endpoint-path">/api/v1/projects/{id}/resume</span></div>
+<p>Resume a paused project. Creates a new project ID. Returns <code>{"id":"...","status":"running"}</code>.</p>
+<pre><code>curl -X POST http://localhost:7070/api/v1/projects/{id}/resume</code></pre>
 </div>
 <div class="endpoint">
-<div class="endpoint-sig"><span class="badge badge-post">POST</span><span class="endpoint-path">/api/v1/pipelines/{id}/cancel</span></div>
-<p>Cancel a running or paused pipeline. Returns <code>{"cancelled":true}</code>.</p>
-<pre><code>curl -X POST http://localhost:7070/api/v1/pipelines/{id}/cancel</code></pre>
+<div class="endpoint-sig"><span class="badge badge-post">POST</span><span class="endpoint-path">/api/v1/projects/{id}/cancel</span></div>
+<p>Cancel a running or paused project. Returns <code>{"cancelled":true}</code>.</p>
+<pre><code>curl -X POST http://localhost:7070/api/v1/projects/{id}/cancel</code></pre>
 </div>
 <div class="endpoint">
-<div class="endpoint-sig"><span class="badge badge-post">POST</span><span class="endpoint-path">/api/v1/pipelines/{id}/archive</span></div>
-<p>Move pipeline to the archived view. Returns <code>{"archived":true}</code>.</p>
-<pre><code>curl -X POST http://localhost:7070/api/v1/pipelines/{id}/archive</code></pre>
+<div class="endpoint-sig"><span class="badge badge-post">POST</span><span class="endpoint-path">/api/v1/projects/{id}/archive</span></div>
+<p>Move project to the archived view. Returns <code>{"archived":true}</code>.</p>
+<pre><code>curl -X POST http://localhost:7070/api/v1/projects/{id}/archive</code></pre>
 </div>
 <div class="endpoint">
-<div class="endpoint-sig"><span class="badge badge-post">POST</span><span class="endpoint-path">/api/v1/pipelines/{id}/unarchive</span></div>
-<p>Restore a pipeline from the archived view. Returns <code>{"unarchived":true}</code>.</p>
-<pre><code>curl -X POST http://localhost:7070/api/v1/pipelines/{id}/unarchive</code></pre>
+<div class="endpoint-sig"><span class="badge badge-post">POST</span><span class="endpoint-path">/api/v1/projects/{id}/unarchive</span></div>
+<p>Restore a project from the archived view. Returns <code>{"unarchived":true}</code>.</p>
+<pre><code>curl -X POST http://localhost:7070/api/v1/projects/{id}/unarchive</code></pre>
 </div>
 </details>
 
-<details><summary>Pipeline Versioning (3 endpoints)</summary>
+<details><summary>Project Versioning (3 endpoints)</summary>
 <div class="endpoint">
-<div class="endpoint-sig"><span class="badge badge-post">POST</span><span class="endpoint-path">/api/v1/pipelines/{id}/iterations</span></div>
-<p>Create a new pipeline version in the same family. Body: <code>{"dotSource":"...","originalPrompt":""}</code>. Returns 201.</p>
-<pre><code>curl -X POST http://localhost:7070/api/v1/pipelines/{id}/iterations \
+<div class="endpoint-sig"><span class="badge badge-post">POST</span><span class="endpoint-path">/api/v1/projects/{id}/iterations</span></div>
+<p>Create a new project version in the same family. Body: <code>{"dotSource":"...","originalPrompt":""}</code>. Returns 201.</p>
+<pre><code>curl -X POST http://localhost:7070/api/v1/projects/{id}/iterations \
   -H 'Content-Type: application/json' \
   -d '{"dotSource":"digraph Updated { ... }","originalPrompt":"Add a test stage"}'</code></pre>
 </div>
 <div class="endpoint">
-<div class="endpoint-sig"><span class="badge badge-get">GET</span><span class="endpoint-path">/api/v1/pipelines/{id}/family</span></div>
-<p>List all versions in the pipeline's family. Returns <code>{"familyId":"...","members":[...]}</code> with <code>versionNum</code> per member.</p>
-<pre><code>curl http://localhost:7070/api/v1/pipelines/{id}/family</code></pre>
+<div class="endpoint-sig"><span class="badge badge-get">GET</span><span class="endpoint-path">/api/v1/projects/{id}/family</span></div>
+<p>List all versions in the project's family. Returns <code>{"familyId":"...","members":[...]}</code> with <code>versionNum</code> per member.</p>
+<pre><code>curl http://localhost:7070/api/v1/projects/{id}/family</code></pre>
 </div>
 <div class="endpoint">
-<div class="endpoint-sig"><span class="badge badge-get">GET</span><span class="endpoint-path">/api/v1/pipelines/{id}/stages</span></div>
-<p>List the stage execution records for a pipeline.</p>
-<pre><code>curl http://localhost:7070/api/v1/pipelines/{id}/stages</code></pre>
+<div class="endpoint-sig"><span class="badge badge-get">GET</span><span class="endpoint-path">/api/v1/projects/{id}/stages</span></div>
+<p>List the stage execution records for a project.</p>
+<pre><code>curl http://localhost:7070/api/v1/projects/{id}/stages</code></pre>
 </div>
 </details>
 
 <details><summary>Artifacts &amp; Logs (5 endpoints)</summary>
 <div class="endpoint">
-<div class="endpoint-sig"><span class="badge badge-get">GET</span><span class="endpoint-path">/api/v1/pipelines/{id}/artifacts</span></div>
+<div class="endpoint-sig"><span class="badge badge-get">GET</span><span class="endpoint-path">/api/v1/projects/{id}/artifacts</span></div>
 <p>List artifact files. Returns <code>{"files":[{"path":"...","size":N,"isText":true}],"truncated":false}</code>. Max 500 files.</p>
-<pre><code>curl http://localhost:7070/api/v1/pipelines/{id}/artifacts</code></pre>
+<pre><code>curl http://localhost:7070/api/v1/projects/{id}/artifacts</code></pre>
 </div>
 <div class="endpoint">
-<div class="endpoint-sig"><span class="badge badge-get">GET</span><span class="endpoint-path">/api/v1/pipelines/{id}/artifacts/{path}</span></div>
+<div class="endpoint-sig"><span class="badge badge-get">GET</span><span class="endpoint-path">/api/v1/projects/{id}/artifacts/{path}</span></div>
 <p>Get the content of a specific artifact file. Path traversal is blocked.</p>
-<pre><code>curl http://localhost:7070/api/v1/pipelines/{id}/artifacts/writeTests/live.log</code></pre>
+<pre><code>curl http://localhost:7070/api/v1/projects/{id}/artifacts/writeTests/live.log</code></pre>
 </div>
 <div class="endpoint">
-<div class="endpoint-sig"><span class="badge badge-get">GET</span><span class="endpoint-path">/api/v1/pipelines/{id}/artifacts.zip</span></div>
+<div class="endpoint-sig"><span class="badge badge-get">GET</span><span class="endpoint-path">/api/v1/projects/{id}/artifacts.zip</span></div>
 <p>Download all artifacts as a ZIP archive (<code>application/zip</code>).</p>
-<pre><code>curl -o artifacts.zip http://localhost:7070/api/v1/pipelines/{id}/artifacts.zip</code></pre>
+<pre><code>curl -o artifacts.zip http://localhost:7070/api/v1/projects/{id}/artifacts.zip</code></pre>
 </div>
 <div class="endpoint">
-<div class="endpoint-sig"><span class="badge badge-get">GET</span><span class="endpoint-path">/api/v1/pipelines/{id}/stages/{nodeId}/log</span></div>
+<div class="endpoint-sig"><span class="badge badge-get">GET</span><span class="endpoint-path">/api/v1/projects/{id}/stages/{nodeId}/log</span></div>
 <p>Get the live log for a specific stage as plain text.</p>
-<pre><code>curl http://localhost:7070/api/v1/pipelines/{id}/stages/writeTests/log</code></pre>
+<pre><code>curl http://localhost:7070/api/v1/projects/{id}/stages/writeTests/log</code></pre>
 </div>
 <div class="endpoint">
-<div class="endpoint-sig"><span class="badge badge-get">GET</span><span class="endpoint-path">/api/v1/pipelines/{id}/failure-report</span></div>
+<div class="endpoint-sig"><span class="badge badge-get">GET</span><span class="endpoint-path">/api/v1/projects/{id}/failure-report</span></div>
 <p>Get the AI-generated failure diagnosis as JSON. Returns 404 if no failure report exists.</p>
-<pre><code>curl http://localhost:7070/api/v1/pipelines/{id}/failure-report</code></pre>
+<pre><code>curl http://localhost:7070/api/v1/projects/{id}/failure-report</code></pre>
 </div>
 </details>
 
 <details><summary>Import / Export / DOT file (4 endpoints)</summary>
 <div class="endpoint">
-<div class="endpoint-sig"><span class="badge badge-get">GET</span><span class="endpoint-path">/api/v1/pipelines/{id}/export</span></div>
-<p>Export pipeline as a ZIP containing <code>pipeline-meta.json</code>.</p>
-<pre><code>curl -o pipeline.zip http://localhost:7070/api/v1/pipelines/{id}/export</code></pre>
+<div class="endpoint-sig"><span class="badge badge-get">GET</span><span class="endpoint-path">/api/v1/projects/{id}/export</span></div>
+<p>Export project as a ZIP containing <code>project-meta.json</code>.</p>
+<pre><code>curl -o project.zip http://localhost:7070/api/v1/projects/{id}/export</code></pre>
 </div>
 <div class="endpoint">
-<div class="endpoint-sig"><span class="badge badge-post">POST</span><span class="endpoint-path">/api/v1/pipelines/import</span></div>
+<div class="endpoint-sig"><span class="badge badge-post">POST</span><span class="endpoint-path">/api/v1/projects/import</span></div>
 <p>Import from a previously exported ZIP. Query param: <code>?onConflict=skip</code> (default) or <code>?onConflict=overwrite</code>. Returns 201.</p>
-<pre><code>curl -X POST "http://localhost:7070/api/v1/pipelines/import?onConflict=skip" \
+<pre><code>curl -X POST "http://localhost:7070/api/v1/projects/import?onConflict=skip" \
   -H 'Content-Type: application/zip' \
-  --data-binary @pipeline.zip</code></pre>
+  --data-binary @project.zip</code></pre>
 </div>
 <div class="endpoint">
-<div class="endpoint-sig"><span class="badge badge-get">GET</span><span class="endpoint-path">/api/v1/pipelines/{id}/dot</span></div>
-<p>Download the pipeline&rsquo;s DOT source as a plain-text <code>.dot</code> file. Returns 404 if the pipeline has no DOT source.</p>
-<pre><code>curl -o pipeline.dot http://localhost:7070/api/v1/pipelines/{id}/dot</code></pre>
+<div class="endpoint-sig"><span class="badge badge-get">GET</span><span class="endpoint-path">/api/v1/projects/{id}/dot</span></div>
+<p>Download the project&rsquo;s DOT source as a plain-text <code>.dot</code> file. Returns 404 if the project has no DOT source.</p>
+<pre><code>curl -o project.dot http://localhost:7070/api/v1/projects/{id}/dot</code></pre>
 </div>
 <div class="endpoint">
-<div class="endpoint-sig"><span class="badge badge-post">POST</span><span class="endpoint-path">/api/v1/pipelines/dot</span></div>
-<p>Upload raw DOT source as the request body to create and immediately run a new pipeline. Options via query params: <code>fileName</code>, <code>simulate</code> (default <code>false</code>), <code>autoApprove</code> (default <code>true</code>), <code>originalPrompt</code>. Returns 201.</p>
-<pre><code>curl -X POST "http://localhost:7070/api/v1/pipelines/dot?fileName=my.dot" \
+<div class="endpoint-sig"><span class="badge badge-post">POST</span><span class="endpoint-path">/api/v1/projects/dot</span></div>
+<p>Upload raw DOT source as the request body to create and immediately run a new project. Options via query params: <code>fileName</code>, <code>simulate</code> (default <code>false</code>), <code>autoApprove</code> (default <code>true</code>), <code>originalPrompt</code>. Returns 201.</p>
+<pre><code>curl -X POST "http://localhost:7070/api/v1/projects/dot?fileName=my.dot" \
   -H 'Content-Type: text/plain' \
   --data-binary @my.dot</code></pre>
 </div>
@@ -1729,14 +1729,14 @@ export ATTRACTOR_DB_URL="mysql://app:secret@localhost:3306/attractor"</code></pr
 </div>
 <div class="endpoint">
 <div class="endpoint-sig"><span class="badge badge-post">POST</span><span class="endpoint-path">/api/v1/dot/validate</span></div>
-<p>Parse and lint a DOT pipeline. Returns <code>{"valid":true,"diagnostics":[]}</code>.</p>
+<p>Parse and lint a DOT project. Returns <code>{"valid":true,"diagnostics":[]}</code>.</p>
 <pre><code>curl -X POST http://localhost:7070/api/v1/dot/validate \
   -H 'Content-Type: application/json' \
   -d '{"dotSource":"digraph P { ... }"}'</code></pre>
 </div>
 <div class="endpoint">
 <div class="endpoint-sig"><span class="badge badge-post">POST</span><span class="endpoint-path">/api/v1/dot/generate</span></div>
-<p>Generate a DOT pipeline from a natural language prompt (synchronous). Returns <code>{"dotSource":"..."}</code>.</p>
+<p>Generate a DOT project from a natural language prompt (synchronous). Returns <code>{"dotSource":"..."}</code>.</p>
 <pre><code>curl -X POST http://localhost:7070/api/v1/dot/generate \
   -H 'Content-Type: application/json' \
   -d '{"prompt":"Build and test a Go REST API"}'</code></pre>
@@ -1803,12 +1803,12 @@ export ATTRACTOR_DB_URL="mysql://app:secret@localhost:3306/attractor"</code></pr
 <details><summary>Events / SSE (2 endpoints)</summary>
 <div class="endpoint">
 <div class="endpoint-sig"><span class="badge badge-get">GET</span><span class="endpoint-path">/api/v1/events</span></div>
-<p>Subscribe to a Server-Sent Events stream of all pipeline state updates. Streams <code>data: {"pipelines":[...]}</code> on every change, with a heartbeat every 2 seconds.</p>
+<p>Subscribe to a Server-Sent Events stream of all project state updates. Streams <code>data: {\"projects\":[...]}</code> on every change, with a heartbeat every 2 seconds.</p>
 <pre><code>curl -N http://localhost:7070/api/v1/events</code></pre>
 </div>
 <div class="endpoint">
 <div class="endpoint-sig"><span class="badge badge-get">GET</span><span class="endpoint-path">/api/v1/events/{id}</span></div>
-<p>Subscribe to events for a single pipeline. Returns 404 if the pipeline is not found. Auto-delivers the current state on connect.</p>
+<p>Subscribe to events for a single project. Returns 404 if the project is not found. Auto-delivers the current state on connect.</p>
 <pre><code>curl -N http://localhost:7070/api/v1/events/run-1700000000000-1</code></pre>
 </div>
 </details>
@@ -1842,24 +1842,24 @@ bin/attractor [command]</code></pre>
 
 <h2>Resources</h2>
 
-<details open><summary>pipeline — 14 commands</summary>
+<details open><summary>project — 14 commands</summary>
 <table>
 <tr><th>Command</th><th>Flags</th><th>Description</th></tr>
-<tr><td><code>attractor pipeline list</code></td><td></td><td>List all pipelines as a table (ID, Name, Status, Started)</td></tr>
-<tr><td><code>attractor pipeline get &lt;id&gt;</code></td><td></td><td>Show all fields for a single pipeline</td></tr>
-<tr><td><code>attractor pipeline create</code></td><td><code>--file &lt;path&gt;</code> (required), <code>--name</code>, <code>--simulate</code>, <code>--no-auto-approve</code>, <code>--prompt</code></td><td>Submit a DOT file and run it</td></tr>
-<tr><td><code>attractor pipeline update &lt;id&gt;</code></td><td><code>--file &lt;path&gt;</code>, <code>--prompt</code></td><td>Update DOT source or prompt</td></tr>
-<tr><td><code>attractor pipeline delete &lt;id&gt;</code></td><td></td><td>Delete a non-running pipeline</td></tr>
-<tr><td><code>attractor pipeline rerun &lt;id&gt;</code></td><td></td><td>Restart a completed/failed pipeline</td></tr>
-<tr><td><code>attractor pipeline pause &lt;id&gt;</code></td><td></td><td>Pause a running pipeline</td></tr>
-<tr><td><code>attractor pipeline resume &lt;id&gt;</code></td><td></td><td>Resume a paused pipeline</td></tr>
-<tr><td><code>attractor pipeline cancel &lt;id&gt;</code></td><td></td><td>Cancel a running or paused pipeline</td></tr>
-<tr><td><code>attractor pipeline archive &lt;id&gt;</code></td><td></td><td>Move pipeline to archive</td></tr>
-<tr><td><code>attractor pipeline unarchive &lt;id&gt;</code></td><td></td><td>Restore pipeline from archive</td></tr>
-<tr><td><code>attractor pipeline stages &lt;id&gt;</code></td><td></td><td>List stage execution records</td></tr>
-<tr><td><code>attractor pipeline family &lt;id&gt;</code></td><td></td><td>List all versions in the pipeline's family</td></tr>
-<tr><td><code>attractor pipeline watch &lt;id&gt;</code></td><td><code>--interval-ms</code> (default 2000), <code>--timeout-ms</code></td><td>Poll until terminal state. Exit 0=completed, 1=failed/cancelled</td></tr>
-<tr><td><code>attractor pipeline iterate &lt;id&gt;</code></td><td><code>--file &lt;path&gt;</code> (required), <code>--prompt</code></td><td>Create a new family iteration</td></tr>
+<tr><td><code>attractor project list</code></td><td></td><td>List all projects as a table (ID, Name, Status, Started)</td></tr>
+<tr><td><code>attractor project get &lt;id&gt;</code></td><td></td><td>Show all fields for a single project</td></tr>
+<tr><td><code>attractor project create</code></td><td><code>--file &lt;path&gt;</code> (required), <code>--name</code>, <code>--simulate</code>, <code>--no-auto-approve</code>, <code>--prompt</code></td><td>Submit a DOT file and run it</td></tr>
+<tr><td><code>attractor project update &lt;id&gt;</code></td><td><code>--file &lt;path&gt;</code>, <code>--prompt</code></td><td>Update DOT source or prompt</td></tr>
+<tr><td><code>attractor project delete &lt;id&gt;</code></td><td></td><td>Delete a non-running project</td></tr>
+<tr><td><code>attractor project rerun &lt;id&gt;</code></td><td></td><td>Restart a completed/failed project</td></tr>
+<tr><td><code>attractor project pause &lt;id&gt;</code></td><td></td><td>Pause a running project</td></tr>
+<tr><td><code>attractor project resume &lt;id&gt;</code></td><td></td><td>Resume a paused project</td></tr>
+<tr><td><code>attractor project cancel &lt;id&gt;</code></td><td></td><td>Cancel a running or paused project</td></tr>
+<tr><td><code>attractor project archive &lt;id&gt;</code></td><td></td><td>Move project to archive</td></tr>
+<tr><td><code>attractor project unarchive &lt;id&gt;</code></td><td></td><td>Restore project from archive</td></tr>
+<tr><td><code>attractor project stages &lt;id&gt;</code></td><td></td><td>List stage execution records</td></tr>
+<tr><td><code>attractor project family &lt;id&gt;</code></td><td></td><td>List all versions in the project's family</td></tr>
+<tr><td><code>attractor project watch &lt;id&gt;</code></td><td><code>--interval-ms</code> (default 2000), <code>--timeout-ms</code></td><td>Poll until terminal state. Exit 0=completed, 1=failed/cancelled</td></tr>
+<tr><td><code>attractor project iterate &lt;id&gt;</code></td><td><code>--file &lt;path&gt;</code> (required), <code>--prompt</code></td><td>Create a new family iteration</td></tr>
 </table>
 </details>
 
@@ -1871,7 +1871,7 @@ bin/attractor [command]</code></pre>
 <tr><td><code>attractor artifact download-zip &lt;id&gt;</code></td><td><code>--output &lt;file&gt;</code></td><td>Download all artifacts as ZIP (default: artifacts-{id}.zip)</td></tr>
 <tr><td><code>attractor artifact stage-log &lt;id&gt; &lt;nodeId&gt;</code></td><td></td><td>Print stage live log to stdout</td></tr>
 <tr><td><code>attractor artifact failure-report &lt;id&gt;</code></td><td></td><td>Print failure report JSON</td></tr>
-<tr><td><code>attractor artifact export &lt;id&gt;</code></td><td><code>--output &lt;file&gt;</code></td><td>Export pipeline as ZIP (default: pipeline-{id}.zip)</td></tr>
+<tr><td><code>attractor artifact export &lt;id&gt;</code></td><td><code>--output &lt;file&gt;</code></td><td>Export project as ZIP (default: project-{id}.zip)</td></tr>
 <tr><td><code>attractor artifact import &lt;file&gt;</code></td><td><code>--on-conflict skip|overwrite</code></td><td>Import from an exported ZIP</td></tr>
 </table>
 </details>
@@ -1907,8 +1907,8 @@ bin/attractor [command]</code></pre>
 <details><summary>events — 2 commands</summary>
 <table>
 <tr><th>Command</th><th>Description</th></tr>
-<tr><td><code>attractor events</code></td><td>Stream all pipeline events until Ctrl+C</td></tr>
-<tr><td><code>attractor events &lt;id&gt;</code></td><td>Stream events for one pipeline; exits when pipeline reaches a terminal state</td></tr>
+<tr><td><code>attractor events</code></td><td>Stream all project events until Ctrl+C</td></tr>
+<tr><td><code>attractor events &lt;id&gt;</code></td><td>Stream events for one project; exits when project reaches a terminal state</td></tr>
 </table>
 </details>
 
@@ -1922,48 +1922,48 @@ bin/attractor [command]</code></pre>
 
 <h2>Workflow Examples</h2>
 
-<h3>1. Submit a pipeline, watch it, then download artifacts</h3>
+<h3>1. Submit a project, watch it, then download artifacts</h3>
 <pre><code># Submit
-ID=${'$'}(attractor pipeline create --file my-pipeline.dot --output json | jq -r '.id')
+ID=${'$'}(attractor project create --file my-project.dot --output json | jq -r '.id')
 
 # Watch until terminal state
-attractor pipeline watch "${'$'}ID"
+attractor project watch "${'$'}ID"
 
 # Download artifacts
 attractor artifact download-zip "${'$'}ID"</code></pre>
 
 <h3>2. Generate DOT from prompt, validate, then run</h3>
 <pre><code># Generate
-attractor dot generate --prompt "Build and test a Go REST API" --output pipeline.dot
+attractor dot generate --prompt "Build and test a Go REST API" --output project.dot
 
 # Validate
-attractor dot validate --file pipeline.dot
+attractor dot validate --file project.dot
 
 # Submit
-attractor pipeline create --file pipeline.dot</code></pre>
+attractor project create --file project.dot</code></pre>
 
-<h3>3. Investigate a failed pipeline</h3>
+<h3>3. Investigate a failed project</h3>
 <pre><code># Get the failure report
 attractor artifact failure-report &lt;id&gt;
 
 # Browse individual stage logs
-attractor pipeline stages &lt;id&gt;
+attractor project stages &lt;id&gt;
 attractor artifact stage-log &lt;id&gt; &lt;nodeId&gt;</code></pre>
 """
 
     private fun dotFormatTabContent(): String = """
 <h2>Overview</h2>
-<p>Attractor pipelines are defined using the <a href="https://graphviz.org/doc/info/lang.html" target="_blank">Graphviz DOT language</a>, extended with Attractor-specific node and graph attributes. A pipeline is a directed graph where each node represents an execution stage and each edge represents a transition.</p>
-<div class="tip-box">&#128218; The Create view can generate a valid DOT pipeline from a natural language description. Use it as a starting point, then customize.</div>
+<p>Attractor projects are defined using the <a href="https://graphviz.org/doc/info/lang.html" target="_blank">Graphviz DOT language</a>, extended with Attractor-specific node and graph attributes. A project is a directed graph where each node represents an execution stage and each edge represents a transition.</p>
+<div class="tip-box">&#128218; The Create view can generate a valid DOT project from a natural language description. Use it as a starting point, then customize.</div>
 
 <h2>Node Types</h2>
 <table>
 <tr><th>Shape / Type</th><th>Role</th><th>Description</th></tr>
-<tr><td><code>shape=Mdiamond</code></td><td><strong>Start</strong></td><td>Pipeline entry point. Every pipeline must have exactly one start node.</td></tr>
-<tr><td><code>shape=Msquare</code></td><td><strong>Exit</strong></td><td>Pipeline terminal. Every pipeline must have at least one exit node.</td></tr>
+<tr><td><code>shape=Mdiamond</code></td><td><strong>Start</strong></td><td>Project entry point. Every project must have exactly one start node.</td></tr>
+<tr><td><code>shape=Msquare</code></td><td><strong>Exit</strong></td><td>Project terminal. Every project must have at least one exit node.</td></tr>
 <tr><td><code>shape=box</code> (default)</td><td><strong>LLM Stage</strong></td><td>The <code>prompt</code> attribute is sent to the configured LLM. The model's response becomes the stage output.</td></tr>
 <tr><td><code>shape=diamond</code></td><td><strong>Conditional Gate</strong></td><td>Evaluates outgoing edge <code>condition</code> attributes to choose the next stage.</td></tr>
-<tr><td><code>shape=hexagon</code> or <code>type="wait.human"</code></td><td><strong>Human Review Gate</strong></td><td>Pauses the pipeline and waits for an operator to approve or reject.</td></tr>
+<tr><td><code>shape=hexagon</code> or <code>type="wait.human"</code></td><td><strong>Human Review Gate</strong></td><td>Pauses the project and waits for an operator to approve or reject.</td></tr>
 <tr><td>Multiple outgoing edges</td><td><strong>Parallel Fan-out</strong></td><td>When a non-conditional node has multiple outgoing edges, all target nodes run concurrently.</td></tr>
 </table>
 
@@ -1986,15 +1986,15 @@ attractor artifact stage-log &lt;id&gt; &lt;nodeId&gt;</code></pre>
 <h2>Graph Attributes</h2>
 <table>
 <tr><th>Attribute</th><th>Description</th></tr>
-<tr><td><code>goal</code></td><td>Pipeline description shown in the dashboard Overview panel.</td></tr>
-<tr><td><code>label</code></td><td>Pipeline display label used in the graph title.</td></tr>
+<tr><td><code>goal</code></td><td>Project description shown in the dashboard Overview panel.</td></tr>
+<tr><td><code>label</code></td><td>Project display label used in the graph title.</td></tr>
 </table>
 
 <h2>Annotated Examples</h2>
 
-<h3>1. Simple linear pipeline</h3>
-<pre><code>digraph SimplePipeline {
-  graph [goal="Build and test the application", label="Simple Pipeline"]
+<h3>1. Simple linear project</h3>
+<pre><code>digraph SimpleProject {
+  graph [goal="Build and test the application", label="Simple Project"]
 
   start   [shape=Mdiamond, label="Start"]
   build   [shape=box,      label="Build",
@@ -2009,7 +2009,7 @@ attractor artifact stage-log &lt;id&gt; &lt;nodeId&gt;</code></pre>
 }</code></pre>
 
 <h3>2. Conditional branch</h3>
-<pre><code>digraph ConditionalPipeline {
+<pre><code>digraph ConditionalProject {
   graph [goal="Build, test, and deploy on success"]
 
   start   [shape=Mdiamond, label="Start"]
@@ -2031,7 +2031,7 @@ attractor artifact stage-log &lt;id&gt; &lt;nodeId&gt;</code></pre>
 }</code></pre>
 
 <h3>3. Parallel fan-out</h3>
-<pre><code>digraph ParallelPipeline {
+<pre><code>digraph ParallelProject {
   graph [goal="Run unit and integration tests in parallel"]
 
   start        [shape=Mdiamond, label="Start"]
@@ -2051,7 +2051,7 @@ attractor artifact stage-log &lt;id&gt; &lt;nodeId&gt;</code></pre>
 }</code></pre>
 
 <h3>4. Human review gate</h3>
-<pre><code>digraph HumanReviewPipeline {
+<pre><code>digraph HumanReviewProject {
   graph [goal="Generate and review a deployment plan before applying"]
 
   start    [shape=Mdiamond,  label="Start"]
@@ -2071,11 +2071,11 @@ attractor artifact stage-log &lt;id&gt; &lt;nodeId&gt;</code></pre>
 
 <h2>Tips</h2>
 <ul>
-<li>Validate your DOT before running: <code>POST /api/v1/dot/validate</code> or <code>attractor dot validate --file pipeline.dot</code></li>
-<li>Render to SVG locally: <code>dot -Tsvg pipeline.dot -o pipeline.svg</code> (requires Graphviz)</li>
+<li>Validate your DOT before running: <code>POST /api/v1/dot/validate</code> or <code>attractor dot validate --file project.dot</code></li>
+<li>Render to SVG locally: <code>dot -Tsvg project.dot -o project.svg</code> (requires Graphviz)</li>
 <li>Node IDs must be valid DOT identifiers (alphanumeric + underscore, no hyphens as first character)</li>
 <li>Stage <code>prompt</code> text can reference previous stage context — the runtime maintains a conversation history</li>
-<li>The <code>simulate=true</code> option runs the pipeline without real LLM calls (useful for graph testing)</li>
+<li>The <code>simulate=true</code> option runs the project without real LLM calls (useful for graph testing)</li>
 </ul>
 """
 
@@ -2089,9 +2089,9 @@ attractor artifact stage-log &lt;id&gt; &lt;nodeId&gt;</code></pre>
         httpServer.stop(0)
     }
 
-    private fun allPipelinesJson(): String {
+    private fun allProjectsJson(): String {
         val sb = StringBuilder()
-        sb.append("{\"pipelines\":[")
+        sb.append("{\"projects\":[")
         val all = registry.getAll()
         all.forEachIndexed { i, entry ->
             if (i > 0) sb.append(",")
@@ -2126,7 +2126,7 @@ attractor artifact stage-log &lt;id&gt; &lt;nodeId&gt;</code></pre>
     } catch (_: Exception) { default }
 
     /**
-     * Strip pipeline-semantics attributes (prompt, goal, goal_gate) from DOT before passing
+     * Strip project-semantics attributes (prompt, goal, goal_gate) from DOT before passing
      * to graphviz. These attributes can contain multi-line text, unescaped quotes, or values
      * exceeding graphviz's 16 KB string buffer — none of which affect visual rendering.
      *
@@ -2265,15 +2265,15 @@ main { max-width: 1200px; margin: 0 auto; padding: 20px; display: grid; grid-tem
 .card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 18px; }
 .card h2 { font-size: 0.75rem; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.07em; margin-bottom: 14px; }
 .panel-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 4px; }
-.pipeline-title { font-size: 1.4rem; font-weight: 700; color: var(--text-strong); word-break: break-word; }
-.pipeline-meta  { font-size: 0.78rem; color: var(--text-faint); margin-bottom: 0; }
+.project-title { font-size: 1.4rem; font-weight: 700; color: var(--text-strong); word-break: break-word; }
+.project-meta  { font-size: 0.78rem; color: var(--text-faint); margin-bottom: 0; }
 .action-bar { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 0; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); margin: 14px 0 18px; min-height: 42px; }
 .action-bar-primary { display: flex; gap: 8px; align-items: center; }
 .action-bar-secondary { display: flex; gap: 8px; align-items: center; }
 .action-bar button { line-height: 1; }
-.pipeline-desc-block { background: var(--surface-muted); border: 1px solid var(--border); border-radius: 6px; padding: 10px 14px; margin-bottom: 10px; }
-.pipeline-desc-label { font-size: 0.75rem; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.07em; margin-bottom: 6px; }
-.pipeline-desc-block #pipelineDescText { font-size: 0.8rem; color: var(--text); line-height: 1.6; white-space: pre-wrap; word-break: break-word; cursor: default; user-select: text; }
+.project-desc-block { background: var(--surface-muted); border: 1px solid var(--border); border-radius: 6px; padding: 10px 14px; margin-bottom: 10px; }
+.project-desc-label { font-size: 0.75rem; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.07em; margin-bottom: 6px; }
+.project-desc-block #projectDescText { font-size: 0.8rem; color: var(--text); line-height: 1.6; white-space: pre-wrap; word-break: break-word; cursor: default; user-select: text; }
 .stage-list { display: flex; flex-direction: column; gap: 6px; }
 .stage { display: flex; flex-direction: column; align-items: stretch; gap: 0; border-radius: 6px; background: var(--surface-raised); border: 1px solid var(--border); }
 .stage.running   { border-color: #f78166; }
@@ -2303,9 +2303,9 @@ main { max-width: 1200px; margin: 0 auto; padding: 20px; display: grid; grid-tem
 .log-line   { color: var(--text-faint); border-bottom: 1px solid rgba(33,38,45,0.2); padding: 1px 0; word-break: break-all; }
 .log-line:last-child { color: var(--text); border-bottom: none; }
 .empty-note { color: var(--text-faint); font-size: 0.82rem; padding: 4px 0; }
-.no-pipeline { grid-column: 1 / -1; text-align: center; padding: 60px 20px; color: var(--text-faint); }
-.no-pipeline h2 { font-size: 1.1rem; margin-bottom: 8px; color: var(--text-muted); }
-.no-pipeline p { font-size: 0.85rem; }
+.no-project { grid-column: 1 / -1; text-align: center; padding: 60px 20px; color: var(--text-faint); }
+.no-project h2 { font-size: 1.1rem; margin-bottom: 8px; color: var(--text-muted); }
+.no-project p { font-size: 0.85rem; }
 
 .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.7); display: flex; align-items: center; justify-content: center; z-index: 100; }
 .modal-overlay.hidden { display: none; pointer-events: none; }
@@ -2526,13 +2526,13 @@ main { max-width: 1200px; margin: 0 auto; padding: 20px; display: grid; grid-tem
 .right-tab-btn:hover { background: var(--surface-muted); color: var(--text); }
 .right-tab-btn.active { background: var(--surface-muted); color: var(--text-strong); }
 
-/* Pipeline graph panel (monitor view) */
-.pipeline-graph-view { overflow: auto; flex: 1; min-height: 0; background: var(--graph-bg); border-radius: 4px; cursor: grab; }
+/* Project graph panel (monitor view) */
+.project-graph-view { overflow: auto; flex: 1; min-height: 0; background: var(--graph-bg); border-radius: 4px; cursor: grab; }
 #rightPanel { display: flex; flex-direction: column; }
-.pipeline-graph-view > div { width: 100%; }
-.pipeline-graph-view svg { display: block; width: 100%; height: auto; }
-.pipeline-graph-placeholder { color: var(--text-faint); font-size: 0.78rem; padding: 20px; text-align: center; width: 100%; }
-.pipeline-graph-error { color: #f85149; font-size: 0.75rem; padding: 10px; font-family: monospace; white-space: pre-wrap; }
+.project-graph-view > div { width: 100%; }
+.project-graph-view svg { display: block; width: 100%; height: auto; }
+.project-graph-placeholder { color: var(--text-faint); font-size: 0.78rem; padding: 20px; text-align: center; width: 100%; }
+.project-graph-error { color: #f85149; font-size: 0.75rem; padding: 10px; font-family: monospace; white-space: pre-wrap; }
 
 /* Zoom controls */
 .graph-toolbar { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
@@ -2570,7 +2570,7 @@ input:checked + .toggle-slider:before { transform:translateX(20px); }
 [data-theme="light"] .stage.repairing  { border-color: #1f6feb; }
 [data-theme="light"] .stage-log-btn.active { background: #ede9fe; border-color: #4f46e566; color: #4338ca; }
 [data-theme="light"] .log-line { border-bottom-color: rgba(0,0,0,0.05); }
-[data-theme="light"] .pipeline-graph-error { color: #dc2626; }
+[data-theme="light"] .project-graph-error { color: #dc2626; }
 [data-theme="light"] .dash-elapsed { color: #7c3aed; }
 [data-theme="light"] .dot-textarea { background: #ffffff; color: #18181b; }
 [data-theme="light"] .dot-textarea::placeholder { color: #71717a; }
@@ -2597,13 +2597,13 @@ input:checked + .toggle-slider:before { transform:translateX(20px); }
 
 <div id="viewMonitor">
 <div class="tab-bar" id="tabBar">
-  <div class="tab-empty" id="tabEmpty">No pipelines yet &mdash; use Create to start a pipeline</div>
+  <div class="tab-empty" id="tabEmpty">No projects yet &mdash; use Create to start a project</div>
 </div>
 
 <main id="mainContent">
-  <div class="no-pipeline" id="noPipeline">
-    <h2>No pipeline selected</h2>
-    <p>Use <strong>Create</strong> to generate and run a pipeline.</p>
+  <div class="no-project" id="noProject">
+    <h2>No project selected</h2>
+    <p>Use <strong>Create</strong> to generate and run a project.</p>
   </div>
 </main>
 </div>
@@ -2615,11 +2615,11 @@ input:checked + .toggle-slider:before { transform:translateX(20px); }
       <div class="create-section">
         <input type="file" id="dotFileInput" accept=".dot" style="display:none;" onchange="onDotFileSelected()">
         <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:0;">
-          <h2>Describe your pipeline</h2>
+          <h2>Describe your project</h2>
           <span style="font-size:0.82rem;color:var(--text-muted);">or <a class="dot-upload-link" onclick="document.getElementById('dotFileInput').click();return false;" href="#">upload an existing .dot file</a></span>
         </div>
         <textarea id="nlInput" class="nl-textarea"
-          placeholder="e.g. &quot;Write comprehensive unit tests for a Python web app, run them, fix any failures, then generate a coverage report&quot;&#10;&#10;Describe what you want in plain English. The pipeline will be generated automatically as you type."></textarea>
+          placeholder="e.g. &quot;Write comprehensive unit tests for a Python web app, run them, fix any failures, then generate a coverage report&quot;&#10;&#10;Describe what you want in plain English. The project will be generated automatically as you type."></textarea>
         <div class="create-options-row">
           <label class="checkbox-row"><input type="checkbox" id="createSimulate"> Simulate (no LLM calls)</label>
           <label class="checkbox-row"><input type="checkbox" id="createAutoApprove" checked> Auto-approve gates</label>
@@ -2631,12 +2631,12 @@ input:checked + .toggle-slider:before { transform:translateX(20px); }
           <span class="gen-status" id="genStatus">Start typing to generate&hellip;</span>
         </div>
         <textarea id="dotPreview" class="dot-textarea" spellcheck="false"
-          placeholder="Generated pipeline DOT source will appear here&hellip;"></textarea>
+          placeholder="Generated project DOT source will appear here&hellip;"></textarea>
         <div class="run-row">
           <span class="gen-hint" id="genHint">You can edit the DOT source before running.</span>
           <div style="display:flex;gap:8px;align-items:center;">
             <button class="btn-cancel-iterate" id="cancelIterateBtn" style="display:none;" onclick="cancelIterate()">&#x2715;&ensp;Cancel</button>
-            <button class="run-btn" id="runBtn" disabled onclick="runGenerated()">&#9654;&ensp;Run Pipeline</button>
+            <button class="run-btn" id="runBtn" disabled onclick="runGenerated()">&#9654;&ensp;Run Project</button>
           </div>
         </div>
       </div>
@@ -2652,7 +2652,7 @@ input:checked + .toggle-slider:before { transform:translateX(20px); }
       <div id="graphPreview" class="graph-preview">
         <button id="createDownloadBtn" class="dot-download-btn" onclick="downloadCreateDot()" title="Download .dot file" style="display:none;position:absolute;top:8px;right:8px;z-index:1;">&#8675;</button>
         <div id="graphContent" class="graph-content">
-          <div class="graph-placeholder">Generate a pipeline first to see the graph.</div>
+          <div class="graph-placeholder">Generate a project first to see the graph.</div>
         </div>
       </div>
     </div>
@@ -2702,7 +2702,7 @@ input:checked + .toggle-slider:before { transform:translateX(20px); }
     <div class="setting-row">
       <div class="setting-info">
         <div class="setting-label">Fireworks</div>
-        <div class="setting-desc">Show fireworks animation when a pipeline completes</div>
+        <div class="setting-desc">Show fireworks animation when a project completes</div>
       </div>
       <label class="toggle-switch">
         <input type="checkbox" id="settingFireworks" onchange="saveSetting('fireworks_enabled', this.checked)">
@@ -2714,7 +2714,7 @@ input:checked + .toggle-slider:before { transform:translateX(20px); }
     <div class="setting-row" style="flex-direction:column; align-items:flex-start; gap:10px;">
       <div class="setting-info">
         <div class="setting-label">Execution Mode</div>
-        <div class="setting-desc">How AI providers are invoked for generation and pipeline stages</div>
+        <div class="setting-desc">How AI providers are invoked for generation and project stages</div>
       </div>
       <div style="display:flex; gap:8px;">
         <button id="modeApiBtn" onclick="setExecutionMode('api')" style="padding:6px 18px; border-radius:6px; border:1px solid var(--border); cursor:pointer; font-size:0.9rem; background:var(--surface-muted); color:var(--text);">Direct API</button>
@@ -2795,8 +2795,8 @@ input:checked + .toggle-slider:before { transform:translateX(20px); }
 <!-- Delete confirmation modal -->
 <div class="modal-overlay hidden" id="deleteModal" onclick="closeDeleteModal()">
   <div class="modal" onclick="event.stopPropagation()">
-    <h2>Delete Pipeline Run?</h2>
-    <p style="color:#c9d1d9;margin:12px 0 6px;line-height:1.5;">Pipeline: <strong id="deleteModalName" style="color:#f0f6fc;"></strong></p>
+    <h2>Delete Project Run?</h2>
+    <p style="color:#c9d1d9;margin:12px 0 6px;line-height:1.5;">Project: <strong id="deleteModalName" style="color:#f0f6fc;"></strong></p>
     <p style="color:#8b949e;margin:0 0 20px;font-size:0.82rem;line-height:1.5;">This will permanently delete the run record, all logs, and all artifacts from disk. This cannot be undone.</p>
     <div class="modal-actions">
       <button class="btn-cancel" onclick="closeDeleteModal()">Cancel</button>
@@ -2808,10 +2808,10 @@ input:checked + .toggle-slider:before { transform:translateX(20px); }
 <!-- Import run modal -->
 <div class="modal-overlay hidden" id="importModal" onclick="closeImportModal()">
   <div class="modal" onclick="event.stopPropagation()">
-    <h2>&#128229;&ensp;Import Pipeline</h2>
-    <p style="color:#8b949e;font-size:0.82rem;margin-bottom:16px;line-height:1.5;">Select an exported pipeline ZIP to start a new run from its definition.</p>
+    <h2>&#128229;&ensp;Import Project</h2>
+    <p style="color:#8b949e;font-size:0.82rem;margin-bottom:16px;line-height:1.5;">Select an exported project ZIP to start a new run from its definition.</p>
     <div class="field">
-      <label style="display:block;font-size:0.8rem;color:#8b949e;margin-bottom:6px;">Pipeline ZIP file</label>
+      <label style="display:block;font-size:0.8rem;color:#8b949e;margin-bottom:6px;">Project ZIP file</label>
       <input type="file" id="importZipInput" accept=".zip" style="color:#c9d1d9;font-size:0.82rem;width:100%;" onchange="onImportFileChange()">
     </div>
     <div id="importMsg" style="margin-top:10px;font-size:0.8rem;min-height:1.2em;"></div>
@@ -2824,7 +2824,7 @@ input:checked + .toggle-slider:before { transform:translateX(20px); }
 
 <script>
 var DASHBOARD_TAB_ID = '__dashboard__';
-var pipelines = {};     // id -> {id, fileName, state}
+var projects = {};     // id -> {id, fileName, state}
 var _storedTab = localStorage.getItem('attractor-selected-tab');
 var selectedId = _storedTab || DASHBOARD_TAB_ID;
 var _closedTabsRaw; try { _closedTabsRaw = localStorage.getItem('attractor-closed-tabs'); } catch(e){}
@@ -2837,13 +2837,13 @@ var panelBuiltFor = null;  // which id the main panel DOM was built for
 var logRenderedCount = {}; // id -> number of log lines already appended to DOM
 var elapsedTimer = null;   // interval that ticks the elapsed counter every second
 var dashboardTimer = null; // interval that ticks elapsed counters on the dashboard
-var stageErrors = {};      // stageIndex -> full error string for the selected pipeline
+var stageErrors = {};      // stageIndex -> full error string for the selected project
 var stageLogTimer = null;   // interval for polling stage live log
 var stageLogNodeId = null;  // nodeId of the currently-expanded inline stage log
 var stageLogContent = '';   // last fetched log text for the expanded stage
 var graphSigFor = {};       // id -> last stage-status signature used to render the graph
 var graphRenderGen = {};    // id -> render generation; stale in-flight responses are discarded
-var prevStatuses = {};      // id -> last observed pipeline status (for completion flash detection)
+var prevStatuses = {};      // id -> last observed project status (for completion flash detection)
 
 var ICONS = { running: '&#9889;', completed: '&#10003;', failed: '&#10007;', retrying: '&#8635;', diagnosing: '&#128269;', repairing: '&#9874;', pending: '&middot;' };
 
@@ -2929,10 +2929,10 @@ function getDashElapsed(st) {
 }
 
 function tickDashboardElapsed() {
-  var spans = document.querySelectorAll('.dash-elapsed[data-pipeline-id]');
+  var spans = document.querySelectorAll('.dash-elapsed[data-project-id]');
   for (var i = 0; i < spans.length; i++) {
-    var id = spans[i].getAttribute('data-pipeline-id');
-    var p = pipelines[id];
+    var id = spans[i].getAttribute('data-project-id');
+    var p = projects[id];
     if (!p || !p.state) continue;
     var st = p.state;
     if (st.status !== 'running' && st.status !== 'paused') continue;
@@ -2940,12 +2940,12 @@ function tickDashboardElapsed() {
   }
 }
 
-function dashPipelineData(id) {
-  var p = pipelines[id];
+function dashProjectData(id) {
+  var p = projects[id];
   var st = p.state || {};
   var status = st.status || 'idle';
   var sc = 's-' + status;
-  var name = esc(st.pipeline || p.fileName || 'pipeline');
+  var name = esc(st.project || p.fileName || 'project');
   // Stage progress
   var stages = st.stages || [];
   var totalStages = stages.length;
@@ -2995,14 +2995,14 @@ function buildDashCards(visibleIds) {
   var cards = '';
   for (var i = 0; i < visibleIds.length; i++) {
     var id = visibleIds[i];
-    var d = dashPipelineData(id);
+    var d = dashProjectData(id);
     cards += '<div class="dash-card" id="dash-card-' + id + '" onclick="selectTab(\'' + id + '\')">'
       + '<div class="dash-card-top ' + d.sc + '"></div>'
       + '<div class="dash-card-body">'
       +   '<div class="dash-card-title-row"><span class="dash-card-name">' + d.name + '</span>' + d.simBadge + d.cardActions + '</div>'
       +   '<div class="dash-status-row">'
       +     '<span class="badge badge-' + esc(d.status) + '">' + esc(d.status) + '</span>'
-      +     '<span class="dash-elapsed ' + d.sc + '" id="dash-elapsed-' + id + '" data-pipeline-id="' + id + '">' + d.elapsedStr + '</span>'
+      +     '<span class="dash-elapsed ' + d.sc + '" id="dash-elapsed-' + id + '" data-project-id="' + id + '">' + d.elapsedStr + '</span>'
       +   '</div>'
       +   '<div class="dash-progress-track"><div class="dash-progress-fill ' + d.sc + '" style="width:' + d.pct + '%"></div></div>'
       +   '<div class="dash-stage-label">' + d.stageLabel + '</div>'
@@ -3020,7 +3020,7 @@ function buildDashList(visibleIds) {
   var html = '';
   for (var i = 0; i < visibleIds.length; i++) {
     var id = visibleIds[i];
-    var d = dashPipelineData(id);
+    var d = dashProjectData(id);
     var metaStr = d.stageCountStr + (d.stageCountStr && d.startedStr ? ' \u00b7 ' : '') + d.startedStr;
     html += '<div class="dash-list-row" onclick="selectTab(' + JSON.stringify(id) + ')">'
       + '<div class="dash-lr-status-bar ' + d.sc + '"></div>'
@@ -3028,7 +3028,7 @@ function buildDashList(visibleIds) {
       + '<div class="dash-lr-name"><span class="dash-lr-name-text">' + d.name + '</span>' + d.simBadge + '</div>'
       + '<div class="dash-lr-progress"><div class="dash-progress-fill ' + d.sc + '" style="width:' + d.pct + '%"></div></div>'
       + '<span class="dash-lr-stage-label">' + d.stageLabel + '</span>'
-      + '<span class="dash-elapsed ' + d.sc + '" id="dash-elapsed-' + id + '" data-pipeline-id="' + id + '">' + d.elapsedStr + '</span>'
+      + '<span class="dash-elapsed ' + d.sc + '" id="dash-elapsed-' + id + '" data-project-id="' + id + '">' + d.elapsedStr + '</span>'
       + '<span class="dash-lr-meta">' + metaStr + '</span>'
       + '<div class="dash-lr-actions">' + d.cardActions + '</div>'
       + '</div>';
@@ -3038,16 +3038,16 @@ function buildDashList(visibleIds) {
 
 function renderDashboard() {
   stopDashboardTimer();
-  var ids = Object.keys(pipelines);
+  var ids = Object.keys(projects);
   var visibleIds = ids.filter(function(id) {
-    return !(pipelines[id].state && pipelines[id].state.archived);
+    return !(projects[id].state && projects[id].state.archived);
   });
 
   // Compute stats
   var totalCount = visibleIds.length;
   var runningCount = 0, completedCount = 0, failedCount = 0, cancelledCount = 0;
   for (var i = 0; i < visibleIds.length; i++) {
-    var s = (pipelines[visibleIds[i]].state || {}).status || '';
+    var s = (projects[visibleIds[i]].state || {}).status || '';
     if (s === 'running') runningCount++;
     else if (s === 'completed') completedCount++;
     else if (s === 'failed') failedCount++;
@@ -3059,13 +3059,13 @@ function renderDashboard() {
   // Sort: running → paused → failed → cancelled → completed → idle; within same status newest first
   var statusOrder = { running: 0, paused: 1, failed: 2, cancelled: 3, completed: 4, idle: 5 };
   visibleIds.sort(function(a, b) {
-    var sa = (pipelines[a].state || {}).status || 'idle';
-    var sb = (pipelines[b].state || {}).status || 'idle';
+    var sa = (projects[a].state || {}).status || 'idle';
+    var sb = (projects[b].state || {}).status || 'idle';
     var oa = statusOrder[sa] !== undefined ? statusOrder[sa] : 5;
     var ob = statusOrder[sb] !== undefined ? statusOrder[sb] : 5;
     if (oa !== ob) return oa - ob;
-    var ta = (pipelines[a].state || {}).startedAt || 0;
-    var tb = (pipelines[b].state || {}).startedAt || 0;
+    var ta = (projects[a].state || {}).startedAt || 0;
+    var tb = (projects[b].state || {}).startedAt || 0;
     return tb - ta;
   });
 
@@ -3088,8 +3088,8 @@ function renderDashboard() {
   if (totalCount === 0) {
     mainEl.innerHTML = '<div class="dashboard-layout">' + toolbarHtml + statsHtml
       + '<div class="dash-empty"><div class="dash-empty-icon">\u26a1</div>'
-      + '<div style="font-size:1rem;font-weight:600;color:var(--text-muted);">No pipelines yet</div>'
-      + '<p>Use <strong>Create</strong> to generate and run a pipeline.</p></div></div>';
+      + '<div style="font-size:1rem;font-weight:600;color:var(--text-muted);">No projects yet</div>'
+      + '<p>Use <strong>Create</strong> to generate and run a project.</p></div></div>';
     return;
   }
 
@@ -3122,18 +3122,18 @@ function closeTab(id, event) {
 
 function renderTabs() {
   var bar = document.getElementById('tabBar');
-  var ids = Object.keys(pipelines);
+  var ids = Object.keys(projects);
   // Show non-archived runs, plus the selected run even if archived; never show closed tabs
   var visibleIds = ids.filter(function(id) {
-    return (!pipelines[id].state.archived || id === selectedId) && !closedTabs[id];
+    return (!projects[id].state.archived || id === selectedId) && !closedTabs[id];
   });
   var dashActive = selectedId === DASHBOARD_TAB_ID ? ' active' : '';
   var html = '<div class="tab dash-tab' + dashActive + '" onclick="selectTab(DASHBOARD_TAB_ID)">&#128202; Dashboard</div>';
   for (var i = 0; i < visibleIds.length; i++) {
     var id = visibleIds[i];
-    var p = pipelines[id];
+    var p = projects[id];
     var st = p.state;
-    var name = (st && st.pipeline) ? st.pipeline : p.fileName;
+    var name = (st && st.project) ? st.project : p.fileName;
     var status = (st && st.status) ? st.status : 'idle';
     var active = id === selectedId ? ' active' : '';
     var archivedCls = (st && st.archived) ? ' archived-tab' : '';
@@ -3166,7 +3166,7 @@ function selectTab(id) {
 
 // ── Main panel ──────────────────────────────────────────────────────────────
 
-// Build the static DOM scaffold for a pipeline tab — called once per tab selection.
+// Build the static DOM scaffold for a project tab — called once per tab selection.
 function buildPanel(id) {
   stopDashboardTimer();
   clearInterval(elapsedTimer); elapsedTimer = null;
@@ -3177,28 +3177,28 @@ function buildPanel(id) {
   document.getElementById('mainContent').innerHTML =
     '<div id="panelLeft">'
     + '<div class="panel-header">'
-    +   '<div class="pipeline-title" id="pTitle"></div>'
+    +   '<div class="project-title" id="pTitle"></div>'
     +   '<span class="badge badge-idle" id="pStatusBadge">idle</span>'
     + '</div>'
-    + '<div class="pipeline-meta" id="pMeta"></div>'
+    + '<div class="project-meta" id="pMeta"></div>'
     + '<div class="action-bar" id="actionBar">'
     +   '<div class="action-bar-primary">'
-    +     '<button class="btn-cancel-run" id="cancelBtn" style="display:none;" onclick="cancelPipeline()">&#9632;&ensp;Cancel</button>'
-    +     '<button class="btn-pause-run"  id="pauseBtn"  style="display:none;" onclick="pausePipeline()">&#9646;&#9646;&ensp;Pause</button>'
-    +     '<button class="btn-resume-run" id="resumeBtn" style="display:none;" onclick="resumePipeline()">&#9654;&ensp;Resume</button>'
-    +     '<button class="btn-rerun" id="rerunBtn" style="display:none;" onclick="rerunPipeline()">&#8635;&ensp;Re-run</button>'
-    +     '<button class="btn-rerun" id="iterateBtn" style="display:none;" onclick="iteratePipeline()">&#9998;&ensp;Iterate</button>'
+    +     '<button class="btn-cancel-run" id="cancelBtn" style="display:none;" onclick="cancelProject()">&#9632;&ensp;Cancel</button>'
+    +     '<button class="btn-pause-run"  id="pauseBtn"  style="display:none;" onclick="pauseProject()">&#9646;&#9646;&ensp;Pause</button>'
+    +     '<button class="btn-resume-run" id="resumeBtn" style="display:none;" onclick="resumeProject()">&#9654;&ensp;Resume</button>'
+    +     '<button class="btn-rerun" id="rerunBtn" style="display:none;" onclick="rerunProject()">&#8635;&ensp;Re-run</button>'
+    +     '<button class="btn-rerun" id="iterateBtn" style="display:none;" onclick="iterateProject()">&#9998;&ensp;Iterate</button>'
     +   '</div>'
     +   '<div class="action-bar-secondary">'
     +     '<button class="btn-download" id="downloadBtn" style="display:none;" onclick="downloadArtifacts()">&#8659;&ensp;Download Artifacts</button>'
     +     '<button class="btn-download" id="failureReportBtn" style="display:none;" onclick="openArtifacts(currentRunId(),\'Failure Report\')">&#128203;&ensp;View Failure Report</button>'
     +     '<button class="btn-download" id="exportBtn" style="display:none;" onclick="exportRun()">&#8599;&ensp;Export</button>'
-    +     '<button class="btn-archive" id="archiveBtn" style="display:none;" onclick="archivePipeline()">&#8595;&ensp;Archive</button>'
-    +     '<button class="btn-unarchive" id="unarchiveBtn" style="display:none;" onclick="unarchivePipeline()">&#8593;&ensp;Unarchive</button>'
+    +     '<button class="btn-archive" id="archiveBtn" style="display:none;" onclick="archiveProject()">&#8595;&ensp;Archive</button>'
+    +     '<button class="btn-unarchive" id="unarchiveBtn" style="display:none;" onclick="unarchiveProject()">&#8593;&ensp;Unarchive</button>'
     +     '<button class="btn-delete" id="deleteBtn" style="display:none;" onclick="showDeleteConfirm(currentRunId())">&#10005;&ensp;Delete</button>'
     +   '</div>'
     + '</div>'
-    + '<div id="pipelineDesc" style="display:none;" class="pipeline-desc-block"><div class="pipeline-desc-label">Prompt</div><div id="pipelineDescText"></div></div>'
+    + '<div id="projectDesc" style="display:none;" class="project-desc-block"><div class="project-desc-label">Prompt</div><div id="projectDescText"></div></div>'
     + '<div class="card"><h2>Stages</h2><div class="stage-list" id="stageList"><div class="empty-note">No stages yet.</div></div></div>'
     + '<div class="version-history" id="versionHistory" style="display:none;">'
     +   '<button class="vh-header" onclick="toggleVersionHistory()">'
@@ -3222,7 +3222,7 @@ function buildPanel(id) {
     +     '<button class="graph-zoom-btn" title="Reset zoom" onclick="resetMonitorZoom()">&#x21BA;</button>'
     +   '</div>'
     +   '<div class="log-panel" id="logPanel" style="display:none;"></div>'
-    +   '<div class="pipeline-graph-view" id="graphView"><div id="graphViewInner"><div class="pipeline-graph-placeholder">Waiting for pipeline\u2026</div></div></div>'
+    +   '<div class="project-graph-view" id="graphView"><div id="graphViewInner"><div class="project-graph-placeholder">Waiting for project\u2026</div></div></div>'
     + '</div>';
   monitorZoom = 1.0;
   var gvEl = document.getElementById('graphView');
@@ -3251,13 +3251,13 @@ function buildPanel(id) {
   }
 }
 
-// Tick the elapsed counter every second while a pipeline is running.
+// Tick the elapsed counter every second while a project is running.
 function tickElapsed() {
-  var p = selectedId && pipelines[selectedId];
+  var p = selectedId && projects[selectedId];
   if (!p) return;
   var d = p.state || {};
 
-  // Overall pipeline elapsed
+  // Overall project elapsed
   var el = document.getElementById('pElapsed');
   if (el) el.textContent = d.startedAt ? elapsed(d) : '';
 
@@ -3278,12 +3278,12 @@ function tickElapsed() {
 
 // Update only the data inside an already-built panel — no DOM structure rebuild.
 function updatePanel(id) {
-  var p = pipelines[id];
+  var p = projects[id];
   if (!p) return;
   var d = p.state || {};
 
   var titleEl = document.getElementById('pTitle');
-  if (titleEl) titleEl.textContent = d.pipeline || p.fileName;
+  if (titleEl) titleEl.textContent = d.project || p.fileName;
 
   var statusBadge = document.getElementById('pStatusBadge');
   if (statusBadge) {
@@ -3385,11 +3385,11 @@ function updatePanel(id) {
     }
   }
 
-  // Pipeline description (originalPrompt)
-  var descEl = document.getElementById('pipelineDesc');
+  // Project description (originalPrompt)
+  var descEl = document.getElementById('projectDesc');
   if (descEl) {
     var desc = (p && p.originalPrompt) ? p.originalPrompt.trim() : '';
-    if (desc) { var t = document.getElementById('pipelineDescText'); if (t) t.textContent = desc; descEl.style.display = ''; }
+    if (desc) { var t = document.getElementById('projectDescText'); if (t) t.textContent = desc; descEl.style.display = ''; }
     else { descEl.style.display = 'none'; }
   }
 
@@ -3469,7 +3469,7 @@ function updatePanel(id) {
         }
       }
     } else if (d.status === 'failed') {
-      stageList.innerHTML = '<div class="empty-note">Pipeline failed before any stages ran.\u00a0\u00a0'
+      stageList.innerHTML = '<div class="empty-note">Project failed before any stages ran.\u00a0\u00a0'
         + '<button class="stage-log-btn" onclick="switchRightPanel(\'log\')" style="margin-left:4px;">View Logs</button></div>';
     }
   }
@@ -3491,8 +3491,8 @@ function updatePanel(id) {
     }
   }
 
-  // Render (or re-render) the pipeline graph whenever stage statuses change
-  renderPipelineGraph(id);
+  // Render (or re-render) the project graph whenever stage statuses change
+  renderProjectGraph(id);
 
   // Refresh version history panel (re-render from cached data, no network request)
   if (vhData !== null) renderVersionHistory(id, vhData);
@@ -3501,10 +3501,10 @@ function updatePanel(id) {
 function renderMain() {
   var mainEl = document.getElementById('mainContent');
   if (selectedId === DASHBOARD_TAB_ID) { renderDashboard(); return; }
-  if (!selectedId || !pipelines[selectedId]) {
+  if (!selectedId || !projects[selectedId]) {
     panelBuiltFor = null;
-    mainEl.innerHTML = '<div class="no-pipeline"><h2>No pipeline selected</h2>'
-      + '<p>Use <strong>Create</strong> to generate and run a pipeline.</p></div>';
+    mainEl.innerHTML = '<div class="no-project"><h2>No project selected</h2>'
+      + '<p>Use <strong>Create</strong> to generate and run a project.</p></div>';
     return;
   }
   // Rebuild scaffold only when switching tabs
@@ -3518,13 +3518,13 @@ var vhData = null;
 var vhMembersById = {};  // runId -> { versionNum, totalVersions, prevId, nextId }
 
 function loadVersionHistory(runId) {
-  var fid = pipelines[runId] && pipelines[runId].familyId;
+  var fid = projects[runId] && projects[runId].familyId;
   if (!fid) {
     var el = document.getElementById('versionHistory');
     if (el) el.style.display = 'none';
     return;
   }
-  fetch('/api/pipeline-family?id=' + encodeURIComponent(runId))
+  fetch('/api/project-family?id=' + encodeURIComponent(runId))
     .then(function(r) { return r.json(); })
     .then(function(data) {
       if (!data.members) return;
@@ -3556,7 +3556,7 @@ function renderVersionHistory(tabId, members) {
   var label   = document.getElementById('vhLabel');
   if (!section || !listEl || !label) return;
   // Show if 2+ members, or if 1 member and this run is an iterated version (familyId ≠ tabId)
-  var p = pipelines[tabId];
+  var p = projects[tabId];
   var isIterateMember = p && p.familyId && p.familyId !== tabId;
   if (!members || members.length < 1 || (members.length < 2 && !isIterateMember)) {
     section.style.display = 'none';
@@ -3626,10 +3626,10 @@ function showViewError(msg) {
   }, 3000);
 }
 
-function applyPipelineEntry(entry) {
+function applyProjectEntry(entry) {
   // Use the family key so historical version loads don't create extra tabs.
   var tabKey = entry.familyId || entry.id;
-  pipelines[tabKey] = entry;
+  projects[tabKey] = entry;
 }
 
 function maybeAutoExpandVH(runId) {
@@ -3641,20 +3641,20 @@ function maybeAutoExpandVH(runId) {
 
 function selectOrHydrateRun(runId) {
   // Check if this run is already the active run in some family tab.
-  for (var k in pipelines) {
-    if (k === runId || pipelines[k].id === runId) {
+  for (var k in projects) {
+    if (k === runId || projects[k].id === runId) {
       if (selectedId !== k) selectTab(k);
       maybeAutoExpandVH(runId);
       return;
     }
   }
   // Need to load the run from the server; update its family tab in-place (no new tab).
-  fetch('/api/pipeline-view?id=' + encodeURIComponent(runId))
+  fetch('/api/project-view?id=' + encodeURIComponent(runId))
     .then(function(r) { return r.json(); })
     .then(function(data) {
       if (data.error) { showViewError('Load failed: ' + data.error); return; }
       var key = data.familyId || data.id;
-      pipelines[key] = data;
+      projects[key] = data;
       if (selectedId !== key) {
         selectTab(key);
       } else {
@@ -3732,7 +3732,7 @@ function closeArtifacts() {
 // Returns the actual run ID of the run currently displayed in the selected tab.
 // The tab key (selectedId) equals the familyId; the run stored there may be a newer iteration.
 function currentRunId() {
-  var p = selectedId && pipelines[selectedId];
+  var p = selectedId && projects[selectedId];
   return (p && p.id) ? p.id : (selectedId || '');
 }
 
@@ -3757,38 +3757,38 @@ function isActiveRun(p) {
 }
 
 function applyUpdate(data) {
-  if (!data.pipelines) return;
+  if (!data.projects) return;
   // Group by family: one tab per familyId, showing the best (active > most recent) run.
   var familyBest = {};
-  for (var i = 0; i < data.pipelines.length; i++) {
-    var p = data.pipelines[i];
+  for (var i = 0; i < data.projects.length; i++) {
+    var p = data.projects[i];
     var key = p.familyId || p.id;
     if (!familyBest[key] || shouldReplaceWith(familyBest[key], p)) familyBest[key] = p;
   }
   var incoming = {};
   for (var key in familyBest) {
     var p = familyBest[key];
-    var isNew = !pipelines[key];
-    var prevStatus = pipelines[key] && pipelines[key].state && pipelines[key].state.status;
-    pipelines[key] = p;
+    var isNew = !projects[key];
+    var prevStatus = projects[key] && projects[key].state && projects[key].state.status;
+    projects[key] = p;
     incoming[key] = true;
     var newSt = p.state && p.state.status;
     prevStatuses[key] = newSt;
     if (isNew && selectedId === DASHBOARD_TAB_ID && _storedTab === null && !closedTabs[key]) selectedId = key;
-    // Fireworks when the viewed pipeline transitions to completed
+    // Fireworks when the viewed project transitions to completed
     if (!isNew && prevStatus !== 'completed' && p.state && p.state.status === 'completed' && key === selectedId) {
       var monitorView = document.getElementById('viewMonitor');
       if (monitorView && monitorView.style.display !== 'none' && appSettings.fireworks_enabled !== false) triggerFireworks();
     }
-    // Flash dashboard card when any pipeline transitions to completed
+    // Flash dashboard card when any project transitions to completed
     if (!isNew && prevStatus !== 'completed' && newSt === 'completed') {
       flashDashCard(key);
     }
   }
   // Remove any local entries no longer reported by the server (e.g. deleted runs).
-  for (var existingKey in pipelines) {
+  for (var existingKey in projects) {
     if (!incoming[existingKey]) {
-      delete pipelines[existingKey];
+      delete projects[existingKey];
       delete prevStatuses[existingKey];
       if (closedTabs[existingKey]) { delete closedTabs[existingKey]; saveClosedTabs(); }
       if (selectedId === existingKey) {
@@ -3798,7 +3798,7 @@ function applyUpdate(data) {
     }
   }
   renderTabs();
-  if (selectedId === DASHBOARD_TAB_ID || (selectedId && pipelines[selectedId])) renderMain();
+  if (selectedId === DASHBOARD_TAB_ID || (selectedId && projects[selectedId])) renderMain();
   var archivedView = document.getElementById('viewArchived');
   if (archivedView && archivedView.style.display !== 'none') renderArchivedView();
 }
@@ -3900,7 +3900,7 @@ function connectSSE() {
     setConnected(true);
     sseDelay = 500;
     // Explicit snapshot fetch on (re)connect for state convergence.
-    fetch('/api/pipelines')
+    fetch('/api/projects')
       .then(function(r) { return r.json(); })
       .then(applyUpdate)
       .catch(function() {});
@@ -3929,12 +3929,12 @@ function downloadDot(content, filename) {
 }
 function downloadCreateDot() {
   var content = document.getElementById('dotPreview').value.trim();
-  downloadDot(content, uploadedFileName || 'pipeline.dot');
+  downloadDot(content, uploadedFileName || 'project.dot');
 }
 function downloadMonitorDot() {
-  var p = selectedId && pipelines[selectedId];
+  var p = selectedId && projects[selectedId];
   if (!p || !p.dotSource) return;
-  downloadDot(p.dotSource, p.fileName || 'pipeline.dot');
+  downloadDot(p.dotSource, p.fileName || 'project.dot');
 }
 
 // ── DOT file upload state ─────────────────────────────────────────────────────
@@ -3950,7 +3950,7 @@ function enterIterateMode(id, dot, prompt) {
   if (dotPreview) dotPreview.value = dot;
   if (nlInput) {
     nlInput.value = prompt || '';
-    nlInput.placeholder = 'Describe modifications to make to the existing pipeline\u2026';
+    nlInput.placeholder = 'Describe modifications to make to the existing project\u2026';
   }
   if (runBtn) { runBtn.disabled = false; }
   if (cancelBtn) cancelBtn.style.display = 'inline-block';
@@ -3963,7 +3963,7 @@ function exitIterateMode() {
   var nlInput = document.getElementById('nlInput');
   var genHint = document.getElementById('genHint');
   var cancelBtn = document.getElementById('cancelIterateBtn');
-  if (nlInput) nlInput.placeholder = 'e.g. \u201cWrite comprehensive unit tests for a Python web app, run them, fix any failures, then generate a coverage report\u201d\n\nDescribe what you want in plain English. The pipeline will be generated automatically as you type.';
+  if (nlInput) nlInput.placeholder = 'e.g. \u201cWrite comprehensive unit tests for a Python web app, run them, fix any failures, then generate a coverage report\u201d\n\nDescribe what you want in plain English. The project will be generated automatically as you type.';
   if (genHint) genHint.textContent = 'You can edit the DOT source before running.';
   if (cancelBtn) cancelBtn.style.display = 'none';
   setGenStatus('', 'Start typing to generate\u2026');
@@ -3985,9 +3985,9 @@ function confirmCancelIterate() {
   showView('monitor');
 }
 
-function iteratePipeline() {
-  if (!selectedId || !pipelines[selectedId]) return;
-  var p = pipelines[selectedId];
+function iterateProject() {
+  if (!selectedId || !projects[selectedId]) return;
+  var p = projects[selectedId];
   if (!p.dotSource) return;
   enterIterateMode(currentRunId(), p.dotSource, p.originalPrompt || '');
   showView('create');
@@ -4061,7 +4061,7 @@ function runIterated() {
     .then(function(data) {
       if (data.error) {
         setGenStatus('error', data.error);
-        if (runBtn) { runBtn.disabled = false; runBtn.innerHTML = '&#9654;&ensp;Run Pipeline'; }
+        if (runBtn) { runBtn.disabled = false; runBtn.innerHTML = '&#9654;&ensp;Run Project'; }
         return;
       }
       exitIterateMode();
@@ -4070,26 +4070,26 @@ function runIterated() {
     })
     .catch(function(e) {
       setGenStatus('error', 'Failed: ' + String(e));
-      if (runBtn) { runBtn.disabled = false; runBtn.innerHTML = '&#9654;&ensp;Run Pipeline'; }
+      if (runBtn) { runBtn.disabled = false; runBtn.innerHTML = '&#9654;&ensp;Run Project'; }
     });
 }
 
 // ── Adaptive polling ─────────────────────────────────────────────────────────
-// 300ms while any pipeline is running, 2s otherwise.
+// 300ms while any project is running, 2s otherwise.
 // Fallback and safety net; SSE is the primary fast-path.
 // pollGen invalidates stale timers when kickPoll() restarts the loop.
 var pollGen = 0;
 
 function poll(gen) {
   if (gen !== pollGen) return;
-  fetch('/api/pipelines')
+  fetch('/api/projects')
     .then(function(r) { return r.json(); })
     .then(function(data) {
       if (gen !== pollGen) return;
       applyUpdate(data);
-      // Poll fast while any pipeline is idle or running (not yet in a terminal or paused state).
-      var active = Object.keys(pipelines).some(function(id) {
-        var s = pipelines[id].state && pipelines[id].state.status;
+      // Poll fast while any project is idle or running (not yet in a terminal or paused state).
+      var active = Object.keys(projects).some(function(id) {
+        var s = projects[id].state && projects[id].state.status;
         return s === 'running' || s === 'idle';
       });
       setTimeout(function() { poll(pollGen); }, active ? 300 : 2000);
@@ -4114,8 +4114,8 @@ function clearCreateForm() {
   var dotFileInput = document.getElementById('dotFileInput');
   if (nlInput)    { nlInput.value = ''; }
   if (dotPreview) { dotPreview.value = ''; }
-  if (runBtn)     { runBtn.disabled = true; runBtn.innerHTML = '&#9654;&ensp;Run Pipeline'; }
-  if (graphContent) { graphContent.innerHTML = '<div class="graph-placeholder">Generate a pipeline first to see the graph.</div>'; }
+  if (runBtn)     { runBtn.disabled = true; runBtn.innerHTML = '&#9654;&ensp;Run Project'; }
+  if (graphContent) { graphContent.innerHTML = '<div class="graph-placeholder">Generate a project first to see the graph.</div>'; }
   var createDownloadBtn = document.getElementById('createDownloadBtn');
   if (createDownloadBtn) createDownloadBtn.style.display = 'none';
   if (dotFileInput) { dotFileInput.value = ''; }
@@ -4481,7 +4481,7 @@ function generateDot(prompt) {
 
 // ── Stage error detail modal ─────────────────────────────────────────────────
 function showStageError(arrayPos) {
-  var p = selectedId && pipelines[selectedId];
+  var p = selectedId && projects[selectedId];
   if (!p || !p.state || !p.state.stages) return;
   var stage = p.state.stages[arrayPos];
   if (!stage || !stage.error) return;
@@ -4546,7 +4546,7 @@ function pollStageLog() {
       pre.textContent = stageLogContent || '(no output yet)';
       if (atBottom) pre.scrollTop = pre.scrollHeight;
       // Stop polling once stage is done
-      var p = selectedId && pipelines[selectedId];
+      var p = selectedId && projects[selectedId];
       if (p && p.state && p.state.stages) {
         for (var i = 0; i < p.state.stages.length; i++) {
           var s = p.state.stages[i];
@@ -4592,12 +4592,12 @@ function switchRightPanel(tab) {
   if (btnLog)    btnLog.classList.toggle('active', isLog);
   if (btnGraph)  btnGraph.classList.toggle('active', !isLog);
   if (toolbar)   toolbar.style.display   = isLog ? 'none' : '';
-  if (!isLog && selectedId) renderPipelineGraph(selectedId);
+  if (!isLog && selectedId) renderProjectGraph(selectedId);
 }
 
-// ── Pipeline graph visualization ─────────────────────────────────────────────
-function renderPipelineGraph(id) {
-  var p = pipelines[id];
+// ── Project graph visualization ─────────────────────────────────────────────
+function renderProjectGraph(id) {
+  var p = projects[id];
   if (!p || !p.dotSource) return;
 
   var stages = (p.state && p.state.stages) || [];
@@ -4648,7 +4648,7 @@ function renderPipelineGraph(id) {
     var inner = document.getElementById('graphViewInner');
     if (!inner) return;
     if (resp.error) {
-      inner.innerHTML = '<div class="pipeline-graph-error">' + esc(resp.error) + '</div>';
+      inner.innerHTML = '<div class="project-graph-error">' + esc(resp.error) + '</div>';
     } else {
       inner.innerHTML = resp.svg;
       var svg = inner.querySelector('svg');
@@ -4755,7 +4755,7 @@ function exportRun() {
   document.body.removeChild(a);
 }
 
-function cancelPipeline() {
+function cancelProject() {
   var btn = document.getElementById('cancelBtn');
   if (!btn || !selectedId) return;
   btn.disabled = true;
@@ -4778,7 +4778,7 @@ function cancelPipeline() {
   });
 }
 
-function pausePipeline() {
+function pauseProject() {
   var btn = document.getElementById('pauseBtn');
   if (!btn || !selectedId) return;
   btn.disabled = true;
@@ -4801,7 +4801,7 @@ function pausePipeline() {
   });
 }
 
-function resumePipeline() {
+function resumeProject() {
   var btn = document.getElementById('resumeBtn');
   if (!btn || !selectedId) return;
   btn.disabled = true;
@@ -4824,7 +4824,7 @@ function resumePipeline() {
   });
 }
 
-function rerunPipeline() {
+function rerunProject() {
   var btn = document.getElementById('rerunBtn');
   if (!btn || !selectedId) return;
   btn.disabled = true;
@@ -4849,7 +4849,7 @@ function rerunPipeline() {
   });
 }
 
-function archivePipeline() {
+function archiveProject() {
   var btn = document.getElementById('archiveBtn');
   if (!btn || !selectedId) return;
   btn.disabled = true;
@@ -4865,14 +4865,14 @@ function archivePipeline() {
   .then(function(resp) {
     if (resp.archived) {
       // Optimistically mark the family tab as archived so renderTabs hides it
-      if (pipelines[archiveTabKey] && pipelines[archiveTabKey].state) {
-        pipelines[archiveTabKey].state.archived = true;
+      if (projects[archiveTabKey] && projects[archiveTabKey].state) {
+        projects[archiveTabKey].state.archived = true;
       }
       // Advance selectedId to next visible non-archived tab
-      var ids = Object.keys(pipelines);
+      var ids = Object.keys(projects);
       var nextId = null;
       for (var i = 0; i < ids.length; i++) {
-        if (ids[i] !== archiveTabKey && !pipelines[ids[i]].state.archived) {
+        if (ids[i] !== archiveTabKey && !projects[ids[i]].state.archived) {
           nextId = ids[i];
         }
       }
@@ -4892,7 +4892,7 @@ function archivePipeline() {
   });
 }
 
-function unarchivePipeline() {
+function unarchiveProject() {
   var btn = document.getElementById('unarchiveBtn');
   if (!btn || !selectedId) return;
   btn.disabled = true;
@@ -4907,8 +4907,8 @@ function unarchivePipeline() {
   .then(function(r) { return r.json(); })
   .then(function(resp) {
     if (resp.unarchived) {
-      if (pipelines[unarchiveTabKey] && pipelines[unarchiveTabKey].state) {
-        pipelines[unarchiveTabKey].state.archived = false;
+      if (projects[unarchiveTabKey] && projects[unarchiveTabKey].state) {
+        projects[unarchiveTabKey].state.archived = false;
       }
       renderTabs();
       renderMain();
@@ -4927,20 +4927,20 @@ function unarchivePipeline() {
 function renderArchivedView() {
   var content = document.getElementById('archivedContent');
   if (!content) return;
-  var ids = Object.keys(pipelines);
-  var archived = ids.filter(function(id) { return pipelines[id].state && pipelines[id].state.archived; });
+  var ids = Object.keys(projects);
+  var archived = ids.filter(function(id) { return projects[id].state && projects[id].state.archived; });
   if (archived.length === 0) {
     content.innerHTML = '<div class="archived-empty">No archived runs.</div>';
     return;
   }
   var html = '<table class="archived-table"><thead><tr>'
-    + '<th>Pipeline</th><th>Status</th><th>Finished</th><th>Actions</th>'
+    + '<th>Project</th><th>Status</th><th>Finished</th><th>Actions</th>'
     + '</tr></thead><tbody>';
   for (var i = archived.length - 1; i >= 0; i--) {
     var id = archived[i];
-    var p = pipelines[id];
+    var p = projects[id];
     var st = p.state || {};
-    var name = st.pipeline || p.fileName;
+    var name = st.project || p.fileName;
     var status = st.status || 'idle';
     var finishedAt = st.finishedAt ? new Date(st.finishedAt).toLocaleString() : '\u2014';
     html += '<tr>'
@@ -4975,8 +4975,8 @@ function unarchiveFromList(id) {
   .then(function(r) { return r.json(); })
   .then(function(resp) {
     if (resp.unarchived) {
-      if (pipelines[id] && pipelines[id].state) {
-        pipelines[id].state.archived = false;
+      if (projects[id] && projects[id].state) {
+        projects[id].state.archived = false;
       }
       renderArchivedView();
       renderTabs();
@@ -4986,15 +4986,15 @@ function unarchiveFromList(id) {
   .catch(function() {});
 }
 
-// ── Delete pipeline run ───────────────────────────────────────────────────────
+// ── Delete project run ───────────────────────────────────────────────────────
 var pendingDeleteId = null;
 var pendingDeleteFamily = false;
 
 function showDeleteConfirm(id) {
   pendingDeleteId = id;
   pendingDeleteFamily = false;
-  var p = pipelines[id];
-  var name = (p && p.state && p.state.pipeline) ? p.state.pipeline : (p ? p.fileName : id);
+  var p = projects[id];
+  var name = (p && p.state && p.state.project) ? p.state.project : (p ? p.fileName : id);
   var nameEl = document.getElementById('deleteModalName');
   if (nameEl) nameEl.textContent = name;
   var btn = document.getElementById('deleteConfirmBtn');
@@ -5013,7 +5013,7 @@ function closeDeleteModal() {
 // ── Dashboard card quick-actions ─────────────────────────────────────────────
 function dashCardArchive(tabKey, evt) {
   evt.stopPropagation();
-  var p = pipelines[tabKey];
+  var p = projects[tabKey];
   if (!p) return;
   // If this run belongs to a family, archive all siblings; otherwise archive by run ID.
   var familyId = p.familyId;
@@ -5023,12 +5023,12 @@ function dashCardArchive(tabKey, evt) {
     .then(function(r) { return r.json(); })
     .then(function(resp) {
       if (resp.archived) {
-        if (pipelines[tabKey] && pipelines[tabKey].state) pipelines[tabKey].state.archived = true;
+        if (projects[tabKey] && projects[tabKey].state) projects[tabKey].state.archived = true;
         if (selectedId === tabKey) {
-          var ids = Object.keys(pipelines);
+          var ids = Object.keys(projects);
           var nextId = null;
           for (var i = 0; i < ids.length; i++) {
-            if (ids[i] !== tabKey && !(pipelines[ids[i]].state && pipelines[ids[i]].state.archived)) nextId = ids[i];
+            if (ids[i] !== tabKey && !(projects[ids[i]].state && projects[ids[i]].state.archived)) nextId = ids[i];
           }
           selectedId = nextId || DASHBOARD_TAB_ID;
           panelBuiltFor = null;
@@ -5051,10 +5051,10 @@ function executeDelete() {
   if (!id) return;
   // Resolve tab key
   var tabKey = id;
-  for (var k in pipelines) {
-    if (k === id || (pipelines[k] && pipelines[k].id === id)) { tabKey = k; break; }
+  for (var k in projects) {
+    if (k === id || (projects[k] && projects[k].id === id)) { tabKey = k; break; }
   }
-  var p = pipelines[tabKey];
+  var p = projects[tabKey];
   var familyId = p && p.familyId;
   var runId = (p && p.id) || tabKey;
   // Dashboard card deletes the whole family; run-page delete removes only the single run.
@@ -5071,12 +5071,12 @@ function executeDelete() {
     closeDeleteModal();
     if (resp.deleted) {
       // Pick next visible tab before removing from local state
-      var allIds = Object.keys(pipelines);
+      var allIds = Object.keys(projects);
       var nextId = null;
       for (var i = 0; i < allIds.length; i++) {
         if (allIds[i] !== tabKey) nextId = allIds[i];
       }
-      delete pipelines[tabKey];
+      delete projects[tabKey];
       if (selectedId === tabKey) {
         selectedId = nextId;
         panelBuiltFor = null;
@@ -5112,7 +5112,7 @@ function runGenerated() {
   .then(function(resp) {
     if (resp.error) {
       btn.disabled = false;
-      btn.textContent = '\u25B6\u2002Run Pipeline';
+      btn.textContent = '\u25B6\u2002Run Project';
       setGenStatus('error', 'Run failed: ' + resp.error);
     } else {
       resetCreatePage();
@@ -5123,7 +5123,7 @@ function runGenerated() {
   })
   .catch(function(err) {
     btn.disabled = false;
-    btn.textContent = '\u25B6\u2002Run Pipeline';
+    btn.textContent = '\u25B6\u2002Run Project';
     setGenStatus('error', 'Request failed: ' + err);
   });
 }
@@ -5139,9 +5139,9 @@ function resetCreatePage() {
   document.getElementById('nlInput').value = '';
   document.getElementById('dotPreview').value = '';
   document.getElementById('runBtn').disabled = true;
-  document.getElementById('runBtn').textContent = '\u25B6\u2002Run Pipeline';
+  document.getElementById('runBtn').textContent = '\u25B6\u2002Run Project';
   setGenStatus('', 'Start typing to generate\u2026');
-  document.getElementById('graphContent').innerHTML = '<div class="graph-placeholder">Generate a pipeline first to see the graph.</div>';
+  document.getElementById('graphContent').innerHTML = '<div class="graph-placeholder">Generate a project first to see the graph.</div>';
   var createDownloadBtn = document.getElementById('createDownloadBtn');
   if (createDownloadBtn) createDownloadBtn.style.display = 'none';
   var dotFileInput = document.getElementById('dotFileInput');

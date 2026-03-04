@@ -36,12 +36,12 @@ object StartNodeRule : LintRule {
         return when {
             starts.isEmpty() -> listOf(
                 Diagnostic(name, Severity.ERROR,
-                    "Pipeline must have exactly one start node (shape=Mdiamond or id=start)",
+                    "Project must have exactly one start node (shape=Mdiamond or id=start)",
                     fix = "Add a node with shape=Mdiamond or id=start")
             )
             starts.size > 1 -> listOf(
                 Diagnostic(name, Severity.ERROR,
-                    "Pipeline has ${starts.size} start nodes; must have exactly one: ${starts.map { it.id }}",
+                    "Project has ${starts.size} start nodes; must have exactly one: ${starts.map { it.id }}",
                     fix = "Remove extra start nodes")
             )
             else -> emptyList()
@@ -55,7 +55,7 @@ object TerminalNodeRule : LintRule {
         val exits = graph.nodes.values.filter { it.isExit() }
         return if (exits.isEmpty()) {
             listOf(Diagnostic(name, Severity.ERROR,
-                "Pipeline must have at least one exit node (shape=Msquare or id=exit/end)",
+                "Project must have at least one exit node (shape=Msquare or id=exit/end)",
                 fix = "Add a node with shape=Msquare or id=exit"))
         } else emptyList()
     }
@@ -239,7 +239,7 @@ object GoalGateHasRetryRule : LintRule {
                         graph.fallbackRetryTarget.isNotBlank()
                 if (!hasRetry) {
                     Diagnostic(name, Severity.WARNING,
-                        "Goal gate node '${node.id}' has no retry_target; pipeline may fail if gate is unsatisfied",
+                        "Goal gate node '${node.id}' has no retry_target; project may fail if gate is unsatisfied",
                         nodeId = node.id,
                         fix = "Add a retry_target or fallback_retry_target on the node or graph")
                 } else null

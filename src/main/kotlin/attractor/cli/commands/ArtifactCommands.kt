@@ -23,7 +23,7 @@ class ArtifactCommands(private val ctx: CliContext) {
 
     private fun list(args: List<String>) {
         val id = args.firstOrNull() ?: throw CliException("Usage: attractor artifact list <id>", 2)
-        val json = client.get("/api/v1/pipelines/$id/artifacts")
+        val json = client.get("/api/v1/projects/$id/artifacts")
         if (ctx.outputFormat == OutputFormat.JSON) { Formatter.printJson(json); return }
         val obj = Json.parseToJsonElement(json).jsonObject
         val files = obj["files"]?.jsonArray ?: JsonArray(emptyList())
@@ -50,7 +50,7 @@ class ArtifactCommands(private val ctx: CliContext) {
         if (args.size < 2) throw CliException("Usage: attractor artifact get <id> <path>", 2)
         val id = args[0]
         val path = args[1]
-        val content = client.get("/api/v1/pipelines/$id/artifacts/$path")
+        val content = client.get("/api/v1/projects/$id/artifacts/$path")
         Formatter.printLine(content)
     }
 
@@ -65,7 +65,7 @@ class ArtifactCommands(private val ctx: CliContext) {
             }
             i++
         }
-        val bytes = client.getBinary("/api/v1/pipelines/$id/artifacts.zip")
+        val bytes = client.getBinary("/api/v1/projects/$id/artifacts.zip")
         val outFile = File(outputPath ?: "artifacts-$id.zip")
         outFile.writeBytes(bytes)
         println("Saved to ${outFile.name} (${bytes.size} bytes)")
@@ -75,13 +75,13 @@ class ArtifactCommands(private val ctx: CliContext) {
         if (args.size < 2) throw CliException("Usage: attractor artifact stage-log <id> <nodeId>", 2)
         val id = args[0]
         val nodeId = args[1]
-        val content = client.get("/api/v1/pipelines/$id/stages/$nodeId/log")
+        val content = client.get("/api/v1/projects/$id/stages/$nodeId/log")
         Formatter.printLine(content)
     }
 
     private fun failureReport(args: List<String>) {
         val id = args.firstOrNull() ?: throw CliException("Usage: attractor artifact failure-report <id>", 2)
-        val json = client.get("/api/v1/pipelines/$id/failure-report")
+        val json = client.get("/api/v1/projects/$id/failure-report")
         Formatter.printJson(json)
     }
 
@@ -96,8 +96,8 @@ class ArtifactCommands(private val ctx: CliContext) {
             }
             i++
         }
-        val bytes = client.getBinary("/api/v1/pipelines/$id/export")
-        val outFile = File(outputPath ?: "pipeline-$id.zip")
+        val bytes = client.getBinary("/api/v1/projects/$id/export")
+        val outFile = File(outputPath ?: "project-$id.zip")
         outFile.writeBytes(bytes)
         println("Saved to ${outFile.name} (${bytes.size} bytes)")
     }
@@ -116,7 +116,7 @@ class ArtifactCommands(private val ctx: CliContext) {
         val bytes = File(filePath).also {
             if (!it.exists()) throw CliException("File not found: $filePath", 1)
         }.readBytes()
-        val resp = client.postBinary("/api/v1/pipelines/import", bytes, "onConflict=$onConflict")
+        val resp = client.postBinary("/api/v1/projects/import", bytes, "onConflict=$onConflict")
         if (ctx.outputFormat == OutputFormat.JSON) { Formatter.printJson(resp); return }
         val obj = Json.parseToJsonElement(resp).jsonObject
         println("status: ${obj["status"]?.jsonPrimitive?.content}")
@@ -125,21 +125,21 @@ class ArtifactCommands(private val ctx: CliContext) {
 
     private fun printHelp() {
         println("""
-attractor artifact - Pipeline artifact commands
+attractor artifact - Project artifact commands
 
 Usage:
   attractor artifact <verb> [options]
 
 Verbs:
-  list <id>                         List all artifact files for a pipeline
+  list <id>                         List all artifact files for a project
   get <id> <path>                   Print artifact file content to stdout
   download-zip <id>                 Download all artifacts as a ZIP file
     [--output <file>]                 Output filename (default: artifacts-<id>.zip)
   stage-log <id> <nodeId>           Print the stage log for a specific node
   failure-report <id>               Print the failure report JSON
-  export <id>                       Export pipeline as a ZIP archive
-    [--output <file>]                 Output filename (default: pipeline-<id>.zip)
-  import <file>                     Import a pipeline from a ZIP archive
+  export <id>                       Export project as a ZIP archive
+    [--output <file>]                 Output filename (default: project-<id>.zip)
+  import <file>                     Import a project from a ZIP archive
     [--on-conflict skip|overwrite]    Conflict resolution (default: skip)
         """.trimIndent())
     }

@@ -12,13 +12,13 @@ import attractor.llm.generate
 class DotGenerator(private val store: RunStore) {
 
     private val SYSTEM_PROMPT = """
-You are an expert at writing Attractor pipeline files in Graphviz DOT format.
-Attractor is a DOT-based pipeline runner that orchestrates multi-stage AI workflows.
+You are an expert at writing Attractor project files in Graphviz DOT format.
+Attractor is a DOT-based project runner that orchestrates multi-stage AI workflows.
 
-## Pipeline Structure
+## Project Structure
 
-Every pipeline is a `digraph` with required graph attributes:
-  digraph PipelineName {
+Every project is a `digraph` with required graph attributes:
+  digraph ProjectName {
     graph [goal="High-level goal description", label="Human-readable name"]
     ...
   }
@@ -53,7 +53,7 @@ Every pipeline is a `digraph` with required graph attributes:
 ## Variable Expansion in Prompts
 
 Use ${'$'}name syntax to reference context values set by previous stages:
-- ${'$'}goal         — the pipeline's graph[goal] attribute
+- ${'$'}goal         — the project's graph[goal] attribute
 - ${'$'}variableName — any key set by a prior stage's output
 
 ## Rules
@@ -63,13 +63,13 @@ Use ${'$'}name syntax to reference context values set by previous stages:
 3. All nodes must be reachable; no isolated nodes
 4. Conditional (diamond) nodes must have labelled outgoing edges for every branch
 5. For parallel execution: component fan-out node → parallel work → tripleoctagon fan-in
-6. Keep prompts specific, actionable, and relevant to the pipeline goal
+6. Keep prompts specific, actionable, and relevant to the project goal
 7. Use concise camelCase or snake_case for node IDs (no spaces)
 8. Output ONLY the raw DOT source — no markdown fences, no explanations
 
 ## Examples
 
-### Simple linear pipeline
+### Simple linear project
 digraph WriteTests {
     graph [goal="Write and run unit tests for the codebase", label="Test Writer"]
     start   [shape=Mdiamond, label="Start"]
@@ -80,7 +80,7 @@ digraph WriteTests {
     start -> analyze -> write -> run -> exit
 }
 
-### Pipeline with conditional retry loop
+### Project with conditional retry loop
 digraph ValidateFeature {
     graph [goal="Implement and validate a new feature", label="Feature Validation"]
     start     [shape=Mdiamond, label="Start"]
@@ -93,7 +93,7 @@ digraph ValidateFeature {
     check -> implement [label="no",  condition="outcome!=success"]
 }
 
-### Pipeline with human review gate
+### Project with human review gate
 digraph ContentReview {
     graph [goal="Draft and publish reviewed content", label="Content Review"]
     start  [shape=Mdiamond, label="Start"]
@@ -108,7 +108,7 @@ digraph ContentReview {
     private fun config(): LlmExecutionConfig = LlmExecutionConfig.from(store)
 
     /**
-     * Stream-generate an Attractor DOT pipeline file.
+     * Stream-generate an Attractor DOT project file.
      * Calls [onDelta] for each text chunk as it arrives.
      * Returns the final cleaned DOT source (markdown fences stripped).
      */
@@ -141,7 +141,7 @@ digraph ContentReview {
     }
 
     /**
-     * Generate an Attractor DOT pipeline file from a natural language description.
+     * Generate an Attractor DOT project file from a natural language description.
      * Returns the raw DOT source string.
      */
     fun generate(prompt: String): String {
@@ -163,13 +163,13 @@ digraph ContentReview {
     }
 
     /**
-     * Stream-generate a modified version of an existing Attractor DOT pipeline.
+     * Stream-generate a modified version of an existing Attractor DOT project.
      * [baseDot] is the existing DOT source; [changes] is the natural language modification request.
      * Calls [onDelta] for each text chunk as it arrives.
      * Returns the final cleaned DOT source.
      */
     fun iterateStream(baseDot: String, changes: String, onDelta: (String) -> Unit): String {
-        val iteratePrompt = """Given the following existing Attractor pipeline DOT source:
+        val iteratePrompt = """Given the following existing Attractor project DOT source:
 
 $baseDot
 
@@ -192,7 +192,7 @@ Keep all existing nodes and edges unless explicitly told to remove them.""".trim
 
         val msgs = mutableListOf<Message>()
         msgs.add(Message.system(SYSTEM_PROMPT))
-        msgs.add(Message.user("""The following Graphviz DOT pipeline has a syntax error. Fix it so it renders correctly.
+        msgs.add(Message.user("""The following Graphviz DOT project has a syntax error. Fix it so it renders correctly.
 
 Graphviz error:
 $error
@@ -221,7 +221,7 @@ Output ONLY the corrected raw DOT source — no markdown fences, no explanations
     }
 
     /**
-     * Stream a concise natural language description of an existing DOT pipeline.
+     * Stream a concise natural language description of an existing DOT project.
      * Calls [onDelta] for each text chunk as it arrives.
      * Returns the final description string.
      */
@@ -231,7 +231,7 @@ Output ONLY the corrected raw DOT source — no markdown fences, no explanations
         val (provider, model) = ModelSelection.selectModel(cfg)
 
         val msgs = mutableListOf<Message>()
-        msgs.add(Message.user("""Given the following Attractor pipeline DOT source, write a concise natural language description of what this pipeline does. The description should be 1-3 sentences, specific about the workflow steps and overall goal, and suitable as a prompt to regenerate a similar pipeline.
+        msgs.add(Message.user("""Given the following Attractor project DOT source, write a concise natural language description of what this project does. The description should be 1-3 sentences, specific about the workflow steps and overall goal, and suitable as a prompt to regenerate a similar project.
 
 DOT source:
 $dotSource

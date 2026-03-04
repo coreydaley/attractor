@@ -51,7 +51,7 @@ internal fun run(args: List<String>) {
     val cmdArgs = remaining.drop(1)
 
     when (remaining.firstOrNull()) {
-        "pipeline" -> PipelineCommands(ctx).dispatch(cmdArgs)
+        "project" -> ProjectCommands(ctx).dispatch(cmdArgs)
         "artifact" -> ArtifactCommands(ctx).dispatch(cmdArgs)
         "dot"      -> DotCommands(ctx).dispatch(cmdArgs)
         "settings" -> SettingsCommands(ctx).dispatch(cmdArgs)
@@ -66,7 +66,7 @@ internal fun run(args: List<String>) {
 
 private fun printGlobalHelp() {
     println("""
-attractor - Attractor pipeline orchestration CLI
+attractor - Attractor project orchestration CLI
 
 Usage:
   attractor [--host <url>] [--output <text|json>] <resource> <verb> [options]
@@ -78,19 +78,19 @@ Global options:
   --version           Print version
 
 Resources:
-  pipeline   Manage pipelines (list, get, create, update, delete, lifecycle)
-  artifact   Access pipeline artifacts (logs, files, ZIPs)
+  project    Manage projects (list, get, create, update, delete, lifecycle)
+  artifact   Access project artifacts (logs, files, ZIPs)
   dot        DOT generation, validation, fixing, iteration
   settings   Manage server settings
   models     List available LLM models
-  events     Stream real-time pipeline events (SSE)
+  events     Stream real-time project events (SSE)
 
 Examples:
-  attractor pipeline list
-  attractor pipeline create --file my-pipeline.dot
-  attractor pipeline watch run-1700000000000-1
+  attractor project list
+  attractor project create --file my-project.dot
+  attractor project watch run-1700000000000-1
   attractor artifact stage-log run-1700000000000-1 writeTests
-  attractor dot generate --prompt "Build a CI pipeline"
+  attractor dot generate --prompt "Build a CI project"
   attractor settings set fireworks_enabled false
   attractor events
 

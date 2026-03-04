@@ -4,40 +4,40 @@ import attractor.state.Outcome
 import java.time.Instant
 
 /**
- * Sealed hierarchy of all pipeline lifecycle events (Section 9.6).
+ * Sealed hierarchy of all project lifecycle events (Section 9.6).
  */
-sealed class PipelineEvent {
+sealed class ProjectEvent {
     abstract val timestamp: Instant
 
-    // ── Pipeline lifecycle ───────────────────────────────────────────────────
+    // ── Project lifecycle ────────────────────────────────────────────────────
 
-    data class PipelineStarted(
+    data class ProjectStarted(
         val name: String,
         val id: String,
         override val timestamp: Instant = Instant.now()
-    ) : PipelineEvent()
+    ) : ProjectEvent()
 
-    data class PipelineCompleted(
+    data class ProjectCompleted(
         val durationMs: Long,
         val artifactCount: Int = 0,
         override val timestamp: Instant = Instant.now()
-    ) : PipelineEvent()
+    ) : ProjectEvent()
 
-    data class PipelineFailed(
+    data class ProjectFailed(
         val error: String,
         val durationMs: Long,
         override val timestamp: Instant = Instant.now()
-    ) : PipelineEvent()
+    ) : ProjectEvent()
 
-    data class PipelineCancelled(
+    data class ProjectCancelled(
         val durationMs: Long,
         override val timestamp: Instant = Instant.now()
-    ) : PipelineEvent()
+    ) : ProjectEvent()
 
-    data class PipelinePaused(
+    data class ProjectPaused(
         val durationMs: Long,
         override val timestamp: Instant = Instant.now()
-    ) : PipelineEvent()
+    ) : ProjectEvent()
 
     // ── Stage lifecycle ──────────────────────────────────────────────────────
 
@@ -46,14 +46,14 @@ sealed class PipelineEvent {
         val index: Int,
         val nodeId: String = "",
         override val timestamp: Instant = Instant.now()
-    ) : PipelineEvent()
+    ) : ProjectEvent()
 
     data class StageCompleted(
         val name: String,
         val index: Int,
         val durationMs: Long,
         override val timestamp: Instant = Instant.now()
-    ) : PipelineEvent()
+    ) : ProjectEvent()
 
     data class StageFailed(
         val name: String,
@@ -61,7 +61,7 @@ sealed class PipelineEvent {
         val error: String,
         val willRetry: Boolean = false,
         override val timestamp: Instant = Instant.now()
-    ) : PipelineEvent()
+    ) : ProjectEvent()
 
     data class StageRetrying(
         val name: String,
@@ -69,20 +69,20 @@ sealed class PipelineEvent {
         val attempt: Int,
         val delayMs: Long,
         override val timestamp: Instant = Instant.now()
-    ) : PipelineEvent()
+    ) : ProjectEvent()
 
     // ── Parallel execution ───────────────────────────────────────────────────
 
     data class ParallelStarted(
         val branchCount: Int,
         override val timestamp: Instant = Instant.now()
-    ) : PipelineEvent()
+    ) : ProjectEvent()
 
     data class ParallelBranchStarted(
         val branch: String,
         val index: Int,
         override val timestamp: Instant = Instant.now()
-    ) : PipelineEvent()
+    ) : ProjectEvent()
 
     data class ParallelBranchCompleted(
         val branch: String,
@@ -90,14 +90,14 @@ sealed class PipelineEvent {
         val durationMs: Long,
         val success: Boolean,
         override val timestamp: Instant = Instant.now()
-    ) : PipelineEvent()
+    ) : ProjectEvent()
 
     data class ParallelCompleted(
         val durationMs: Long,
         val successCount: Int,
         val failureCount: Int,
         override val timestamp: Instant = Instant.now()
-    ) : PipelineEvent()
+    ) : ProjectEvent()
 
     // ── Human interaction ────────────────────────────────────────────────────
 
@@ -105,28 +105,28 @@ sealed class PipelineEvent {
         val questionText: String,
         val stage: String,
         override val timestamp: Instant = Instant.now()
-    ) : PipelineEvent()
+    ) : ProjectEvent()
 
     data class InterviewCompleted(
         val questionText: String,
         val answer: String,
         val durationMs: Long,
         override val timestamp: Instant = Instant.now()
-    ) : PipelineEvent()
+    ) : ProjectEvent()
 
     data class InterviewTimeout(
         val questionText: String,
         val stage: String,
         val durationMs: Long,
         override val timestamp: Instant = Instant.now()
-    ) : PipelineEvent()
+    ) : ProjectEvent()
 
     // ── Checkpoint ───────────────────────────────────────────────────────────
 
     data class CheckpointSaved(
         val nodeId: String,
         override val timestamp: Instant = Instant.now()
-    ) : PipelineEvent()
+    ) : ProjectEvent()
 
     // ── Failure diagnosis and repair ─────────────────────────────────────────
 
@@ -135,7 +135,7 @@ sealed class PipelineEvent {
         val stageName: String,
         val stageIndex: Int,
         override val timestamp: Instant = Instant.now()
-    ) : PipelineEvent()
+    ) : ProjectEvent()
 
     data class DiagnosticsCompleted(
         val nodeId: String,
@@ -145,52 +145,52 @@ sealed class PipelineEvent {
         val strategy: String,
         val explanation: String,
         override val timestamp: Instant = Instant.now()
-    ) : PipelineEvent()
+    ) : ProjectEvent()
 
     data class RepairAttempted(
         val stageName: String,
         val stageIndex: Int,
         override val timestamp: Instant = Instant.now()
-    ) : PipelineEvent()
+    ) : ProjectEvent()
 
     data class RepairSucceeded(
         val stageName: String,
         val stageIndex: Int,
         val durationMs: Long,
         override val timestamp: Instant = Instant.now()
-    ) : PipelineEvent()
+    ) : ProjectEvent()
 
     data class RepairFailed(
         val stageName: String,
         val stageIndex: Int,
         val reason: String,
         override val timestamp: Instant = Instant.now()
-    ) : PipelineEvent()
+    ) : ProjectEvent()
 }
 
 /**
- * Observer that receives pipeline events.
+ * Observer that receives project events.
  */
-fun interface PipelineEventObserver {
-    fun onEvent(event: PipelineEvent)
+fun interface ProjectEventObserver {
+    fun onEvent(event: ProjectEvent)
 }
 
 /**
- * Event bus for distributing pipeline events to multiple observers.
+ * Event bus for distributing project events to multiple observers.
  */
-class PipelineEventBus {
+class ProjectEventBus {
     // CopyOnWriteArrayList: safe for concurrent subscribe/emit across engine sub-threads
-    private val observers = java.util.concurrent.CopyOnWriteArrayList<PipelineEventObserver>()
+    private val observers = java.util.concurrent.CopyOnWriteArrayList<ProjectEventObserver>()
 
-    fun subscribe(observer: PipelineEventObserver) {
+    fun subscribe(observer: ProjectEventObserver) {
         observers.add(observer)
     }
 
-    fun unsubscribe(observer: PipelineEventObserver) {
+    fun unsubscribe(observer: ProjectEventObserver) {
         observers.remove(observer)
     }
 
-    fun emit(event: PipelineEvent) {
+    fun emit(event: ProjectEvent) {
         observers.forEach { it.onEvent(event) }
     }
 }

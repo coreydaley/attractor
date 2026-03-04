@@ -19,7 +19,7 @@ import java.util.zip.ZipInputStream
 import java.util.zip.ZipOutputStream
 
 class RestApiRouter(
-    private val registry: PipelineRegistry,
+    private val registry: ProjectRegistry,
     private val store: RunStore,
     private val onUpdate: () -> Unit,
     private val getSseSnapshot: () -> String,
@@ -111,97 +111,97 @@ class RestApiRouter(
             val method = ex.requestMethod
 
             when {
-                // GET /api/v1/pipelines
-                method == "GET" && segments == listOf("pipelines") ->
-                    handleListPipelines(ex)
+                // GET /api/v1/projects
+                method == "GET" && segments == listOf("projects") ->
+                    handleListProjects(ex)
 
-                // POST /api/v1/pipelines/import  (must check before /{id})
-                method == "POST" && segments == listOf("pipelines", "import") ->
-                    handleImportPipeline(ex)
+                // POST /api/v1/projects/import  (must check before /{id})
+                method == "POST" && segments == listOf("projects", "import") ->
+                    handleImportProject(ex)
 
-                // POST /api/v1/pipelines/dot  (raw DOT body upload, must check before /{id})
-                method == "POST" && segments == listOf("pipelines", "dot") ->
+                // POST /api/v1/projects/dot  (raw DOT body upload, must check before /{id})
+                method == "POST" && segments == listOf("projects", "dot") ->
                     handleUploadDot(ex)
 
-                // POST /api/v1/pipelines
-                method == "POST" && segments == listOf("pipelines") ->
-                    handleCreatePipeline(ex)
+                // POST /api/v1/projects
+                method == "POST" && segments == listOf("projects") ->
+                    handleCreateProject(ex)
 
-                // GET /api/v1/pipelines/{id}
-                method == "GET" && segments.size == 2 && segments[0] == "pipelines" ->
-                    handleGetPipeline(ex, segments[1])
+                // GET /api/v1/projects/{id}
+                method == "GET" && segments.size == 2 && segments[0] == "projects" ->
+                    handleGetProject(ex, segments[1])
 
-                // PATCH /api/v1/pipelines/{id}
-                method == "PATCH" && segments.size == 2 && segments[0] == "pipelines" ->
-                    handlePatchPipeline(ex, segments[1])
+                // PATCH /api/v1/projects/{id}
+                method == "PATCH" && segments.size == 2 && segments[0] == "projects" ->
+                    handlePatchProject(ex, segments[1])
 
-                // DELETE /api/v1/pipelines/{id}
-                method == "DELETE" && segments.size == 2 && segments[0] == "pipelines" ->
-                    handleDeletePipeline(ex, segments[1])
+                // DELETE /api/v1/projects/{id}
+                method == "DELETE" && segments.size == 2 && segments[0] == "projects" ->
+                    handleDeleteProject(ex, segments[1])
 
-                // GET /api/v1/pipelines/{id}/artifacts.zip
-                method == "GET" && segments.size == 3 && segments[0] == "pipelines" && segments[2] == "artifacts.zip" ->
+                // GET /api/v1/projects/{id}/artifacts.zip
+                method == "GET" && segments.size == 3 && segments[0] == "projects" && segments[2] == "artifacts.zip" ->
                     handleDownloadArtifactsZip(ex, segments[1])
 
-                // GET /api/v1/pipelines/{id}/artifacts  (list)
-                method == "GET" && segments.size == 3 && segments[0] == "pipelines" && segments[2] == "artifacts" ->
+                // GET /api/v1/projects/{id}/artifacts  (list)
+                method == "GET" && segments.size == 3 && segments[0] == "projects" && segments[2] == "artifacts" ->
                     handleListArtifacts(ex, segments[1])
 
-                // GET /api/v1/pipelines/{id}/artifacts/{path...}
-                method == "GET" && segments.size > 3 && segments[0] == "pipelines" && segments[2] == "artifacts" ->
+                // GET /api/v1/projects/{id}/artifacts/{path...}
+                method == "GET" && segments.size > 3 && segments[0] == "projects" && segments[2] == "artifacts" ->
                     handleGetArtifact(ex, segments[1], segments.drop(3).joinToString("/"))
 
-                // GET /api/v1/pipelines/{id}/stages/{nodeId}/log
-                method == "GET" && segments.size == 5 && segments[0] == "pipelines" && segments[2] == "stages" && segments[4] == "log" ->
+                // GET /api/v1/projects/{id}/stages/{nodeId}/log
+                method == "GET" && segments.size == 5 && segments[0] == "projects" && segments[2] == "stages" && segments[4] == "log" ->
                     handleGetStageLog(ex, segments[1], segments[3])
 
-                // GET /api/v1/pipelines/{id}/stages
-                method == "GET" && segments.size == 3 && segments[0] == "pipelines" && segments[2] == "stages" ->
+                // GET /api/v1/projects/{id}/stages
+                method == "GET" && segments.size == 3 && segments[0] == "projects" && segments[2] == "stages" ->
                     handleGetStages(ex, segments[1])
 
-                // GET /api/v1/pipelines/{id}/failure-report
-                method == "GET" && segments.size == 3 && segments[0] == "pipelines" && segments[2] == "failure-report" ->
+                // GET /api/v1/projects/{id}/failure-report
+                method == "GET" && segments.size == 3 && segments[0] == "projects" && segments[2] == "failure-report" ->
                     handleGetFailureReport(ex, segments[1])
 
-                // GET /api/v1/pipelines/{id}/dot
-                method == "GET" && segments.size == 3 && segments[0] == "pipelines" && segments[2] == "dot" ->
-                    handleDownloadPipelineDot(ex, segments[1])
+                // GET /api/v1/projects/{id}/dot
+                method == "GET" && segments.size == 3 && segments[0] == "projects" && segments[2] == "dot" ->
+                    handleDownloadProjectDot(ex, segments[1])
 
-                // GET /api/v1/pipelines/{id}/export
-                method == "GET" && segments.size == 3 && segments[0] == "pipelines" && segments[2] == "export" ->
-                    handleExportPipeline(ex, segments[1])
+                // GET /api/v1/projects/{id}/export
+                method == "GET" && segments.size == 3 && segments[0] == "projects" && segments[2] == "export" ->
+                    handleExportProject(ex, segments[1])
 
-                // GET /api/v1/pipelines/{id}/family
-                method == "GET" && segments.size == 3 && segments[0] == "pipelines" && segments[2] == "family" ->
+                // GET /api/v1/projects/{id}/family
+                method == "GET" && segments.size == 3 && segments[0] == "projects" && segments[2] == "family" ->
                     handleGetFamily(ex, segments[1])
 
-                // POST /api/v1/pipelines/{id}/iterations
-                method == "POST" && segments.size == 3 && segments[0] == "pipelines" && segments[2] == "iterations" ->
+                // POST /api/v1/projects/{id}/iterations
+                method == "POST" && segments.size == 3 && segments[0] == "projects" && segments[2] == "iterations" ->
                     handleCreateIteration(ex, segments[1])
 
-                // POST /api/v1/pipelines/{id}/rerun
-                method == "POST" && segments.size == 3 && segments[0] == "pipelines" && segments[2] == "rerun" ->
-                    handleRerunPipeline(ex, segments[1])
+                // POST /api/v1/projects/{id}/rerun
+                method == "POST" && segments.size == 3 && segments[0] == "projects" && segments[2] == "rerun" ->
+                    handleRerunProject(ex, segments[1])
 
-                // POST /api/v1/pipelines/{id}/pause
-                method == "POST" && segments.size == 3 && segments[0] == "pipelines" && segments[2] == "pause" ->
-                    handlePausePipeline(ex, segments[1])
+                // POST /api/v1/projects/{id}/pause
+                method == "POST" && segments.size == 3 && segments[0] == "projects" && segments[2] == "pause" ->
+                    handlePauseProject(ex, segments[1])
 
-                // POST /api/v1/pipelines/{id}/resume
-                method == "POST" && segments.size == 3 && segments[0] == "pipelines" && segments[2] == "resume" ->
-                    handleResumePipeline(ex, segments[1])
+                // POST /api/v1/projects/{id}/resume
+                method == "POST" && segments.size == 3 && segments[0] == "projects" && segments[2] == "resume" ->
+                    handleResumeProject(ex, segments[1])
 
-                // POST /api/v1/pipelines/{id}/cancel
-                method == "POST" && segments.size == 3 && segments[0] == "pipelines" && segments[2] == "cancel" ->
-                    handleCancelPipeline(ex, segments[1])
+                // POST /api/v1/projects/{id}/cancel
+                method == "POST" && segments.size == 3 && segments[0] == "projects" && segments[2] == "cancel" ->
+                    handleCancelProject(ex, segments[1])
 
-                // POST /api/v1/pipelines/{id}/archive
-                method == "POST" && segments.size == 3 && segments[0] == "pipelines" && segments[2] == "archive" ->
-                    handleArchivePipeline(ex, segments[1])
+                // POST /api/v1/projects/{id}/archive
+                method == "POST" && segments.size == 3 && segments[0] == "projects" && segments[2] == "archive" ->
+                    handleArchiveProject(ex, segments[1])
 
-                // POST /api/v1/pipelines/{id}/unarchive
-                method == "POST" && segments.size == 3 && segments[0] == "pipelines" && segments[2] == "unarchive" ->
-                    handleUnarchivePipeline(ex, segments[1])
+                // POST /api/v1/projects/{id}/unarchive
+                method == "POST" && segments.size == 3 && segments[0] == "projects" && segments[2] == "unarchive" ->
+                    handleUnarchiveProject(ex, segments[1])
 
                 // DOT operations
                 method == "POST" && segments == listOf("dot", "render") ->
@@ -256,9 +256,9 @@ class RestApiRouter(
         }
     }
 
-    // ── Pipeline JSON helpers ─────────────────────────────────────────────────
+    // ── Project JSON helpers ─────────────────────────────────────────────────
 
-    private fun pipelineEntryToJson(entry: PipelineEntry, full: Boolean): String {
+    private fun projectEntryToJson(entry: ProjectEntry, full: Boolean): String {
         val state = entry.state
         val sb = StringBuilder()
         sb.append("{")
@@ -308,20 +308,20 @@ class RestApiRouter(
         return sb.toString()
     }
 
-    // ── Pipeline CRUD ─────────────────────────────────────────────────────────
+    // ── Project CRUD ─────────────────────────────────────────────────────────
 
-    private fun handleListPipelines(ex: HttpExchange) {
+    private fun handleListProjects(ex: HttpExchange) {
         val entries = registry.getAll()
         val sb = StringBuilder("[")
         entries.forEachIndexed { i, entry ->
             if (i > 0) sb.append(",")
-            sb.append(pipelineEntryToJson(entry, full = false))
+            sb.append(projectEntryToJson(entry, full = false))
         }
         sb.append("]")
         jsonResponse(ex, 200, sb.toString())
     }
 
-    private fun handleCreatePipeline(ex: HttpExchange) {
+    private fun handleCreateProject(ex: HttpExchange) {
         val body = readJsonBody(ex)
         val dotSource = body?.get("dotSource")?.jsonPrimitive?.contentOrNull ?: ""
         if (dotSource.isBlank()) {
@@ -332,7 +332,7 @@ class RestApiRouter(
         val autoApprove = body?.get("autoApprove")?.jsonPrimitive?.booleanOrNull ?: true
         val originalPrompt = body?.get("originalPrompt")?.jsonPrimitive?.contentOrNull ?: ""
         val familyId = body?.get("familyId")?.jsonPrimitive?.contentOrNull ?: ""
-        val id = PipelineRunner.submit(
+        val id = ProjectRunner.submit(
             dotSource = dotSource,
             fileName = fileName,
             options = RunOptions(simulate = simulate, autoApprove = autoApprove),
@@ -355,7 +355,7 @@ class RestApiRouter(
         val simulate    = query["simulate"]?.toBooleanStrictOrNull() ?: false
         val autoApprove = query["autoApprove"]?.toBooleanStrictOrNull() ?: true
         val originalPrompt = query["originalPrompt"] ?: ""
-        val id = PipelineRunner.submit(
+        val id = ProjectRunner.submit(
             dotSource      = dotSource,
             fileName       = fileName,
             options        = RunOptions(simulate = simulate, autoApprove = autoApprove),
@@ -368,15 +368,15 @@ class RestApiRouter(
         jsonResponse(ex, 201, """{"id":${js(id)},"status":"running"}""")
     }
 
-    private fun handleDownloadPipelineDot(ex: HttpExchange, id: String) {
+    private fun handleDownloadProjectDot(ex: HttpExchange, id: String) {
         val entry = registry.getOrHydrate(id, store)
-            ?: run { errorResponse(ex, 404, "pipeline not found", "NOT_FOUND"); return }
+            ?: run { errorResponse(ex, 404, "project not found", "NOT_FOUND"); return }
         val dot = entry.dotSource
         if (dot.isBlank()) {
-            errorResponse(ex, 404, "no DOT source available for this pipeline", "NOT_FOUND"); return
+            errorResponse(ex, 404, "no DOT source available for this project", "NOT_FOUND"); return
         }
         val bytes = dot.toByteArray(Charsets.UTF_8)
-        val filename = entry.fileName.ifBlank { "pipeline.dot" }
+        val filename = entry.fileName.ifBlank { "project.dot" }
         ex.responseHeaders.add("Content-Type", "text/plain; charset=utf-8")
         ex.responseHeaders.add("Content-Disposition", "attachment; filename=\"$filename\"")
         ex.responseHeaders.add("Access-Control-Allow-Origin", "*")
@@ -384,36 +384,36 @@ class RestApiRouter(
         ex.responseBody.use { it.write(bytes, 0, bytes.size) }
     }
 
-    private fun handleGetPipeline(ex: HttpExchange, id: String) {
+    private fun handleGetProject(ex: HttpExchange, id: String) {
         val entry = registry.getOrHydrate(id, store)
-            ?: run { errorResponse(ex, 404, "pipeline not found", "NOT_FOUND"); return }
-        jsonResponse(ex, 200, pipelineEntryToJson(entry, full = true))
+            ?: run { errorResponse(ex, 404, "project not found", "NOT_FOUND"); return }
+        jsonResponse(ex, 200, projectEntryToJson(entry, full = true))
     }
 
-    private fun handlePatchPipeline(ex: HttpExchange, id: String) {
+    private fun handlePatchProject(ex: HttpExchange, id: String) {
         val entry = registry.get(id) ?: registry.getOrHydrate(id, store)
-            ?: run { errorResponse(ex, 404, "pipeline not found", "NOT_FOUND"); return }
+            ?: run { errorResponse(ex, 404, "project not found", "NOT_FOUND"); return }
         val body = readJsonBody(ex)
         val newDotSource = body?.get("dotSource")?.jsonPrimitive?.contentOrNull
         val newOriginalPrompt = body?.get("originalPrompt")?.jsonPrimitive?.contentOrNull
         if (newDotSource != null) {
             val status = entry.state.status.get()
             if (status == "running" || status == "paused") {
-                errorResponse(ex, 409, "cannot update dotSource while pipeline is running or paused", "INVALID_STATE"); return
+                errorResponse(ex, 409, "cannot update dotSource while project is running or paused", "INVALID_STATE"); return
             }
             registry.updateDotAndPrompt(id, newDotSource, newOriginalPrompt ?: entry.originalPrompt)
         }
         val updated = registry.getOrHydrate(id, store)
-            ?: run { errorResponse(ex, 404, "pipeline not found", "NOT_FOUND"); return }
-        jsonResponse(ex, 200, pipelineEntryToJson(updated, full = true))
+            ?: run { errorResponse(ex, 404, "project not found", "NOT_FOUND"); return }
+        jsonResponse(ex, 200, projectEntryToJson(updated, full = true))
     }
 
-    private fun handleDeletePipeline(ex: HttpExchange, id: String) {
+    private fun handleDeleteProject(ex: HttpExchange, id: String) {
         val entry = registry.get(id) ?: registry.getOrHydrate(id, store)
-            ?: run { errorResponse(ex, 404, "pipeline not found", "NOT_FOUND"); return }
+            ?: run { errorResponse(ex, 404, "project not found", "NOT_FOUND"); return }
         val status = entry.state.status.get()
         if (status == "running" || status == "paused") {
-            errorResponse(ex, 409, "cannot delete running or paused pipeline", "INVALID_STATE"); return
+            errorResponse(ex, 409, "cannot delete running or paused project", "INVALID_STATE"); return
         }
         val (deleted, logsRoot) = registry.delete(id)
         if (logsRoot.isNotBlank()) {
@@ -425,66 +425,66 @@ class RestApiRouter(
         jsonResponse(ex, 200, """{"deleted":$deleted}""")
     }
 
-    // ── Pipeline Lifecycle ────────────────────────────────────────────────────
+    // ── Project Lifecycle ────────────────────────────────────────────────────
 
-    private fun handleRerunPipeline(ex: HttpExchange, id: String) {
+    private fun handleRerunProject(ex: HttpExchange, id: String) {
         val entry = registry.get(id) ?: registry.getOrHydrate(id, store)
-            ?: run { errorResponse(ex, 404, "pipeline not found", "NOT_FOUND"); return }
+            ?: run { errorResponse(ex, 404, "project not found", "NOT_FOUND"); return }
         if (entry.state.status.get() == "running") {
-            errorResponse(ex, 409, "pipeline is already running", "INVALID_STATE"); return
+            errorResponse(ex, 409, "project is already running", "INVALID_STATE"); return
         }
-        PipelineRunner.resubmit(id, registry, store, onUpdate)
+        ProjectRunner.resubmit(id, registry, store, onUpdate)
         jsonResponse(ex, 200, """{"id":${js(id)},"status":"running"}""")
     }
 
-    private fun handlePausePipeline(ex: HttpExchange, id: String) {
+    private fun handlePauseProject(ex: HttpExchange, id: String) {
         val entry = registry.get(id) ?: registry.getOrHydrate(id, store)
-            ?: run { errorResponse(ex, 404, "pipeline not found", "NOT_FOUND"); return }
+            ?: run { errorResponse(ex, 404, "project not found", "NOT_FOUND"); return }
         if (entry.state.status.get() != "running") {
-            errorResponse(ex, 409, "pipeline is not running", "INVALID_STATE"); return
+            errorResponse(ex, 409, "project is not running", "INVALID_STATE"); return
         }
         val paused = registry.pause(id)
         jsonResponse(ex, 200, """{"paused":$paused}""")
     }
 
-    private fun handleResumePipeline(ex: HttpExchange, id: String) {
+    private fun handleResumeProject(ex: HttpExchange, id: String) {
         val entry = registry.get(id) ?: registry.getOrHydrate(id, store)
-            ?: run { errorResponse(ex, 404, "pipeline not found", "NOT_FOUND"); return }
+            ?: run { errorResponse(ex, 404, "project not found", "NOT_FOUND"); return }
         if (entry.state.status.get() != "paused") {
-            errorResponse(ex, 409, "pipeline is not paused", "INVALID_STATE"); return
+            errorResponse(ex, 409, "project is not paused", "INVALID_STATE"); return
         }
-        PipelineRunner.resumePipeline(id, registry, store, onUpdate)
+        ProjectRunner.resumeProject(id, registry, store, onUpdate)
         jsonResponse(ex, 200, """{"id":${js(id)},"status":"running"}""")
     }
 
-    private fun handleCancelPipeline(ex: HttpExchange, id: String) {
+    private fun handleCancelProject(ex: HttpExchange, id: String) {
         val entry = registry.get(id) ?: registry.getOrHydrate(id, store)
-            ?: run { errorResponse(ex, 404, "pipeline not found", "NOT_FOUND"); return }
+            ?: run { errorResponse(ex, 404, "project not found", "NOT_FOUND"); return }
         val status = entry.state.status.get()
         if (status != "running" && status != "paused") {
-            errorResponse(ex, 409, "pipeline is not running or paused", "INVALID_STATE"); return
+            errorResponse(ex, 409, "project is not running or paused", "INVALID_STATE"); return
         }
         val cancelled = registry.cancel(id)
         jsonResponse(ex, 200, """{"cancelled":$cancelled}""")
     }
 
-    private fun handleArchivePipeline(ex: HttpExchange, id: String) {
+    private fun handleArchiveProject(ex: HttpExchange, id: String) {
         registry.getOrHydrate(id, store)
-            ?: run { errorResponse(ex, 404, "pipeline not found", "NOT_FOUND"); return }
+            ?: run { errorResponse(ex, 404, "project not found", "NOT_FOUND"); return }
         val archived = registry.archive(id)
         jsonResponse(ex, 200, """{"archived":$archived}""")
     }
 
-    private fun handleUnarchivePipeline(ex: HttpExchange, id: String) {
+    private fun handleUnarchiveProject(ex: HttpExchange, id: String) {
         registry.getOrHydrate(id, store)
-            ?: run { errorResponse(ex, 404, "pipeline not found", "NOT_FOUND"); return }
+            ?: run { errorResponse(ex, 404, "project not found", "NOT_FOUND"); return }
         val unarchived = registry.unarchive(id)
         jsonResponse(ex, 200, """{"unarchived":$unarchived}""")
     }
 
     private fun handleCreateIteration(ex: HttpExchange, id: String) {
         val entry = registry.getOrHydrate(id, store)
-            ?: run { errorResponse(ex, 404, "pipeline not found", "NOT_FOUND"); return }
+            ?: run { errorResponse(ex, 404, "project not found", "NOT_FOUND"); return }
         val body = readJsonBody(ex)
         val dotSource = body?.get("dotSource")?.jsonPrimitive?.contentOrNull ?: ""
         if (dotSource.isBlank()) {
@@ -492,7 +492,7 @@ class RestApiRouter(
         }
         val originalPrompt = body?.get("originalPrompt")?.jsonPrimitive?.contentOrNull ?: entry.originalPrompt
         val fileName = body?.get("fileName")?.jsonPrimitive?.contentOrNull ?: entry.fileName
-        val newId = PipelineRunner.submit(
+        val newId = ProjectRunner.submit(
             dotSource = dotSource,
             fileName = fileName,
             options = entry.options,
@@ -509,7 +509,7 @@ class RestApiRouter(
 
     private fun handleGetFamily(ex: HttpExchange, id: String) {
         val entry = registry.getOrHydrate(id, store)
-            ?: run { errorResponse(ex, 404, "pipeline not found", "NOT_FOUND"); return }
+            ?: run { errorResponse(ex, 404, "project not found", "NOT_FOUND"); return }
         val members = store.getByFamilyId(entry.familyId).take(100)
         val sb = StringBuilder("[")
         members.forEachIndexed { i, run ->
@@ -530,7 +530,7 @@ class RestApiRouter(
 
     private fun handleGetStages(ex: HttpExchange, id: String) {
         val entry = registry.getOrHydrate(id, store)
-            ?: run { errorResponse(ex, 404, "pipeline not found", "NOT_FOUND"); return }
+            ?: run { errorResponse(ex, 404, "project not found", "NOT_FOUND"); return }
         val sb = StringBuilder("[")
         entry.state.stages.forEachIndexed { i, stage ->
             if (i > 0) sb.append(",")
@@ -553,7 +553,7 @@ class RestApiRouter(
 
     private fun handleListArtifacts(ex: HttpExchange, id: String) {
         val entry = registry.getOrHydrate(id, store)
-            ?: run { errorResponse(ex, 404, "pipeline not found", "NOT_FOUND"); return }
+            ?: run { errorResponse(ex, 404, "project not found", "NOT_FOUND"); return }
         val logsRoot = entry.logsRoot
         if (logsRoot.isBlank()) {
             jsonResponse(ex, 200, """{"files":[],"truncated":false}"""); return
@@ -579,7 +579,7 @@ class RestApiRouter(
 
     private fun handleGetArtifact(ex: HttpExchange, id: String, relPath: String) {
         val entry = registry.getOrHydrate(id, store)
-            ?: run { errorResponse(ex, 404, "pipeline not found", "NOT_FOUND"); return }
+            ?: run { errorResponse(ex, 404, "project not found", "NOT_FOUND"); return }
         val logsRoot = entry.logsRoot
         if (logsRoot.isBlank()) {
             errorResponse(ex, 404, "no artifacts available", "NOT_FOUND"); return
@@ -603,7 +603,7 @@ class RestApiRouter(
 
     private fun handleDownloadArtifactsZip(ex: HttpExchange, id: String) {
         val entry = registry.getOrHydrate(id, store)
-            ?: run { errorResponse(ex, 404, "pipeline not found", "NOT_FOUND"); return }
+            ?: run { errorResponse(ex, 404, "project not found", "NOT_FOUND"); return }
         val logsRoot = entry.logsRoot
         if (logsRoot.isBlank()) {
             errorResponse(ex, 404, "no artifacts available", "NOT_FOUND"); return
@@ -632,7 +632,7 @@ class RestApiRouter(
 
     private fun handleGetStageLog(ex: HttpExchange, id: String, nodeId: String) {
         val entry = registry.getOrHydrate(id, store)
-            ?: run { errorResponse(ex, 404, "pipeline not found", "NOT_FOUND"); return }
+            ?: run { errorResponse(ex, 404, "project not found", "NOT_FOUND"); return }
         if (nodeId.contains("/") || nodeId.contains("..")) {
             errorResponse(ex, 404, "invalid nodeId", "NOT_FOUND"); return
         }
@@ -653,7 +653,7 @@ class RestApiRouter(
 
     private fun handleGetFailureReport(ex: HttpExchange, id: String) {
         val entry = registry.getOrHydrate(id, store)
-            ?: run { errorResponse(ex, 404, "pipeline not found", "NOT_FOUND"); return }
+            ?: run { errorResponse(ex, 404, "project not found", "NOT_FOUND"); return }
         val logsRoot = entry.logsRoot
         if (logsRoot.isBlank()) {
             errorResponse(ex, 404, "failure report not found", "NOT_FOUND"); return
@@ -671,26 +671,26 @@ class RestApiRouter(
 
     // ── Import / Export ───────────────────────────────────────────────────────
 
-    private fun handleExportPipeline(ex: HttpExchange, id: String) {
+    private fun handleExportProject(ex: HttpExchange, id: String) {
         val entry = registry.getOrHydrate(id, store)
-            ?: run { errorResponse(ex, 404, "pipeline not found", "NOT_FOUND"); return }
+            ?: run { errorResponse(ex, 404, "project not found", "NOT_FOUND"); return }
         val meta = """{"id":${js(entry.id)},"fileName":${js(entry.fileName)},"dotSource":${js(entry.dotSource)},"originalPrompt":${js(entry.originalPrompt)},"familyId":${js(entry.familyId)},"simulate":${entry.options.simulate},"autoApprove":${entry.options.autoApprove}}"""
         val metaBytes = meta.toByteArray(Charsets.UTF_8)
         val baos = ByteArrayOutputStream()
         ZipOutputStream(baos).use { zip ->
-            zip.putNextEntry(ZipEntry("pipeline-meta.json"))
+            zip.putNextEntry(ZipEntry("project-meta.json"))
             zip.write(metaBytes)
             zip.closeEntry()
         }
         val zipBytes = baos.toByteArray()
         ex.responseHeaders.add("Content-Type", "application/zip")
-        ex.responseHeaders.add("Content-Disposition", "attachment; filename=\"pipeline-${entry.id}.zip\"")
+        ex.responseHeaders.add("Content-Disposition", "attachment; filename=\"project-${entry.id}.zip\"")
         ex.responseHeaders.add("Access-Control-Allow-Origin", "*")
         ex.sendResponseHeaders(200, zipBytes.size.toLong())
         ex.responseBody.use { it.write(zipBytes) }
     }
 
-    private fun handleImportPipeline(ex: HttpExchange) {
+    private fun handleImportProject(ex: HttpExchange) {
         val query = parseQuery(ex)
         val onConflict = query["onConflict"] ?: "skip"
         val bodyBytes = try {
@@ -703,7 +703,7 @@ class RestApiRouter(
             ZipInputStream(bodyBytes.inputStream()).use { zis ->
                 var zipEntry = zis.nextEntry
                 while (zipEntry != null) {
-                    if (zipEntry.name.trimStart('/') == "pipeline-meta.json") {
+                    if (zipEntry.name.trimStart('/') == "project-meta.json") {
                         metaText = zis.readBytes().toString(Charsets.UTF_8)
                     }
                     zis.closeEntry()
@@ -714,17 +714,17 @@ class RestApiRouter(
             errorResponse(ex, 400, "invalid or corrupt zip: ${e.message?.take(120)}", "BAD_REQUEST"); return
         }
         if (metaText == null) {
-            errorResponse(ex, 400, "pipeline-meta.json not found in zip", "BAD_REQUEST"); return
+            errorResponse(ex, 400, "project-meta.json not found in zip", "BAD_REQUEST"); return
         }
         val meta = try {
             requestJson.parseToJsonElement(metaText!!).jsonObject
         } catch (e: Exception) {
-            errorResponse(ex, 400, "invalid pipeline-meta.json", "BAD_REQUEST"); return
+            errorResponse(ex, 400, "invalid project-meta.json", "BAD_REQUEST"); return
         }
         val fileName = meta["fileName"]?.jsonPrimitive?.contentOrNull ?: ""
         val dotSource = meta["dotSource"]?.jsonPrimitive?.contentOrNull ?: ""
         if (fileName.isBlank() || dotSource.isBlank()) {
-            errorResponse(ex, 400, "missing required field(s) in pipeline-meta.json: fileName, dotSource", "BAD_REQUEST"); return
+            errorResponse(ex, 400, "missing required field(s) in project-meta.json: fileName, dotSource", "BAD_REQUEST"); return
         }
         val simulate = meta["simulate"]?.jsonPrimitive?.booleanOrNull ?: false
         val autoApprove = meta["autoApprove"]?.jsonPrimitive?.booleanOrNull ?: true
@@ -736,7 +736,7 @@ class RestApiRouter(
                 jsonResponse(ex, 200, """{"status":"skipped","id":${js(importFamilyId)}}"""); return
             }
         }
-        val newId = PipelineRunner.submit(
+        val newId = ProjectRunner.submit(
             dotSource = dotSource,
             fileName = fileName,
             options = RunOptions(simulate = simulate, autoApprove = autoApprove),
@@ -1066,7 +1066,7 @@ class RestApiRouter(
 
     private fun handleEventsSingle(ex: HttpExchange, id: String) {
         registry.getOrHydrate(id, store)
-            ?: run { errorResponse(ex, 404, "pipeline not found", "NOT_FOUND"); return }
+            ?: run { errorResponse(ex, 404, "project not found", "NOT_FOUND"); return }
         ex.responseHeaders.add("Content-Type", "text/event-stream")
         ex.responseHeaders.add("Cache-Control", "no-cache")
         ex.responseHeaders.add("Connection", "keep-alive")
@@ -1074,17 +1074,17 @@ class RestApiRouter(
         ex.sendResponseHeaders(200, 0)
         val client = RestSseClient(ex)
         sseClients.add(client)
-        // Initial snapshot filtered for this pipeline
+        // Initial snapshot filtered for this project
         val entry = registry.get(id)
         if (entry != null) {
-            val snap = """{"pipeline":${pipelineEntryToJson(entry, full = false)}}"""
+            val snap = """{"project":${projectEntryToJson(entry, full = false)}}"""
             client.offer(snap)
         }
         try {
             while (client.alive) {
                 val json = client.queue.poll(2, TimeUnit.SECONDS)
                 if (json != null) {
-                    // Filter: only forward if this pipeline's id appears in the payload
+                    // Filter: only forward if this project's id appears in the payload
                     if (json.contains(id)) {
                         val bytes = "data: $json\n\n".toByteArray(Charsets.UTF_8)
                         ex.responseBody.write(bytes)

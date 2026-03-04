@@ -1,7 +1,7 @@
 package attractor.human
 
 /**
- * Always selects YES / first option. Used for automated pipelines with no human.
+ * Always selects YES / first option. Used for automated projects with no human.
  */
 class AutoApproveInterviewer : Interviewer {
     override fun ask(question: Question): Answer {

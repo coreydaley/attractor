@@ -9,7 +9,7 @@ interface Handler {
     /**
      * Execute this node and return an outcome.
      * @param node      The parsed node with all attributes
-     * @param context   The shared pipeline context (read/write)
+     * @param context   The shared project context (read/write)
      * @param graph     The full graph (for reading outgoing edges, etc.)
      * @param logsRoot  Filesystem path for this run's log directory
      */

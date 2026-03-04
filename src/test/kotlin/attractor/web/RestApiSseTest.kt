@@ -18,16 +18,16 @@ class RestApiSseTest : FunSpec({
 
     var httpServer: HttpServer? = null
     var port = 0
-    var registry: PipelineRegistry? = null
+    var registry: ProjectRegistry? = null
     var tmpDb: java.io.File? = null
 
     beforeSpec {
         tmpDb = Files.createTempFile("attractor-sse-test-", ".db").toFile()
         val s = SqliteRunStore(tmpDb!!.absolutePath)
-        val r = PipelineRegistry(s)
+        val r = ProjectRegistry(s)
         registry = r
         val sseClients = CopyOnWriteArrayList<RestApiRouter.RestSseClient>()
-        val router = RestApiRouter(r, s, {}, { """{"pipelines":[]}""" }, sseClients)
+        val router = RestApiRouter(r, s, {}, { """{"projects":[]}""" }, sseClients)
         val srv = HttpServer.create(InetSocketAddress(0), 0)
         srv.executor = Executors.newCachedThreadPool()
         srv.createContext("/api/v1/") { ex -> router.handle(ex) }
@@ -87,7 +87,7 @@ class RestApiSseTest : FunSpec({
         conn.disconnect()
 
         // Server should still be responsive after abrupt client disconnect
-        val checkUrl = URI.create("http://localhost:$port/api/v1/pipelines").toURL()
+        val checkUrl = URI.create("http://localhost:$port/api/v1/projects").toURL()
         val checkConn = checkUrl.openConnection() as java.net.HttpURLConnection
         checkConn.connectTimeout = 2000
         checkConn.readTimeout = 2000
@@ -98,23 +98,23 @@ class RestApiSseTest : FunSpec({
         }
     }
 
-    test("GET /api/v1/events/{id} for unknown pipeline id returns 404") {
+    test("GET /api/v1/events/{id} for unknown project id returns 404") {
         val client = HttpClient.newHttpClient()
         val req = HttpRequest.newBuilder()
-            .uri(URI.create("http://localhost:$port/api/v1/events/no-such-pipeline-id"))
+            .uri(URI.create("http://localhost:$port/api/v1/events/no-such-project-id"))
             .GET().build()
         val resp = client.send(req, HttpResponse.BodyHandlers.ofString())
         resp.statusCode() shouldBe 404
         resp.body() shouldContain "NOT_FOUND"
     }
 
-    test("GET /api/v1/events/{id} for known pipeline id returns 200 with text/event-stream") {
+    test("GET /api/v1/events/{id} for known project id returns 200 with text/event-stream") {
         registry!!.register(
-            "sse-pipeline-1", "sse.dot",
+            "sse-project-1", "sse.dot",
             "digraph S { start [shape=Mdiamond] }",
             familyId = "sse-family-1"
         )
-        val url = URI.create("http://localhost:$port/api/v1/events/sse-pipeline-1").toURL()
+        val url = URI.create("http://localhost:$port/api/v1/events/sse-project-1").toURL()
         val conn = url.openConnection() as java.net.HttpURLConnection
         conn.connectTimeout = 2000
         conn.readTimeout = 3000

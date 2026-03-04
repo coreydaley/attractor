@@ -62,7 +62,7 @@ Verbs:
   set <key> <value> Update a setting value
 
 Known settings:
-  fireworks_enabled   Whether fireworks animation plays on pipeline completion
+  fireworks_enabled   Whether fireworks animation plays on project completion
         """.trimIndent())
     }
 }

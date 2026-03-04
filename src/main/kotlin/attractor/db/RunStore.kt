@@ -9,7 +9,7 @@ data class StoredRun(
     val simulate: Boolean,
     val autoApprove: Boolean,
     val createdAt: Long,
-    val pipelineLog: String = "",
+    val projectLog: String = "",
     val archived: Boolean = false,
     val originalPrompt: String = "",
     val finishedAt: Long = 0L,

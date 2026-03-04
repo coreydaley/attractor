@@ -7,7 +7,7 @@ import attractor.engine.EngineConfig
 import attractor.engine.FailureDiagnoser
 import attractor.engine.LlmFailureDiagnoser
 import attractor.engine.NullFailureDiagnoser
-import attractor.events.PipelineEvent
+import attractor.events.ProjectEvent
 import attractor.handlers.CodergenHandler
 import attractor.state.Checkpoint
 import attractor.handlers.HandlerRegistry
@@ -25,7 +25,7 @@ data class RunOptions(
     val autoApprove: Boolean = true
 )
 
-object PipelineRunner {
+object ProjectRunner {
     private val executor = Executors.newFixedThreadPool(
         (Runtime.getRuntime().availableProcessors() * 2).coerceAtLeast(4)
     )
@@ -35,7 +35,7 @@ object PipelineRunner {
         dotSource: String,
         fileName: String,
         options: RunOptions,
-        registry: PipelineRegistry,
+        registry: ProjectRegistry,
         store: RunStore,
         originalPrompt: String = "",
         familyId: String = "",
@@ -49,7 +49,7 @@ object PipelineRunner {
         val state = registry.register(id, fileName, dotSource, options, originalPrompt, displayName, effectiveFamilyId)
 
         val future = executor.submit {
-            runPipeline(id, dotSource, options, state, registry, store, onUpdate)
+            runProject(id, dotSource, options, state, registry, store, onUpdate)
         }
         registry.registerFuture(id, future)
 
@@ -58,7 +58,7 @@ object PipelineRunner {
 
     fun resubmit(
         id: String,
-        registry: PipelineRegistry,
+        registry: ProjectRegistry,
         store: RunStore,
         onUpdate: () -> Unit
     ) {
@@ -67,14 +67,14 @@ object PipelineRunner {
         store.updateStatus(id, "running")
         onUpdate()
         val future = executor.submit {
-            runPipeline(id, entry.dotSource, entry.options, entry.state, registry, store, onUpdate)
+            runProject(id, entry.dotSource, entry.options, entry.state, registry, store, onUpdate)
         }
         registry.registerFuture(id, future)
     }
 
-    fun resumePipeline(
+    fun resumeProject(
         id: String,
-        registry: PipelineRegistry,
+        registry: ProjectRegistry,
         store: RunStore,
         onUpdate: () -> Unit
     ) {
@@ -88,17 +88,17 @@ object PipelineRunner {
             // resume = true: engine will load checkpoint and continue from last saved node
             // NOTE: Checkpoint.create() records currentNode = <just-completed-node-id>,
             // so the engine re-runs that node on resume. This is intentional existing behaviour.
-            runPipeline(id, entry.dotSource, entry.options, entry.state, registry, store, onUpdate, resume = true)
+            runProject(id, entry.dotSource, entry.options, entry.state, registry, store, onUpdate, resume = true)
         }
         registry.registerFuture(id, future)
     }
 
-    private fun runPipeline(
+    private fun runProject(
         id: String,
         dotSource: String,
         options: RunOptions,
-        state: PipelineState,
-        registry: PipelineRegistry,
+        state: ProjectState,
+        registry: ProjectRegistry,
         store: RunStore,
         onUpdate: () -> Unit,
         resume: Boolean = false
@@ -124,13 +124,15 @@ object PipelineRunner {
             val codergenHandler = CodergenHandler(backend)
             val handlerRegistry = HandlerRegistry.createDefault(codergenHandler, interviewer)
 
+            val rawName = registry.get(id)?.displayName?.takeIf { it.isNotBlank() } ?: graph.id
+            val safeName = rawName.replace(Regex("[^A-Za-z0-9_-]"), "-").trim('-').ifBlank { id }
             val logsRoot = registry.get(id)?.logsRoot?.takeIf { it.isNotBlank() }
-                ?: "logs/${graph.id}-$id"
+                ?: "logs/$safeName"
             registry.setLogsRoot(id, logsRoot)
             registry.get(id)?.state?.logsRoot = logsRoot
 
             // On resume: snapshot completed stages (excluding checkpoint.currentNode, which the
-            // engine will re-run) so we can restore them after PipelineStarted clears the list.
+            // engine will re-run) so we can restore them after ProjectStarted clears the list.
             val stagesToRestore: List<StageRecord> = if (resume) {
                 val ckpt = Checkpoint.load(logsRoot)
                 if (ckpt != null) {
@@ -151,20 +153,20 @@ object PipelineRunner {
             val engine = Engine(handlerRegistry, config)
             engine.subscribe { event ->
                 state.update(event)
-                if (event is PipelineEvent.PipelineStarted) {
+                if (event is ProjectEvent.ProjectStarted) {
                     val name = registry.get(id)?.displayName
-                    if (!name.isNullOrBlank()) state.pipelineName.set(name)
+                    if (!name.isNullOrBlank()) state.projectName.set(name)
                 }
-                // After PipelineStarted clears the stage list, restore completed stages from
+                // After ProjectStarted clears the stage list, restore completed stages from
                 // before the pause. The checkpoint's currentNode is excluded because the engine
                 // re-runs it and will emit its own StageStarted/StageCompleted events.
-                if (resume && event is PipelineEvent.PipelineStarted && stagesToRestore.isNotEmpty()) {
+                if (resume && event is ProjectEvent.ProjectStarted && stagesToRestore.isNotEmpty()) {
                     state.stages.addAll(0, stagesToRestore)
                 }
                 // Persist terminal statuses and full log to the database
                 when (event) {
-                    is PipelineEvent.PipelineCompleted -> { store.updateStatus(id, "completed"); store.updateLog(id, state.recentLogs.joinToString("\n")); store.updateFinishedAt(id, state.finishedAt.get()) }
-                    is PipelineEvent.PipelineFailed    -> {
+                    is ProjectEvent.ProjectCompleted -> { store.updateStatus(id, "completed"); store.updateLog(id, state.recentLogs.joinToString("\n")); store.updateFinishedAt(id, state.finishedAt.get()) }
+                    is ProjectEvent.ProjectFailed    -> {
                         store.updateStatus(id, "failed")
                         store.updateLog(id, state.recentLogs.joinToString("\n"))
                         store.updateFinishedAt(id, state.finishedAt.get())
@@ -173,12 +175,12 @@ object PipelineRunner {
                             state.hasFailureReport.set(true)
                         }
                     }
-                    is PipelineEvent.PipelineCancelled -> { store.updateStatus(id, "cancelled"); store.updateLog(id, state.recentLogs.joinToString("\n")); store.updateFinishedAt(id, state.finishedAt.get()) }
-                    is PipelineEvent.PipelinePaused    -> { store.updateStatus(id, "paused");    store.updateLog(id, state.recentLogs.joinToString("\n")); store.updateFinishedAt(id, state.finishedAt.get()) }
+                    is ProjectEvent.ProjectCancelled -> { store.updateStatus(id, "cancelled"); store.updateLog(id, state.recentLogs.joinToString("\n")); store.updateFinishedAt(id, state.finishedAt.get()) }
+                    is ProjectEvent.ProjectPaused    -> { store.updateStatus(id, "paused");    store.updateLog(id, state.recentLogs.joinToString("\n")); store.updateFinishedAt(id, state.finishedAt.get()) }
                     else -> {}
                 }
                 when (event) {
-                    is PipelineEvent.CheckpointSaved -> { /* state updated; no broadcast needed */ }
+                    is ProjectEvent.CheckpointSaved -> { /* state updated; no broadcast needed */ }
                     else -> onUpdate()
                 }
             }
@@ -187,13 +189,13 @@ object PipelineRunner {
             engine.run(preparedGraph)
         } catch (e: InterruptedException) {
             Thread.currentThread().interrupt()
-            state.update(attractor.events.PipelineEvent.PipelineCancelled(0))
+            state.update(attractor.events.ProjectEvent.ProjectCancelled(0))
             store.updateStatus(id, "cancelled")
             store.updateLog(id, state.recentLogs.joinToString("\n"))
             store.updateFinishedAt(id, state.finishedAt.get())
             onUpdate()
         } catch (e: Exception) {
-            state.update(PipelineEvent.PipelineFailed(e.message ?: "Unknown error", 0))
+            state.update(ProjectEvent.ProjectFailed(e.message ?: "Unknown error", 0))
             store.updateStatus(id, "failed")
             store.updateLog(id, state.recentLogs.joinToString("\n"))
             store.updateFinishedAt(id, state.finishedAt.get())

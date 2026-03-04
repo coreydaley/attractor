@@ -24,9 +24,9 @@ class RestApiSpecRoutesTest : FunSpec({
     beforeSpec {
         tmpDb = Files.createTempFile("attractor-spec-test-", ".db").toFile()
         val s = SqliteRunStore(tmpDb!!.absolutePath)
-        val r = PipelineRegistry(s)
+        val r = ProjectRegistry(s)
         val sseClients = CopyOnWriteArrayList<RestApiRouter.RestSseClient>()
-        val router = RestApiRouter(r, s, {}, { """{"pipelines":[]}""" }, sseClients)
+        val router = RestApiRouter(r, s, {}, { """{"projects":[]}""" }, sseClients)
         val srv = HttpServer.create(InetSocketAddress(0), 0)
         srv.executor = Executors.newCachedThreadPool()
         srv.createContext("/api/v1/") { ex -> router.handle(ex) }

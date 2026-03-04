@@ -46,7 +46,7 @@ class EventsCommandTest : FunSpec({
         } finally { srv.stop(0) }
     }
 
-    test("events with pipeline id GETs /api/v1/events/{id} and prints SSE data lines") {
+    test("events with project id GETs /api/v1/events/{id} and prints SSE data lines") {
         var path: String? = null
         val (srv, port) = startFakeServer { ex ->
             path = ex.requestURI.path

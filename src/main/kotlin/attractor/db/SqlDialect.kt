@@ -6,8 +6,8 @@ sealed class SqlDialect {
     object Mysql : SqlDialect()
     object Postgresql : SqlDialect()
 
-    fun createPipelineRunsTable(): String = """
-        CREATE TABLE IF NOT EXISTS pipeline_runs (
+    fun createProjectRunsTable(): String = """
+        CREATE TABLE IF NOT EXISTS project_runs (
             id                   VARCHAR(255) PRIMARY KEY,
             file_name            TEXT         NOT NULL,
             dot_source           TEXT         NOT NULL,
@@ -16,12 +16,12 @@ sealed class SqlDialect {
             simulate             INT          NOT NULL DEFAULT 0,
             auto_approve         INT          NOT NULL DEFAULT 1,
             created_at           BIGINT       NOT NULL,
-            pipeline_log         TEXT         NOT NULL DEFAULT '',
+            project_log         TEXT         NOT NULL DEFAULT '',
             archived             INT          NOT NULL DEFAULT 0,
             original_prompt      TEXT         NOT NULL DEFAULT '',
             finished_at          BIGINT       NOT NULL DEFAULT 0,
             display_name         TEXT         NOT NULL DEFAULT '',
-            pipeline_family_id   VARCHAR(255) NOT NULL DEFAULT ''
+            project_family_id   VARCHAR(255) NOT NULL DEFAULT ''
         )
     """.trimIndent()
 
@@ -34,7 +34,7 @@ sealed class SqlDialect {
     }
 
     fun createFamilyIndex(): String =
-        "CREATE INDEX IF NOT EXISTS idx_pipeline_runs_family_created ON pipeline_runs(pipeline_family_id, created_at)"
+        "CREATE INDEX IF NOT EXISTS idx_project_runs_family_created ON project_runs(project_family_id, created_at)"
 
     /** Idempotent insert for initial fireworks_enabled default setting */
     fun insertDefaultSetting(key: String, value: String): String = when (this) {
@@ -64,17 +64,17 @@ sealed class SqlDialect {
 
     /** INSERT that silently skips on duplicate id */
     fun upsertIgnoreRun(): String = when (this) {
-        is Sqlite     -> "INSERT OR IGNORE INTO pipeline_runs (id, file_name, dot_source, status, logs_root, simulate, auto_approve, created_at, original_prompt, display_name, pipeline_family_id) VALUES (?,?,?,'running','',?,?,?,?,?,?)"
-        is Mysql      -> "INSERT IGNORE INTO pipeline_runs (id, file_name, dot_source, status, logs_root, simulate, auto_approve, created_at, original_prompt, display_name, pipeline_family_id) VALUES (?,?,?,'running','',?,?,?,?,?,?)"
-        is Postgresql -> "INSERT INTO pipeline_runs (id, file_name, dot_source, status, logs_root, simulate, auto_approve, created_at, original_prompt, display_name, pipeline_family_id) VALUES (?,?,?,'running','',?,?,?,?,?,?) ON CONFLICT DO NOTHING"
+        is Sqlite     -> "INSERT OR IGNORE INTO project_runs (id, file_name, dot_source, status, logs_root, simulate, auto_approve, created_at, original_prompt, display_name, project_family_id) VALUES (?,?,?,'running','',?,?,?,?,?,?)"
+        is Mysql      -> "INSERT IGNORE INTO project_runs (id, file_name, dot_source, status, logs_root, simulate, auto_approve, created_at, original_prompt, display_name, project_family_id) VALUES (?,?,?,'running','',?,?,?,?,?,?)"
+        is Postgresql -> "INSERT INTO project_runs (id, file_name, dot_source, status, logs_root, simulate, auto_approve, created_at, original_prompt, display_name, project_family_id) VALUES (?,?,?,'running','',?,?,?,?,?,?) ON CONFLICT DO NOTHING"
     }
 
     /** Full-column upsert used by insertOrReplaceImported */
     fun upsertReplaceImported(): String = when (this) {
-        is Sqlite -> "INSERT OR REPLACE INTO pipeline_runs (id, file_name, dot_source, status, logs_root, simulate, auto_approve, created_at, pipeline_log, archived, original_prompt, finished_at, display_name, pipeline_family_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
-        is Mysql  -> "REPLACE INTO pipeline_runs (id, file_name, dot_source, status, logs_root, simulate, auto_approve, created_at, pipeline_log, archived, original_prompt, finished_at, display_name, pipeline_family_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
+        is Sqlite -> "INSERT OR REPLACE INTO project_runs (id, file_name, dot_source, status, logs_root, simulate, auto_approve, created_at, project_log, archived, original_prompt, finished_at, display_name, project_family_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
+        is Mysql  -> "REPLACE INTO project_runs (id, file_name, dot_source, status, logs_root, simulate, auto_approve, created_at, project_log, archived, original_prompt, finished_at, display_name, project_family_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
         is Postgresql -> """
-            INSERT INTO pipeline_runs (id, file_name, dot_source, status, logs_root, simulate, auto_approve, created_at, pipeline_log, archived, original_prompt, finished_at, display_name, pipeline_family_id)
+            INSERT INTO project_runs (id, file_name, dot_source, status, logs_root, simulate, auto_approve, created_at, project_log, archived, original_prompt, finished_at, display_name, project_family_id)
             VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             ON CONFLICT (id) DO UPDATE SET
               file_name          = EXCLUDED.file_name,
@@ -84,12 +84,12 @@ sealed class SqlDialect {
               simulate           = EXCLUDED.simulate,
               auto_approve       = EXCLUDED.auto_approve,
               created_at         = EXCLUDED.created_at,
-              pipeline_log       = EXCLUDED.pipeline_log,
+              project_log       = EXCLUDED.project_log,
               archived           = EXCLUDED.archived,
               original_prompt    = EXCLUDED.original_prompt,
               finished_at        = EXCLUDED.finished_at,
               display_name       = EXCLUDED.display_name,
-              pipeline_family_id = EXCLUDED.pipeline_family_id
+              project_family_id = EXCLUDED.project_family_id
         """.trimIndent()
     }
 

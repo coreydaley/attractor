@@ -22,7 +22,7 @@ class DocsEndpointTest : FunSpec({
     beforeSpec {
         tmpDb = Files.createTempFile("docs-test-", ".db").toFile()
         store = SqliteRunStore(tmpDb!!.absolutePath)
-        server = WebMonitorServer(0, PipelineRegistry(store!!), store!!)
+        server = WebMonitorServer(0, ProjectRegistry(store!!), store!!)
         server!!.start()
         port = server!!.port
     }
@@ -84,16 +84,16 @@ class DocsEndpointTest : FunSpec({
 
     // ── Content completeness markers ──────────────────────────────────────────
 
-    test("GET /docs REST API section contains /api/v1/pipelines") {
-        get("/docs").body() shouldContain "/api/v1/pipelines"
+    test("GET /docs REST API section contains /api/v1/projects") {
+        get("/docs").body() shouldContain "/api/v1/projects"
     }
 
     test("GET /docs REST API section contains POST /api/v1/dot/validate") {
         get("/docs").body() shouldContain "POST /api/v1/dot/validate"
     }
 
-    test("GET /docs CLI section contains attractor pipeline list") {
-        get("/docs").body() shouldContain "attractor pipeline list"
+    test("GET /docs CLI section contains attractor project list") {
+        get("/docs").body() shouldContain "attractor project list"
     }
 
     test("GET /docs CLI section contains attractor dot generate") {

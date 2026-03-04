@@ -32,7 +32,7 @@ class CodergenHandler(val backend: CodergenBackend? = null) : Handler {
         // 1. Set up directories
         val stageDir = File(logsRoot, node.id)
         stageDir.mkdirs()
-        // Shared workspace persists across all stages in a pipeline run
+        // Shared workspace persists across all stages in a project run
         val workspaceDir = File(logsRoot, "workspace")
         workspaceDir.mkdirs()
 
