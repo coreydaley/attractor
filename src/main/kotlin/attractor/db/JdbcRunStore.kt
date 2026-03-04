@@ -37,6 +37,13 @@ class JdbcRunStore(
             stmt.execute(dialect.insertDefaultSetting("fireworks_enabled", "true"))
         }
 
+        // Migration: rename logs/ workspace path prefix → workspace/ (idempotent)
+        runCatching {
+            conn.createStatement().use { stmt ->
+                stmt.execute("UPDATE project_runs SET logs_root = CONCAT('workspace', SUBSTRING(logs_root, 5)) WHERE logs_root LIKE 'logs/%'")
+            }
+        }
+
         // Migrations: add columns that may be missing from older schemas
         // For MySQL/PostgreSQL we use IF NOT EXISTS; for SQLite we rely on runCatching
         listOf(

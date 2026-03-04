@@ -17,6 +17,7 @@ import attractor.human.AutoApproveInterviewer
 import attractor.llm.ClientProvider
 import attractor.transform.StylesheetApplicationTransform
 import attractor.transform.VariableExpansionTransform
+import attractor.workspace.WorkspaceGit
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicLong
 
@@ -127,9 +128,10 @@ object ProjectRunner {
             val rawName = registry.get(id)?.displayName?.takeIf { it.isNotBlank() } ?: graph.id
             val safeName = rawName.replace(Regex("[^A-Za-z0-9_-]"), "-").trim('-').ifBlank { id }
             val logsRoot = registry.get(id)?.logsRoot?.takeIf { it.isNotBlank() }
-                ?: "logs/$safeName"
+                ?: "workspace/$safeName"
             registry.setLogsRoot(id, logsRoot)
             registry.get(id)?.state?.logsRoot = logsRoot
+            WorkspaceGit.init(logsRoot)
 
             // On resume: snapshot completed stages (excluding checkpoint.currentNode, which the
             // engine will re-run) so we can restore them after ProjectStarted clears the list.
@@ -165,7 +167,10 @@ object ProjectRunner {
                 }
                 // Persist terminal statuses and full log to the database
                 when (event) {
-                    is ProjectEvent.ProjectCompleted -> { store.updateStatus(id, "completed"); store.updateLog(id, state.recentLogs.joinToString("\n")); store.updateFinishedAt(id, state.finishedAt.get()) }
+                    is ProjectEvent.ProjectCompleted -> {
+                        store.updateStatus(id, "completed"); store.updateLog(id, state.recentLogs.joinToString("\n")); store.updateFinishedAt(id, state.finishedAt.get())
+                        WorkspaceGit.commitIfChanged(logsRoot, "Run $id completed: ${state.stages.count { it.status == "completed" }} stages")
+                    }
                     is ProjectEvent.ProjectFailed    -> {
                         store.updateStatus(id, "failed")
                         store.updateLog(id, state.recentLogs.joinToString("\n"))
@@ -174,9 +179,16 @@ object ProjectRunner {
                         if (lr.isNotBlank() && java.io.File(lr, "failure_report.json").exists()) {
                             state.hasFailureReport.set(true)
                         }
+                        WorkspaceGit.commitIfChanged(logsRoot, "Run $id failed: ${state.stages.count { it.status == "completed" }} stages completed")
                     }
-                    is ProjectEvent.ProjectCancelled -> { store.updateStatus(id, "cancelled"); store.updateLog(id, state.recentLogs.joinToString("\n")); store.updateFinishedAt(id, state.finishedAt.get()) }
-                    is ProjectEvent.ProjectPaused    -> { store.updateStatus(id, "paused");    store.updateLog(id, state.recentLogs.joinToString("\n")); store.updateFinishedAt(id, state.finishedAt.get()) }
+                    is ProjectEvent.ProjectCancelled -> {
+                        store.updateStatus(id, "cancelled"); store.updateLog(id, state.recentLogs.joinToString("\n")); store.updateFinishedAt(id, state.finishedAt.get())
+                        WorkspaceGit.commitIfChanged(logsRoot, "Run $id cancelled")
+                    }
+                    is ProjectEvent.ProjectPaused    -> {
+                        store.updateStatus(id, "paused");    store.updateLog(id, state.recentLogs.joinToString("\n")); store.updateFinishedAt(id, state.finishedAt.get())
+                        WorkspaceGit.commitIfChanged(logsRoot, "Run $id paused: checkpoint saved")
+                    }
                     else -> {}
                 }
                 when (event) {
@@ -193,12 +205,16 @@ object ProjectRunner {
             store.updateStatus(id, "cancelled")
             store.updateLog(id, state.recentLogs.joinToString("\n"))
             store.updateFinishedAt(id, state.finishedAt.get())
+            val cancelLogsRoot = registry.get(id)?.logsRoot ?: ""
+            if (cancelLogsRoot.isNotBlank()) WorkspaceGit.commitIfChanged(cancelLogsRoot, "Run $id cancelled")
             onUpdate()
         } catch (e: Exception) {
             state.update(ProjectEvent.ProjectFailed(e.message ?: "Unknown error", 0))
             store.updateStatus(id, "failed")
             store.updateLog(id, state.recentLogs.joinToString("\n"))
             store.updateFinishedAt(id, state.finishedAt.get())
+            val failLogsRoot = registry.get(id)?.logsRoot ?: ""
+            if (failLogsRoot.isNotBlank()) WorkspaceGit.commitIfChanged(failLogsRoot, "Run $id failed: ${state.stages.count { it.status == "completed" }} stages completed")
             onUpdate()
         }
     }

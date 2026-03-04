@@ -79,6 +79,12 @@ class SqliteRunStore(dbPath: String) : RunStore {
                 stmt.execute("CREATE INDEX IF NOT EXISTS idx_project_runs_family_created ON project_runs(project_family_id, created_at)")
             }
         }
+        // Migration: rename logs/ workspace path prefix → workspace/ (idempotent)
+        runCatching {
+            conn.createStatement().use { stmt ->
+                stmt.execute("UPDATE project_runs SET logs_root = 'workspace' || SUBSTR(logs_root, 5) WHERE logs_root LIKE 'logs/%'")
+            }
+        }
         conn.createStatement().use { stmt ->
             stmt.execute("""
                 CREATE TABLE IF NOT EXISTS settings (

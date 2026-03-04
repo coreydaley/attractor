@@ -18,3 +18,4 @@ sprint_id	title	status	created_at	updated_at
 017	Dashboard Layout Toggle (Card / List)	completed	2026-03-04T17:24:18Z	2026-03-04T17:29:52Z
 018	Pipeline Completion State Clarity	completed	2026-03-04T17:42:20Z	2026-03-04T17:45:20Z
 019	Rename "Pipeline" → "Project"	completed	2026-03-04T18:10:29Z	2026-03-04T18:32:44Z
+020	Workspace Git Versioning	in_progress	2026-03-04T19:26:15Z	2026-03-04T19:26:48Z

@@ -500,6 +500,7 @@ class RestApiRouter(
             store = store,
             originalPrompt = originalPrompt,
             familyId = entry.familyId,
+            displayNameOverride = entry.displayName,
             onUpdate = onUpdate
         )
         jsonResponse(ex, 201, """{"id":${js(newId)},"status":"running","familyId":${js(entry.familyId)}}""")
