@@ -127,8 +127,9 @@ object ProjectRunner {
 
             val rawName = registry.get(id)?.displayName?.takeIf { it.isNotBlank() } ?: graph.id
             val safeName = rawName.replace(Regex("[^A-Za-z0-9_-]"), "-").trim('-').ifBlank { id }
+            val projectsBase = System.getProperty("attractor.projects.dir", "projects")
             val logsRoot = registry.get(id)?.logsRoot?.takeIf { it.isNotBlank() }
-                ?: "projects/$safeName"
+                ?: "$projectsBase/$safeName"
             registry.setLogsRoot(id, logsRoot)
             registry.get(id)?.state?.logsRoot = logsRoot
             val workspaceDir = "$logsRoot/workspace"

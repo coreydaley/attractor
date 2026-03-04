@@ -777,7 +777,7 @@ class RestApiRouter(
         val logsRoot = if (artifactFiles.isNotEmpty()) {
             val safeName = displayName.ifBlank { fileName.removeSuffix(".dot") }
                 .replace(Regex("[^A-Za-z0-9_-]"), "-").trim('-').ifBlank { newId }
-            val destDir = java.io.File("projects/$safeName")
+            val destDir = java.io.File(System.getProperty("attractor.projects.dir", "projects"), safeName)
             destDir.mkdirs()
             for ((relPath, bytes) in artifactFiles) {
                 val destFile = java.io.File(destDir, relPath)

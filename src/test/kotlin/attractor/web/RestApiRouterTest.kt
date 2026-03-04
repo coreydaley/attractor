@@ -20,12 +20,17 @@ class RestApiRouterTest : FunSpec({
     var httpServer: HttpServer? = null
     var port = 0
     var registry: ProjectRegistry? = null
+    var store: SqliteRunStore? = null
     var tmpDb: java.io.File? = null
+    var tmpProjectsDir: java.io.File? = null
     val client = HttpClient.newHttpClient()
 
     beforeSpec {
         tmpDb = Files.createTempFile("attractor-rest-test-", ".db").toFile()
+        tmpProjectsDir = Files.createTempDirectory("attractor-rest-projects-").toFile()
+        System.setProperty("attractor.projects.dir", tmpProjectsDir!!.absolutePath)
         val s = SqliteRunStore(tmpDb!!.absolutePath)
+        store = s
         val r = ProjectRegistry(s)
         registry = r
         val sseClients = CopyOnWriteArrayList<RestApiRouter.RestSseClient>()
@@ -40,7 +45,10 @@ class RestApiRouterTest : FunSpec({
 
     afterSpec {
         httpServer?.stop(0)
+        store?.close()
         tmpDb?.delete()
+        tmpProjectsDir?.deleteRecursively()
+        System.clearProperty("attractor.projects.dir")
     }
 
     fun get(path: String): HttpResponse<String> {
