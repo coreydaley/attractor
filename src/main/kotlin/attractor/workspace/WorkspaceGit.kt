@@ -118,8 +118,11 @@ object WorkspaceGit {
      * Stages all workspace changes and commits if anything changed.
      * Calls [init] first as a guard (workspace may not have existed at the earlier init call).
      * No-op if git is unavailable, workspace has no .git, or there are no changes to commit.
+     *
+     * [prompt] is appended as the commit body (blank line + text) when non-blank, truncated to
+     * 4000 characters so the commit message stays reasonable in size.
      */
-    fun commitIfChanged(dir: String, message: String) {
+    fun commitIfChanged(dir: String, message: String, prompt: String = "") {
         if (!gitAvailable) return
         init(dir)
         val f = File(dir)
@@ -133,7 +136,13 @@ object WorkspaceGit {
             val statusOut = statusProc.inputStream.bufferedReader().readText().trim()
             statusProc.waitFor(10, TimeUnit.SECONDS)
             if (statusOut.isEmpty()) return
-            ProcessBuilder("git", "commit", "-m", message)
+            val fullMessage = if (prompt.isNotBlank()) {
+                val truncated = prompt.trim().take(4000)
+                "$message\n\n$truncated"
+            } else {
+                message
+            }
+            ProcessBuilder("git", "commit", "-m", fullMessage)
                 .directory(f).redirectErrorStream(true).start()
                 .waitFor(30, TimeUnit.SECONDS)
         }

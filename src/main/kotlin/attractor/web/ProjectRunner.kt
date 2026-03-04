@@ -131,7 +131,8 @@ object ProjectRunner {
                 ?: "workspace/$safeName"
             registry.setLogsRoot(id, logsRoot)
             registry.get(id)?.state?.logsRoot = logsRoot
-            WorkspaceGit.init(logsRoot)
+            val workspaceDir = "$logsRoot/workspace"
+            WorkspaceGit.init(workspaceDir)
 
             // On resume: snapshot completed stages (excluding checkpoint.currentNode, which the
             // engine will re-run) so we can restore them after ProjectStarted clears the list.
@@ -166,10 +167,11 @@ object ProjectRunner {
                     state.stages.addAll(0, stagesToRestore)
                 }
                 // Persist terminal statuses and full log to the database
+                val prompt = registry.get(id)?.originalPrompt ?: ""
                 when (event) {
                     is ProjectEvent.ProjectCompleted -> {
                         store.updateStatus(id, "completed"); store.updateLog(id, state.recentLogs.joinToString("\n")); store.updateFinishedAt(id, state.finishedAt.get())
-                        WorkspaceGit.commitIfChanged(logsRoot, "Run $id completed: ${state.stages.count { it.status == "completed" }} stages")
+                        WorkspaceGit.commitIfChanged(workspaceDir, "Run $id completed: ${state.stages.count { it.status == "completed" }} stages", prompt)
                     }
                     is ProjectEvent.ProjectFailed    -> {
                         store.updateStatus(id, "failed")
@@ -179,15 +181,15 @@ object ProjectRunner {
                         if (lr.isNotBlank() && java.io.File(lr, "failure_report.json").exists()) {
                             state.hasFailureReport.set(true)
                         }
-                        WorkspaceGit.commitIfChanged(logsRoot, "Run $id failed: ${state.stages.count { it.status == "completed" }} stages completed")
+                        WorkspaceGit.commitIfChanged(workspaceDir, "Run $id failed: ${state.stages.count { it.status == "completed" }} stages completed", prompt)
                     }
                     is ProjectEvent.ProjectCancelled -> {
                         store.updateStatus(id, "cancelled"); store.updateLog(id, state.recentLogs.joinToString("\n")); store.updateFinishedAt(id, state.finishedAt.get())
-                        WorkspaceGit.commitIfChanged(logsRoot, "Run $id cancelled")
+                        WorkspaceGit.commitIfChanged(workspaceDir, "Run $id cancelled", prompt)
                     }
                     is ProjectEvent.ProjectPaused    -> {
                         store.updateStatus(id, "paused");    store.updateLog(id, state.recentLogs.joinToString("\n")); store.updateFinishedAt(id, state.finishedAt.get())
-                        WorkspaceGit.commitIfChanged(logsRoot, "Run $id paused: checkpoint saved")
+                        WorkspaceGit.commitIfChanged(workspaceDir, "Run $id paused: checkpoint saved", prompt)
                     }
                     else -> {}
                 }
@@ -206,7 +208,8 @@ object ProjectRunner {
             store.updateLog(id, state.recentLogs.joinToString("\n"))
             store.updateFinishedAt(id, state.finishedAt.get())
             val cancelLogsRoot = registry.get(id)?.logsRoot ?: ""
-            if (cancelLogsRoot.isNotBlank()) WorkspaceGit.commitIfChanged(cancelLogsRoot, "Run $id cancelled")
+            val cancelPrompt = registry.get(id)?.originalPrompt ?: ""
+            if (cancelLogsRoot.isNotBlank()) WorkspaceGit.commitIfChanged("$cancelLogsRoot/workspace", "Run $id cancelled", cancelPrompt)
             onUpdate()
         } catch (e: Exception) {
             state.update(ProjectEvent.ProjectFailed(e.message ?: "Unknown error", 0))
@@ -214,7 +217,8 @@ object ProjectRunner {
             store.updateLog(id, state.recentLogs.joinToString("\n"))
             store.updateFinishedAt(id, state.finishedAt.get())
             val failLogsRoot = registry.get(id)?.logsRoot ?: ""
-            if (failLogsRoot.isNotBlank()) WorkspaceGit.commitIfChanged(failLogsRoot, "Run $id failed: ${state.stages.count { it.status == "completed" }} stages completed")
+            val failPrompt = registry.get(id)?.originalPrompt ?: ""
+            if (failLogsRoot.isNotBlank()) WorkspaceGit.commitIfChanged("$failLogsRoot/workspace", "Run $id failed: ${state.stages.count { it.status == "completed" }} stages completed", failPrompt)
             onUpdate()
         }
     }
