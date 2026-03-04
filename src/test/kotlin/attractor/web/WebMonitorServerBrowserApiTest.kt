@@ -245,4 +245,31 @@ class WebMonitorServerBrowserApiTest : FunSpec({
         val resp = get("/api/v1/pipelines")
         resp.statusCode() shouldBe 404
     }
+
+    // ── Sprint 021: Git History Panel ────────────────────────────────────────
+
+    test("GET / body contains loadGitInfo JS function") {
+        val resp = get("/")
+        resp.body() shouldContain "loadGitInfo"
+    }
+
+    test("GET / body contains renderGitBar JS function") {
+        val resp = get("/")
+        resp.body() shouldContain "renderGitBar"
+    }
+
+    test("GET / body contains toggleGitPanel JS function") {
+        val resp = get("/")
+        resp.body() shouldContain "toggleGitPanel"
+    }
+
+    test("GET / body contains git-bar CSS class") {
+        val resp = get("/")
+        resp.body() shouldContain "git-bar"
+    }
+
+    test("GET / body contains gitPanel DOM id") {
+        val resp = get("/")
+        resp.body() shouldContain "gitPanel"
+    }
 })

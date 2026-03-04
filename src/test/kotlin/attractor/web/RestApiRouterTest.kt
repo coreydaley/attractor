@@ -376,6 +376,41 @@ class RestApiRouterTest : FunSpec({
         resp.body().trimStart() shouldContain "["
     }
 
+    // ── Git endpoint ─────────────────────────────────────────────────────────
+
+    test("GET /api/v1/projects/{id}/git returns 404 for unknown id") {
+        val resp = get("/projects/nonexistent-git-project/git")
+        resp.statusCode() shouldBe 404
+    }
+
+    test("GET /api/v1/projects/{id}/git returns 200 with application/json for known id") {
+        registry!!.register("git-test-run", "git.dot", "digraph G { start [shape=Mdiamond] exit [shape=Msquare] start -> exit }", familyId = "git-family-1")
+        val resp = get("/projects/git-test-run/git")
+        resp.statusCode() shouldBe 200
+        resp.headers().firstValue("content-type").orElse("") shouldContain "application/json"
+    }
+
+    test("GET /api/v1/projects/{id}/git response body contains 'available' key") {
+        registry!!.register("git-test-run-2", "git2.dot", "digraph G2 { start [shape=Mdiamond] exit [shape=Msquare] start -> exit }", familyId = "git-family-2")
+        val resp = get("/projects/git-test-run-2/git")
+        resp.statusCode() shouldBe 200
+        resp.body() shouldContain "\"available\""
+    }
+
+    test("GET /api/v1/projects/{id}/git response body contains 'commitCount' key") {
+        registry!!.register("git-test-run-3", "git3.dot", "digraph G3 { start [shape=Mdiamond] exit [shape=Msquare] start -> exit }", familyId = "git-family-3")
+        val resp = get("/projects/git-test-run-3/git")
+        resp.statusCode() shouldBe 200
+        resp.body() shouldContain "\"commitCount\""
+    }
+
+    test("GET /api/v1/projects/{id}/git response body contains 'recent' key") {
+        registry!!.register("git-test-run-4", "git4.dot", "digraph G4 { start [shape=Mdiamond] exit [shape=Msquare] start -> exit }", familyId = "git-family-4")
+        val resp = get("/projects/git-test-run-4/git")
+        resp.statusCode() shouldBe 200
+        resp.body() shouldContain "\"recent\""
+    }
+
     test("POST /api/v1/projects/{id}/rerun on idle project returns 200") {
         registry!!.register("rerun-test-run", "rerun.dot", "digraph Re { start [shape=Mdiamond] exit [shape=Msquare] start -> exit }", familyId = "rerun-family-1")
         val resp = post("/projects/rerun-test-run/rerun", "")

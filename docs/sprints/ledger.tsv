@@ -19,3 +19,4 @@ sprint_id	title	status	created_at	updated_at
 018	Pipeline Completion State Clarity	completed	2026-03-04T17:42:20Z	2026-03-04T17:45:20Z
 019	Rename "Pipeline" → "Project"	completed	2026-03-04T18:10:29Z	2026-03-04T18:32:44Z
 020	Workspace Git Versioning	completed	2026-03-04T19:26:15Z	2026-03-04T19:31:50Z
+021	Project Git History Panel	in_progress	2026-03-04T20:18:37Z	2026-03-04T20:19:06Z

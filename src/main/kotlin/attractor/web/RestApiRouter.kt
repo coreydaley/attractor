@@ -1,16 +1,17 @@
 package attractor.web
 
 import attractor.db.RunStore
+import attractor.db.StoredRun
 import attractor.dot.Parser
 import attractor.lint.Validator
 import attractor.llm.ModelCatalog
+import attractor.workspace.WorkspaceGit
 import com.sun.net.httpserver.HttpExchange
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
-import java.io.ByteArrayOutputStream
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.TimeUnit
@@ -139,10 +140,6 @@ class RestApiRouter(
                 method == "DELETE" && segments.size == 2 && segments[0] == "projects" ->
                     handleDeleteProject(ex, segments[1])
 
-                // GET /api/v1/projects/{id}/artifacts.zip
-                method == "GET" && segments.size == 3 && segments[0] == "projects" && segments[2] == "artifacts.zip" ->
-                    handleDownloadArtifactsZip(ex, segments[1])
-
                 // GET /api/v1/projects/{id}/artifacts  (list)
                 method == "GET" && segments.size == 3 && segments[0] == "projects" && segments[2] == "artifacts" ->
                     handleListArtifacts(ex, segments[1])
@@ -174,6 +171,10 @@ class RestApiRouter(
                 // GET /api/v1/projects/{id}/family
                 method == "GET" && segments.size == 3 && segments[0] == "projects" && segments[2] == "family" ->
                     handleGetFamily(ex, segments[1])
+
+                // GET /api/v1/projects/{id}/git
+                method == "GET" && segments.size == 3 && segments[0] == "projects" && segments[2] == "git" ->
+                    handleGetProjectGit(ex, segments[1])
 
                 // POST /api/v1/projects/{id}/iterations
                 method == "POST" && segments.size == 3 && segments[0] == "projects" && segments[2] == "iterations" ->
@@ -529,6 +530,24 @@ class RestApiRouter(
         jsonResponse(ex, 200, """{"familyId":${js(entry.familyId)},"members":$sb}""")
     }
 
+    private fun handleGetProjectGit(ex: HttpExchange, id: String) {
+        val entry = registry.getOrHydrate(id, store)
+            ?: run { errorResponse(ex, 404, "project not found", "NOT_FOUND"); return }
+        val workspaceDir = "${entry.logsRoot.trimEnd('/')}/workspace"
+        val git = WorkspaceGit.summary(workspaceDir)
+
+        val lastCommitJson = if (git.lastCommit != null) {
+            val c = git.lastCommit
+            """{"hash":${js(c.hash)},"shortHash":${js(c.shortHash)},"subject":${js(c.subject)},"date":${js(c.date)}}"""
+        } else "null"
+
+        val recentJson = git.recent.joinToString(",") { c ->
+            """{"hash":${js(c.hash)},"shortHash":${js(c.shortHash)},"subject":${js(c.subject)},"date":${js(c.date)}}"""
+        }
+
+        jsonResponse(ex, 200, """{"available":${git.available},"repoExists":${git.repoExists},"branch":${js(git.branch)},"commitCount":${git.commitCount},"lastCommit":$lastCommitJson,"dirty":${git.dirty},"trackedFiles":${git.trackedFiles},"recent":[$recentJson]}""")
+    }
+
     private fun handleGetStages(ex: HttpExchange, id: String) {
         val entry = registry.getOrHydrate(id, store)
             ?: run { errorResponse(ex, 404, "project not found", "NOT_FOUND"); return }
@@ -602,35 +621,6 @@ class RestApiRouter(
         ex.responseBody.use { it.write(bytes) }
     }
 
-    private fun handleDownloadArtifactsZip(ex: HttpExchange, id: String) {
-        val entry = registry.getOrHydrate(id, store)
-            ?: run { errorResponse(ex, 404, "project not found", "NOT_FOUND"); return }
-        val logsRoot = entry.logsRoot
-        if (logsRoot.isBlank()) {
-            errorResponse(ex, 404, "no artifacts available", "NOT_FOUND"); return
-        }
-        val rootFile = java.io.File(logsRoot)
-        if (!rootFile.exists()) {
-            errorResponse(ex, 404, "artifacts directory not found", "NOT_FOUND"); return
-        }
-        val safeName = entry.displayName.ifEmpty { entry.fileName }
-            .replace(Regex("[^a-zA-Z0-9_.-]"), "_")
-        ex.responseHeaders.add("Content-Type", "application/zip")
-        ex.responseHeaders.add("Content-Disposition", "attachment; filename=\"artifacts-$safeName.zip\"")
-        ex.responseHeaders.add("Access-Control-Allow-Origin", "*")
-        ex.sendResponseHeaders(200, 0)
-        try {
-            ZipOutputStream(ex.responseBody).use { zip ->
-                rootFile.walkTopDown().filter { it.isFile }.forEach { file ->
-                    val entryName = rootFile.toPath().relativize(file.toPath()).toString()
-                    zip.putNextEntry(ZipEntry(entryName))
-                    file.inputStream().use { it.copyTo(zip) }
-                    zip.closeEntry()
-                }
-            }
-        } catch (_: Exception) { /* client disconnected */ }
-    }
-
     private fun handleGetStageLog(ex: HttpExchange, id: String, nodeId: String) {
         val entry = registry.getOrHydrate(id, store)
             ?: run { errorResponse(ex, 404, "project not found", "NOT_FOUND"); return }
@@ -673,22 +663,52 @@ class RestApiRouter(
     // ── Import / Export ───────────────────────────────────────────────────────
 
     private fun handleExportProject(ex: HttpExchange, id: String) {
-        val entry = registry.getOrHydrate(id, store)
+        val run = store.getById(id)
             ?: run { errorResponse(ex, 404, "project not found", "NOT_FOUND"); return }
-        val meta = """{"id":${js(entry.id)},"fileName":${js(entry.fileName)},"dotSource":${js(entry.dotSource)},"originalPrompt":${js(entry.originalPrompt)},"familyId":${js(entry.familyId)},"simulate":${entry.options.simulate},"autoApprove":${entry.options.autoApprove}}"""
-        val metaBytes = meta.toByteArray(Charsets.UTF_8)
-        val baos = ByteArrayOutputStream()
-        ZipOutputStream(baos).use { zip ->
-            zip.putNextEntry(ZipEntry("project-meta.json"))
-            zip.write(metaBytes)
-            zip.closeEntry()
+        val meta = buildString {
+            append("{")
+            append("\"id\":${js(run.id)},")
+            append("\"fileName\":${js(run.fileName)},")
+            append("\"dotSource\":${js(run.dotSource)},")
+            append("\"status\":${js(run.status)},")
+            append("\"simulate\":${run.simulate},")
+            append("\"autoApprove\":${run.autoApprove},")
+            append("\"createdAt\":${run.createdAt},")
+            append("\"projectLog\":${js(run.projectLog)},")
+            append("\"archived\":${run.archived},")
+            append("\"originalPrompt\":${js(run.originalPrompt)},")
+            append("\"finishedAt\":${run.finishedAt},")
+            append("\"displayName\":${js(run.displayName)},")
+            append("\"familyId\":${js(run.familyId)}")
+            append("}")
         }
-        val zipBytes = baos.toByteArray()
+        val metaBytes = meta.toByteArray(Charsets.UTF_8)
+        val safeName = run.displayName.ifBlank { run.fileName.removeSuffix(".dot") }
+            .replace(Regex("[^a-zA-Z0-9_.-]"), "_")
+        val idSuffix = run.id.takeLast(8)
         ex.responseHeaders.add("Content-Type", "application/zip")
-        ex.responseHeaders.add("Content-Disposition", "attachment; filename=\"project-${entry.id}.zip\"")
+        ex.responseHeaders.add("Content-Disposition", "attachment; filename=\"project-$safeName-$idSuffix.zip\"")
         ex.responseHeaders.add("Access-Control-Allow-Origin", "*")
-        ex.sendResponseHeaders(200, zipBytes.size.toLong())
-        ex.responseBody.use { it.write(zipBytes) }
+        ex.sendResponseHeaders(200, 0)
+        try {
+            ZipOutputStream(ex.responseBody).use { zip ->
+                zip.putNextEntry(ZipEntry("project-meta.json"))
+                zip.write(metaBytes)
+                zip.closeEntry()
+                val logsRoot = run.logsRoot
+                if (logsRoot.isNotBlank()) {
+                    val rootFile = java.io.File(logsRoot)
+                    if (rootFile.exists()) {
+                        rootFile.walkTopDown().filter { it.isFile }.forEach { file ->
+                            val entryName = "artifacts/" + rootFile.toPath().relativize(file.toPath()).toString()
+                            zip.putNextEntry(ZipEntry(entryName))
+                            file.inputStream().use { it.copyTo(zip) }
+                            zip.closeEntry()
+                        }
+                    }
+                }
+            }
+        } catch (_: Exception) { /* client disconnected */ }
     }
 
     private fun handleImportProject(ex: HttpExchange) {
@@ -700,12 +720,19 @@ class RestApiRouter(
             errorResponse(ex, 400, "failed to read request body", "BAD_REQUEST"); return
         }
         var metaText: String? = null
+        val artifactFiles = mutableMapOf<String, ByteArray>()
         try {
             ZipInputStream(bodyBytes.inputStream()).use { zis ->
                 var zipEntry = zis.nextEntry
                 while (zipEntry != null) {
-                    if (zipEntry.name.trimStart('/') == "project-meta.json") {
-                        metaText = zis.readBytes().toString(Charsets.UTF_8)
+                    val name = zipEntry.name.trimStart('/')
+                    when {
+                        name == "project-meta.json" ->
+                            metaText = zis.readBytes().toString(Charsets.UTF_8)
+                        name.startsWith("artifacts/") && !zipEntry.isDirectory -> {
+                            val relPath = name.removePrefix("artifacts/")
+                            if (relPath.isNotBlank()) artifactFiles[relPath] = zis.readBytes()
+                        }
                     }
                     zis.closeEntry()
                     zipEntry = zis.nextEntry
@@ -727,9 +754,6 @@ class RestApiRouter(
         if (fileName.isBlank() || dotSource.isBlank()) {
             errorResponse(ex, 400, "missing required field(s) in project-meta.json: fileName, dotSource", "BAD_REQUEST"); return
         }
-        val simulate = meta["simulate"]?.jsonPrimitive?.booleanOrNull ?: false
-        val autoApprove = meta["autoApprove"]?.jsonPrimitive?.booleanOrNull ?: true
-        val originalPrompt = meta["originalPrompt"]?.jsonPrimitive?.contentOrNull ?: ""
         val importFamilyId = meta["familyId"]?.jsonPrimitive?.contentOrNull ?: ""
         if (onConflict == "skip") {
             val existing = registry.get(importFamilyId) ?: registry.getOrHydrate(importFamilyId, store)
@@ -737,17 +761,47 @@ class RestApiRouter(
                 jsonResponse(ex, 200, """{"status":"skipped","id":${js(importFamilyId)}}"""); return
             }
         }
-        val newId = ProjectRunner.submit(
-            dotSource = dotSource,
-            fileName = fileName,
-            options = RunOptions(simulate = simulate, autoApprove = autoApprove),
-            registry = registry,
-            store = store,
+        val newId          = java.util.UUID.randomUUID().toString()
+        val simulate       = meta["simulate"]?.jsonPrimitive?.booleanOrNull ?: false
+        val autoApprove    = meta["autoApprove"]?.jsonPrimitive?.booleanOrNull ?: true
+        val originalPrompt = meta["originalPrompt"]?.jsonPrimitive?.contentOrNull ?: ""
+        val status         = meta["status"]?.jsonPrimitive?.contentOrNull?.ifBlank { "completed" } ?: "completed"
+        val createdAt      = meta["createdAt"]?.jsonPrimitive?.content?.toLongOrNull() ?: System.currentTimeMillis()
+        val projectLog     = meta["projectLog"]?.jsonPrimitive?.contentOrNull ?: ""
+        val archived       = meta["archived"]?.jsonPrimitive?.booleanOrNull ?: false
+        val finishedAt     = meta["finishedAt"]?.jsonPrimitive?.content?.toLongOrNull() ?: 0L
+        val displayName    = meta["displayName"]?.jsonPrimitive?.contentOrNull ?: ""
+        val logsRoot = if (artifactFiles.isNotEmpty()) {
+            val safeName = displayName.ifBlank { fileName.removeSuffix(".dot") }
+                .replace(Regex("[^A-Za-z0-9_-]"), "-").trim('-').ifBlank { newId }
+            val destDir = java.io.File("workspace/$safeName")
+            destDir.mkdirs()
+            for ((relPath, bytes) in artifactFiles) {
+                val destFile = java.io.File(destDir, relPath)
+                destFile.parentFile?.mkdirs()
+                destFile.writeBytes(bytes)
+            }
+            destDir.path
+        } else ""
+        val run = StoredRun(
+            id             = newId,
+            fileName       = fileName,
+            dotSource      = dotSource,
+            status         = if (status == "running") "failed" else status,
+            logsRoot       = logsRoot,
+            simulate       = simulate,
+            autoApprove    = autoApprove,
+            createdAt      = createdAt,
+            projectLog     = projectLog,
+            archived       = archived,
             originalPrompt = originalPrompt,
-            familyId = importFamilyId,
-            onUpdate = onUpdate
+            finishedAt     = finishedAt,
+            displayName    = displayName,
+            familyId       = importFamilyId.ifBlank { newId }
         )
-        jsonResponse(ex, 201, """{"status":"started","id":${js(newId)}}""")
+        store.insertOrReplaceImported(run)
+        registry.upsertImported(run)
+        jsonResponse(ex, 201, """{"status":"imported","id":${js(newId)}}""")
     }
 
     // ── DOT Operations ────────────────────────────────────────────────────────
@@ -1146,7 +1200,7 @@ class RestApiRouter(
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Corey's Attractor — API Docs</title>
+  <title>Attractor — API Docs</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <link rel="stylesheet" href="https://unpkg.com/swagger-ui-dist@5/swagger-ui.css">
   <style>body { margin: 0; }</style>

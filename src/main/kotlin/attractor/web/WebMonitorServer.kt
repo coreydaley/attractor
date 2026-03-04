@@ -955,55 +955,6 @@ class WebMonitorServer(private val requestedPort: Int, private val registry: Pro
             ex.responseBody.use { it.write(bytes) }
         }
 
-        // ── Download artifacts as ZIP ────────────────────────────────────────
-        // GET /api/download-artifacts?id={projectId}
-        // Zips the entire logsRoot directory (workspace files + stage planning docs).
-        httpServer.createContext("/api/download-artifacts") { ex ->
-            ex.responseHeaders.add("Access-Control-Allow-Origin", "*")
-            if (ex.requestMethod != "GET") {
-                ex.sendResponseHeaders(405, 0); ex.responseBody.close(); return@createContext
-            }
-            val query = ex.requestURI.query ?: ""
-            val params = query.split("&").associate { p ->
-                val kv = p.split("=", limit = 2)
-                (kv.getOrElse(0) { "" }) to java.net.URLDecoder.decode(kv.getOrElse(1) { "" }, "UTF-8")
-            }
-            val projectId = params["id"] ?: ""
-            val entry = registry.get(projectId)
-            val logsRoot = entry?.logsRoot ?: ""
-            if (projectId.isBlank() || entry == null || logsRoot.isBlank()) {
-                val msg = "No artifacts available".toByteArray(Charsets.UTF_8)
-                ex.responseHeaders.add("Content-Type", "text/plain; charset=utf-8")
-                ex.sendResponseHeaders(404, msg.size.toLong())
-                ex.responseBody.use { it.write(msg) }
-                return@createContext
-            }
-            val artifactRoot = java.io.File(logsRoot)
-            val files = artifactRoot.walkTopDown().filter { it.isFile }.toList()
-            if (files.isEmpty()) {
-                val msg = "No files found for this project run".toByteArray(Charsets.UTF_8)
-                ex.responseHeaders.add("Content-Type", "text/plain; charset=utf-8")
-                ex.sendResponseHeaders(404, msg.size.toLong())
-                ex.responseBody.use { it.write(msg) }
-                return@createContext
-            }
-            val safeName = (entry.state.projectName.get().ifEmpty { entry.fileName })
-                .replace(Regex("[^a-zA-Z0-9_.-]"), "_")
-            ex.responseHeaders.add("Content-Type", "application/zip")
-            ex.responseHeaders.add("Content-Disposition", "attachment; filename=\"artifacts-$safeName.zip\"")
-            ex.sendResponseHeaders(200, 0)
-            try {
-                java.util.zip.ZipOutputStream(ex.responseBody).use { zip ->
-                    files.forEach { file ->
-                        val entryName = artifactRoot.toPath().relativize(file.toPath()).toString()
-                        zip.putNextEntry(java.util.zip.ZipEntry(entryName))
-                        file.inputStream().use { it.copyTo(zip) }
-                        zip.closeEntry()
-                    }
-                }
-            } catch (_: Exception) { /* client disconnected */ }
-        }
-
         // ── Export a project run as a self-contained ZIP ────────────────────
         // GET /api/export-run?id={projectId}
         httpServer.createContext("/api/export-run") { ex ->
@@ -1035,15 +986,22 @@ class WebMonitorServer(private val requestedPort: Int, private val registry: Pro
             }
             val metaJson = buildString {
                 append("{")
+                append("\"id\":${js(run.id)},")
                 append("\"fileName\":${js(run.fileName)},")
                 append("\"dotSource\":${js(run.dotSource)},")
-                append("\"originalPrompt\":${js(run.originalPrompt)},")
-                append("\"familyId\":${js(run.familyId)},")
+                append("\"status\":${js(run.status)},")
                 append("\"simulate\":${run.simulate},")
-                append("\"autoApprove\":${run.autoApprove}")
+                append("\"autoApprove\":${run.autoApprove},")
+                append("\"createdAt\":${run.createdAt},")
+                append("\"projectLog\":${js(run.projectLog)},")
+                append("\"archived\":${run.archived},")
+                append("\"originalPrompt\":${js(run.originalPrompt)},")
+                append("\"finishedAt\":${run.finishedAt},")
+                append("\"displayName\":${js(run.displayName)},")
+                append("\"familyId\":${js(run.familyId)}")
                 append("}")
             }
-            val safeName = (entry.state.projectName.get().ifEmpty { entry.fileName })
+            val safeName = (run.displayName.ifBlank { run.fileName.removeSuffix(".dot") })
                 .replace(Regex("[^a-zA-Z0-9_.-]"), "_")
             val idSuffix = projectId.takeLast(8)
             ex.responseHeaders.add("Content-Type", "application/zip")
@@ -1054,6 +1012,18 @@ class WebMonitorServer(private val requestedPort: Int, private val registry: Pro
                     zip.putNextEntry(java.util.zip.ZipEntry("project-meta.json"))
                     zip.write(metaJson.toByteArray(Charsets.UTF_8))
                     zip.closeEntry()
+                    val logsRoot = run.logsRoot
+                    if (logsRoot.isNotBlank()) {
+                        val rootFile = java.io.File(logsRoot)
+                        if (rootFile.exists()) {
+                            rootFile.walkTopDown().filter { it.isFile }.forEach { file ->
+                                val entryName = "artifacts/" + rootFile.toPath().relativize(file.toPath()).toString()
+                                zip.putNextEntry(java.util.zip.ZipEntry(entryName))
+                                file.inputStream().use { it.copyTo(zip) }
+                                zip.closeEntry()
+                            }
+                        }
+                    }
                 }
             } catch (_: Exception) { /* client disconnected */ }
         }
@@ -1071,24 +1041,32 @@ class WebMonitorServer(private val requestedPort: Int, private val registry: Pro
                 ex.sendResponseHeaders(405, 0); ex.responseBody.close(); return@createContext
             }
             try {
-                val metaText = try {
-                    val tempDir = java.nio.file.Files.createTempDirectory("attractor-import-").toFile()
-                    var text: String? = null
-                    try {
-                        java.util.zip.ZipInputStream(ex.requestBody).use { zis ->
-                            var zipEntry = zis.nextEntry
-                            while (zipEntry != null) {
-                                if (zipEntry.name.trimStart('/') == "project-meta.json") {
-                                    text = zis.readBytes().toString(Charsets.UTF_8)
+                val query = ex.requestURI.query ?: ""
+                val params = query.split("&").associate { p ->
+                    val kv = p.split("=", limit = 2)
+                    (kv.getOrElse(0) { "" }) to java.net.URLDecoder.decode(kv.getOrElse(1) { "" }, "UTF-8")
+                }
+                val onConflict = params["onConflict"] ?: "skip"
+
+                var metaText: String? = null
+                val artifactFiles = mutableMapOf<String, ByteArray>()
+                try {
+                    java.util.zip.ZipInputStream(ex.requestBody).use { zis ->
+                        var zipEntry = zis.nextEntry
+                        while (zipEntry != null) {
+                            val name = zipEntry.name.trimStart('/')
+                            when {
+                                name == "project-meta.json" ->
+                                    metaText = zis.readBytes().toString(Charsets.UTF_8)
+                                name.startsWith("artifacts/") && !zipEntry.isDirectory -> {
+                                    val relPath = name.removePrefix("artifacts/")
+                                    if (relPath.isNotBlank()) artifactFiles[relPath] = zis.readBytes()
                                 }
-                                zis.closeEntry()
-                                zipEntry = zis.nextEntry
                             }
+                            zis.closeEntry()
+                            zipEntry = zis.nextEntry
                         }
-                    } finally {
-                        tempDir.deleteRecursively()
                     }
-                    text
                 } catch (e: Exception) {
                     val err = """{"error":"Invalid or corrupt zip: ${e.message?.take(120)?.replace("\"", "'")}"}""".toByteArray()
                     ex.responseHeaders.add("Content-Type", "application/json")
@@ -1105,8 +1083,8 @@ class WebMonitorServer(private val requestedPort: Int, private val registry: Pro
                     return@createContext
                 }
 
-                val fileName  = jsonField(metaText, "fileName")
-                val dotSource = jsonField(metaText, "dotSource")
+                val fileName  = jsonField(metaText!!, "fileName")
+                val dotSource = jsonField(metaText!!, "dotSource")
                 if (fileName.isBlank() || dotSource.isBlank()) {
                     val err = """{"error":"Missing required field(s) in project-meta.json: fileName, dotSource"}""".toByteArray()
                     ex.responseHeaders.add("Content-Type", "application/json")
@@ -1115,23 +1093,63 @@ class WebMonitorServer(private val requestedPort: Int, private val registry: Pro
                     return@createContext
                 }
 
-                val simulate       = jsonBool(metaText, "simulate")
-                val autoApprove    = jsonBool(metaText, "autoApprove", default = true)
-                val originalPrompt = jsonField(metaText, "originalPrompt")
-                val importFamilyId = jsonField(metaText, "familyId")
+                val importFamilyId = jsonField(metaText!!, "familyId")
+                if (onConflict == "skip") {
+                    val existing = registry.get(importFamilyId)
+                    if (existing != null) {
+                        val resp = """{"status":"skipped","id":${js(importFamilyId)}}""".toByteArray()
+                        ex.responseHeaders.add("Content-Type", "application/json")
+                        ex.sendResponseHeaders(200, resp.size.toLong())
+                        ex.responseBody.use { it.write(resp) }
+                        return@createContext
+                    }
+                }
 
-                val newId = ProjectRunner.submit(
-                    dotSource      = dotSource,
+                val newId          = java.util.UUID.randomUUID().toString()
+                val simulate       = jsonBool(metaText!!, "simulate")
+                val autoApprove    = jsonBool(metaText!!, "autoApprove", default = true)
+                val originalPrompt = jsonField(metaText!!, "originalPrompt")
+                val status         = jsonField(metaText!!, "status").ifBlank { "completed" }
+                val createdAt      = jsonLong(metaText!!, "createdAt", default = System.currentTimeMillis())
+                val projectLog     = jsonField(metaText!!, "projectLog")
+                val archived       = jsonBool(metaText!!, "archived")
+                val finishedAt     = jsonLong(metaText!!, "finishedAt")
+                val displayName    = jsonField(metaText!!, "displayName")
+
+                val logsRoot = if (artifactFiles.isNotEmpty()) {
+                    val safeName = displayName.ifBlank { fileName.removeSuffix(".dot") }
+                        .replace(Regex("[^A-Za-z0-9_-]"), "-").trim('-').ifBlank { newId }
+                    val destDir = java.io.File("workspace/$safeName")
+                    destDir.mkdirs()
+                    for ((relPath, bytes) in artifactFiles) {
+                        val destFile = java.io.File(destDir, relPath)
+                        destFile.parentFile?.mkdirs()
+                        destFile.writeBytes(bytes)
+                    }
+                    destDir.path
+                } else ""
+
+                val run = attractor.db.StoredRun(
+                    id             = newId,
                     fileName       = fileName,
-                    options        = RunOptions(simulate = simulate, autoApprove = autoApprove),
-                    registry       = registry,
-                    store          = store,
+                    dotSource      = dotSource,
+                    status         = if (status == "running") "failed" else status,
+                    logsRoot       = logsRoot,
+                    simulate       = simulate,
+                    autoApprove    = autoApprove,
+                    createdAt      = createdAt,
+                    projectLog     = projectLog,
+                    archived       = archived,
                     originalPrompt = originalPrompt,
-                    familyId       = importFamilyId,
-                    onUpdate       = { broadcastUpdate() }
+                    finishedAt     = finishedAt,
+                    displayName    = displayName,
+                    familyId       = importFamilyId.ifBlank { newId }
                 )
-                println("[attractor] Project imported and started: $newId ($fileName)")
-                val resp = """{"status":"started","id":${js(newId)}}""".toByteArray()
+                store.insertOrReplaceImported(run)
+                registry.upsertImported(run)
+                broadcastUpdate()
+                println("[attractor] Project imported (restored): $newId ($fileName)")
+                val resp = """{"status":"imported","id":${js(newId)}}""".toByteArray()
                 ex.responseHeaders.add("Content-Type", "application/json")
                 ex.sendResponseHeaders(200, resp.size.toLong())
                 ex.responseBody.use { it.write(resp) }
@@ -1401,7 +1419,7 @@ window.onload = function() {
 make run
 
 # Via JAR directly
-java -jar coreys-attractor-*.jar --web-port 7070</code></pre>
+java -jar attractor-server-*.jar --web-port 7070</code></pre>
 <p><strong>Open the UI:</strong> <a href="/" target="_blank">http://localhost:7070</a></p>
 
 <h2>Navigation</h2>
@@ -1423,14 +1441,14 @@ java -jar coreys-attractor-*.jar --web-port 7070</code></pre>
 <li>Click <strong>Generate</strong> — the LLM produces a DOT graph</li>
 <li>Review the graph in the preview pane (toggle between Source and Graph views)</li>
 <li>Optionally click <strong>Iterate</strong> to refine the project via LLM</li>
-<li>Click <strong>Run Project</strong></li>
+<li>Click <strong>Create</strong></li>
 </ol>
 
 <h3>Option B — Write DOT directly</h3>
-<p>Paste or type a valid DOT graph into the editor in the Create view, then click <strong>Run Project</strong>.</p>
+<p>Paste or type a valid DOT graph into the editor in the Create view, then click <strong>Create</strong>.</p>
 
 <h3>Option C — Upload a .dot file</h3>
-<p>Click <strong>&#128194; Upload .dot</strong> in the Generated DOT section to open a file picker. Select a <code>.dot</code> file from disk — the DOT source loads into the editor, the NL prompt is cleared, and the graph renders automatically. Click <strong>Run Project</strong> to execute it. The original filename is preserved and used for artifact labelling.</p>
+<p>Click <strong>&#128194; Upload .dot</strong> in the Generated DOT section to open a file picker. Select a <code>.dot</code> file from disk — the DOT source loads into the editor, the NL prompt is cleared, and the graph renders automatically. Click <strong>Create</strong> to execute it. The original filename is preserved and used for artifact labelling.</p>
 
 <h2>Project States</h2>
 <table class="status-table">
@@ -1458,9 +1476,8 @@ java -jar coreys-attractor-*.jar --web-port 7070</code></pre>
 <tr><td>Resume</td><td>Paused</td><td>Resumes from the paused stage</td></tr>
 <tr><td>Re-run</td><td>Completed or failed</td><td>Restarts the project from the beginning</td></tr>
 <tr><td>Iterate</td><td>Completed or failed</td><td>Opens the Create view for a new version</td></tr>
-<tr><td>Download Artifacts</td><td>Completed</td><td>Downloads a ZIP of all stage output files and workspace contents — see <em>Downloading Artifacts</em> below</td></tr>
 <tr><td>View Failure Report</td><td>Failed</td><td>Shows the AI-generated failure diagnosis</td></tr>
-<tr><td>Export</td><td>Any terminal state</td><td>Downloads a ZIP with project metadata for import elsewhere</td></tr>
+<tr><td>Export</td><td>Any terminal state</td><td>Downloads a ZIP containing full project metadata and all artifact files — see <em>Export ZIP Contents</em> below</td></tr>
 <tr><td>Archive</td><td>Completed or failed</td><td>Moves to the Archived view</td></tr>
 <tr><td>Delete</td><td>Completed, failed, or cancelled</td><td>Permanently removes the project and its artifacts</td></tr>
 </table>
@@ -1468,36 +1485,44 @@ java -jar coreys-attractor-*.jar --web-port 7070</code></pre>
 <h2>Project Versions (Iterate)</h2>
 <p>Clicking <strong>Iterate</strong> on a completed or failed project opens the Create view pre-filled with the project's DOT source. When you submit, a new project is created in the same <em>family</em> — sharing the same <code>familyId</code>. Use the <code>&lt;&lt;</code> and <code>&gt;&gt;</code> arrows in the project panel header to navigate between family members.</p>
 
-<h2>Downloading Artifacts</h2>
-<p>Click <strong>Download Artifacts</strong> on a completed project to download a ZIP archive of everything the project produced. The ZIP contains the entire artifact workspace for the run.</p>
+<h2>Export ZIP Contents</h2>
+<p>Click <strong>Export</strong> on any finished project to download a ZIP archive containing both the project metadata and everything the project produced during its run. You can import this ZIP on another Attractor instance to fully restore the project — no re-run needed.</p>
 
-<h3>ZIP contents</h3>
+<h3>Top-level files</h3>
+<table>
+<tr><th>File</th><th>Description</th></tr>
+<tr><td><code>project-meta.json</code></td><td>All project fields: ID, DOT source, original prompt, status, options, timestamps, display name, and family ID. Used by Import to reconstruct the project record.</td></tr>
+</table>
+
+<h3>artifacts/ directory</h3>
+<p>The <code>artifacts/</code> directory inside the ZIP mirrors the project's on-disk workspace. It contains everything written during execution:</p>
 <table>
 <tr><th>Path</th><th>Description</th></tr>
-<tr><td><code>manifest.json</code></td><td>Project completion summary: final status, stage count, finish time</td></tr>
-<tr><td><code>failure_report.json</code></td><td>AI-generated failure diagnosis (only present when the project failed)</td></tr>
-<tr><td><code>checkpoint.json</code></td><td>Internal project checkpoint used for resume and re-run</td></tr>
-<tr><td><code>workspace/</code></td><td>Shared working directory — all files the LLM created or modified during execution (source code, build output, test results, etc.)</td></tr>
-<tr><td><code>{nodeId}/prompt.md</code></td><td>The exact prompt sent to the LLM for this stage</td></tr>
-<tr><td><code>{nodeId}/response.md</code></td><td>The LLM's full response for this stage</td></tr>
-<tr><td><code>{nodeId}/live.log</code></td><td>Chronological log of all tool calls, command executions, and their output for this stage</td></tr>
-<tr><td><code>{nodeId}/status.json</code></td><td>Stage completion record: outcome, duration, error message if any</td></tr>
+<tr><td><code>artifacts/manifest.json</code></td><td>Run summary written at the start of execution: run ID, graph name, goal, and start time.</td></tr>
+<tr><td><code>artifacts/checkpoint.json</code></td><td>Internal resume state written after every stage: completed nodes, context variables, retry counts, stage durations. Used by Re-run and Resume.</td></tr>
+<tr><td><code>artifacts/failure_report.json</code></td><td>AI-generated failure diagnosis — only present when the project failed and was not recovered.</td></tr>
+<tr><td><code>artifacts/workspace/</code></td><td>The shared working directory for the entire run. All files the LLM created or modified live here: source code, build output, test results, generated reports, etc. This is where the actual deliverables are.</td></tr>
+<tr><td><code>artifacts/{nodeId}/prompt.md</code></td><td>The exact prompt sent to the LLM for this stage, with all variable substitutions applied.</td></tr>
+<tr><td><code>artifacts/{nodeId}/response.md</code></td><td>The complete LLM response text for this stage.</td></tr>
+<tr><td><code>artifacts/{nodeId}/live.log</code></td><td>Real-time log of every tool call, command execution, and its output for this stage. This is what you see in the stage log viewer in the UI.</td></tr>
+<tr><td><code>artifacts/{nodeId}/status.json</code></td><td>Stage outcome record: SUCCESS / FAILED / PARTIAL_SUCCESS, notes, error message if any.</td></tr>
+<tr><td><code>artifacts/{nodeId}_repair/</code></td><td>If a stage failed and Attractor attempted an LLM-guided repair, this directory holds the repair attempt's own prompt, response, log, and status — same layout as a normal stage directory.</td></tr>
 </table>
-<p>One <code>{nodeId}/</code> directory is created per stage. The <code>workspace/</code> directory persists across all stages, so files written in an early stage are available to later stages.</p>
-<div class="tip-box">&#128161; The <code>workspace/</code> directory is where you'll find the actual deliverables — code, reports, compiled binaries, or any other files the LLM was instructed to produce.</div>
+<p>One <code>{nodeId}/</code> directory is created per stage. The <code>workspace/</code> directory is shared across all stages, so files written in an early stage are visible to later ones.</p>
+<div class="tip-box">&#128161; <code>artifacts/workspace/</code> is where you'll find the actual deliverables — code, compiled binaries, test results, or any other files the LLM was instructed to produce. Stage directories (<code>artifacts/{nodeId}/</code>) contain the paper trail of how each stage was executed.</div>
 
 <h3>Artifact browser</h3>
-<p>Before downloading, you can browse individual files directly in the UI. Click the log icon next to any stage in the stage list to open the artifact browser for that stage, or use the REST API (<code>GET /api/v1/projects/{id}/artifacts</code>) to list and fetch individual files programmatically.</p>
+<p>You can browse individual files directly in the UI without exporting. Click the log icon next to any stage in the stage list to open the artifact browser for that stage, or use the REST API (<code>GET /api/v1/projects/{id}/artifacts</code>) to list and fetch individual files programmatically.</p>
 
 <h2>Failure Diagnosis</h2>
 <p>When a stage fails, Attractor automatically asks the LLM to diagnose the failure and generates a <code>failure_report.json</code> in the project's artifact directory. Click <strong>View Failure Report</strong> to see the structured diagnosis. The report is also included in the artifacts ZIP download.</p>
 
 <h2>Import / Export</h2>
 <ul>
-<li><strong>Export</strong> — downloads a ZIP archive containing <code>project-meta.json</code> (the project's DOT source, options, and metadata). Use this to move a project definition between Attractor instances.</li>
-<li><strong>Import</strong> — upload an exported ZIP via the Import button in the nav; use <code>onConflict=skip</code> (default) or <code>onConflict=overwrite</code> to control conflict behavior</li>
+<li><strong>Export</strong> — downloads a ZIP containing <code>project-meta.json</code> (all project fields) plus the full <code>artifacts/</code> directory (workspace, stage logs, prompts, responses). Use this to back up a project or move it to another Attractor instance.</li>
+<li><strong>Import</strong> — upload an exported ZIP via the Import view in the nav. The project is restored immediately with its original status and artifacts — no re-run is triggered. If the same project (matched by <code>familyId</code>) already exists, the import is skipped by default.</li>
 </ul>
-<div class="tip-box">&#9432; <strong>Export vs Download Artifacts:</strong> Export saves the project <em>definition</em> (DOT graph + metadata) for re-importing. Download Artifacts saves the project <em>outputs</em> (files, logs, workspace). They serve different purposes.</div>
+<div class="tip-box">&#9432; Old export ZIPs that contain only <code>project-meta.json</code> without an <code>artifacts/</code> directory are still importable — missing fields default gracefully and the project is restored as metadata-only.</div>
 
 <h2>Database Configuration</h2>
 <p>Attractor stores project run history in a database. By default it uses a local SQLite file (<code>attractor.db</code>). Set <code>ATTRACTOR_DB_*</code> environment variables at startup to switch to MySQL or PostgreSQL.</p>
@@ -1818,11 +1843,11 @@ export ATTRACTOR_DB_URL="mysql://app:secret@localhost:3306/attractor"</code></pr
 <h2>Installation</h2>
 <h3>Build</h3>
 <pre><code>make cli-jar</code></pre>
-<p>Produces <code>build/libs/coreys-attractor-cli-devel.jar</code>. For a versioned release: <code>make release</code></p>
+<p>Produces <code>build/libs/attractor-cli-devel.jar</code>. For a versioned release: <code>make release</code></p>
 
 <h3>Run</h3>
 <pre><code># Via JAR directly
-java -jar build/libs/coreys-attractor-cli-devel.jar [command]
+java -jar build/libs/attractor-cli-devel.jar [command]
 
 # Via bin/ wrapper (auto-locates latest CLI JAR)
 bin/attractor [command]</code></pre>
@@ -2155,7 +2180,7 @@ attractor artifact stage-log &lt;id&gt; &lt;nodeId&gt;</code></pre>
 <script>(function(){var t=localStorage.getItem('attractor-theme')||'dark';document.documentElement.setAttribute('data-theme',t);document.documentElement.style.colorScheme=t;})();</script>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Corey's Attractor</title>
+<title>Attractor</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Figtree:wght@300;400;500;600;700&display=swap" rel="stylesheet">
@@ -2441,6 +2466,22 @@ main { max-width: 1200px; margin: 0 auto; padding: 20px; display: grid; grid-tem
 .btn-vh:hover { border-color: var(--accent); color: var(--text); }
 .view-err { font-size: 0.75rem; color: var(--danger, #f85149); margin-left: 8px; opacity: 1; transition: opacity 0.3s; }
 
+/* Git bar */
+.git-bar { display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%;padding:7px 12px;margin:0 0 8px;box-sizing:border-box;background:var(--surface2);border:1px solid var(--border);border-radius:6px;cursor:pointer;font-size:0.8rem;color:var(--text-muted);text-align:left;user-select:none; }
+.git-bar:hover { border-color:var(--accent);color:var(--text); }
+.git-bar.open { border-color:var(--accent); }
+.git-bar-right { display:flex;align-items:center;gap:6px;flex-shrink:0; }
+.git-bar-chevron { font-size:0.7rem;transition:transform 0.2s; }
+.git-bar.open .git-bar-chevron { transform:rotate(90deg); }
+.git-refresh-btn { background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:0.85rem;padding:0 2px;line-height:1; }
+.git-refresh-btn:hover { color:var(--accent); }
+.git-panel { padding:0 0 8px; }
+.git-log-table { width:100%;border-collapse:collapse;font-size:0.79rem; }
+.git-log-table td { padding:4px 8px;border-bottom:1px solid var(--border);vertical-align:top; }
+.git-log-table td:first-child { font-family:'Consolas','Cascadia Code','Courier New',monospace;color:var(--text-muted);white-space:nowrap; }
+.git-log-table td:last-child { color:var(--text-muted);white-space:nowrap;font-size:0.75rem; }
+.git-log-table tr:last-child td { border-bottom:none; }
+
 /* Artifact modal */
 .artifact-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.75); z-index: 200; display: none; align-items: center; justify-content: center; }
 .artifact-overlay.open { display: flex; }
@@ -2581,7 +2622,7 @@ input:checked + .toggle-slider:before { transform:translateX(20px); }
 <body>
 
 <header>
-  <h1><a href="#" onclick="showView('monitor');selectTab(DASHBOARD_TAB_ID);return false;" style="color:inherit;text-decoration:none;">&#9889; Corey's Attractor</a></h1>
+  <h1><a href="#" onclick="showView('monitor');selectTab(DASHBOARD_TAB_ID);return false;" style="color:inherit;text-decoration:none;">&#9889; Attractor</a></h1>
   <nav style="display:flex;gap:3px;">
     <button class="nav-btn active" id="navMonitor" onclick="showView('monitor')">&#128421;&#65039; Monitor</button>
     <button class="nav-btn" id="navCreate" onclick="showView('create')">🚀 Create</button>
@@ -2636,7 +2677,7 @@ input:checked + .toggle-slider:before { transform:translateX(20px); }
           <span class="gen-hint" id="genHint">You can edit the DOT source before running.</span>
           <div style="display:flex;gap:8px;align-items:center;">
             <button class="btn-cancel-iterate" id="cancelIterateBtn" style="display:none;" onclick="cancelIterate()">&#x2715;&ensp;Cancel</button>
-            <button class="run-btn" id="runBtn" disabled onclick="runGenerated()">&#9654;&ensp;Run Project</button>
+            <button class="run-btn" id="runBtn" disabled onclick="runGenerated()">&#9654;&ensp;Create</button>
           </div>
         </div>
       </div>
@@ -2809,7 +2850,7 @@ input:checked + .toggle-slider:before { transform:translateX(20px); }
 <div class="modal-overlay hidden" id="importModal" onclick="closeImportModal()">
   <div class="modal" onclick="event.stopPropagation()">
     <h2>&#128229;&ensp;Import Project</h2>
-    <p style="color:#8b949e;font-size:0.82rem;margin-bottom:16px;line-height:1.5;">Select an exported project ZIP to start a new run from its definition.</p>
+    <p style="color:#8b949e;font-size:0.82rem;margin-bottom:16px;line-height:1.5;">Select an exported project ZIP to restore it (metadata and artifacts) without re-running.</p>
     <div class="field">
       <label style="display:block;font-size:0.8rem;color:#8b949e;margin-bottom:6px;">Project ZIP file</label>
       <input type="file" id="importZipInput" accept=".zip" style="color:#c9d1d9;font-size:0.82rem;width:100%;" onchange="onImportFileChange()">
@@ -2817,7 +2858,7 @@ input:checked + .toggle-slider:before { transform:translateX(20px); }
     <div id="importMsg" style="margin-top:10px;font-size:0.8rem;min-height:1.2em;"></div>
     <div class="modal-actions" style="margin-top:16px;">
       <button class="btn-cancel" onclick="closeImportModal()">Cancel</button>
-      <button class="btn-primary" id="importSubmitBtn" onclick="submitImport()" disabled>Start Run</button>
+      <button class="btn-primary" id="importSubmitBtn" onclick="submitImport()" disabled>Import</button>
     </div>
   </div>
 </div>
@@ -3174,6 +3215,8 @@ function buildPanel(id) {
   stageLogNodeId = null; stageLogContent = '';
   panelBuiltFor = id;
   logRenderedCount[id] = 0;
+  gitPanelExpanded = false;
+  window._gitData = null;
   document.getElementById('mainContent').innerHTML =
     '<div id="panelLeft">'
     + '<div class="panel-header">'
@@ -3190,7 +3233,6 @@ function buildPanel(id) {
     +     '<button class="btn-rerun" id="iterateBtn" style="display:none;" onclick="iterateProject()">&#9998;&ensp;Iterate</button>'
     +   '</div>'
     +   '<div class="action-bar-secondary">'
-    +     '<button class="btn-download" id="downloadBtn" style="display:none;" onclick="downloadArtifacts()">&#8659;&ensp;Download Artifacts</button>'
     +     '<button class="btn-download" id="failureReportBtn" style="display:none;" onclick="openArtifacts(currentRunId(),\'Failure Report\')">&#128203;&ensp;View Failure Report</button>'
     +     '<button class="btn-download" id="exportBtn" style="display:none;" onclick="exportRun()">&#8599;&ensp;Export</button>'
     +     '<button class="btn-archive" id="archiveBtn" style="display:none;" onclick="archiveProject()">&#8595;&ensp;Archive</button>'
@@ -3199,6 +3241,16 @@ function buildPanel(id) {
     +   '</div>'
     + '</div>'
     + '<div id="projectDesc" style="display:none;" class="project-desc-block"><div class="project-desc-label">Prompt</div><div id="projectDescText"></div></div>'
+    + '<button class="git-bar" id="gitBar" onclick="toggleGitPanel()">'
+    +   '<span id="gitBarSummary" style="flex:1;">Loading git info\u2026</span>'
+    +   '<span class="git-bar-right">'
+    +     '<button class="git-refresh-btn" id="gitRefreshBtn" onclick="event.stopPropagation();refreshGitInfo()" title="Refresh git info">\u21bb</button>'
+    +     '<span class="git-bar-chevron" id="gitBarChevron">\u25b6</span>'
+    +   '</span>'
+    + '</button>'
+    + '<div class="git-panel" id="gitPanel" style="display:none;">'
+    +   '<table class="git-log-table"><tbody id="gitLogTable"></tbody></table>'
+    + '</div>'
     + '<div class="card"><h2>Stages</h2><div class="stage-list" id="stageList"><div class="empty-note">No stages yet.</div></div></div>'
     + '<div class="version-history" id="versionHistory" style="display:none;">'
     +   '<button class="vh-header" onclick="toggleVersionHistory()">'
@@ -3238,6 +3290,7 @@ function buildPanel(id) {
   vhData = null;
   vhMembersById = {};
   loadVersionHistory(id);
+  loadGitInfo(id);
   var sl = document.getElementById('stageList');
   if (sl) {
     sl.addEventListener('mousedown', function(e) {
@@ -3311,12 +3364,6 @@ function updatePanel(id) {
     var isPaused = d.status === 'paused';
     resumeBtn.style.display = isPaused ? 'inline-block' : 'none';
     if (isPaused) { resumeBtn.disabled = false; resumeBtn.innerHTML = '&#9654;&ensp;Resume'; }
-  }
-
-  var downloadBtn = document.getElementById('downloadBtn');
-  if (downloadBtn) {
-    var isDone = d.status === 'completed' || d.status === 'failed' || d.status === 'cancelled' || d.status === 'paused';
-    downloadBtn.style.display = isDone ? 'inline-block' : 'none';
   }
 
   var exportBtn = document.getElementById('exportBtn');
@@ -3517,6 +3564,8 @@ var vhExpanded = false;
 var vhData = null;
 var vhMembersById = {};  // runId -> { versionNum, totalVersions, prevId, nextId }
 
+var gitPanelExpanded = false;
+
 function loadVersionHistory(runId) {
   var fid = projects[runId] && projects[runId].familyId;
   if (!fid) {
@@ -3610,6 +3659,82 @@ function restoreVersion(vhRunId) {
   if (!info) return;
   enterIterateMode(vhRunId, info.dotSource, info.originalPrompt);
   showView('create');
+}
+
+// ── Git ──────────────────────────────────────────────────────────────────────
+
+function loadGitInfo(id) {
+  if (!id || id === DASHBOARD_TAB_ID) return;
+  fetch('/api/v1/projects/' + encodeURIComponent(id) + '/git')
+    .then(function(r) { return r.ok ? r.json() : null; })
+    .then(function(data) {
+      if (data && id === selectedId) { window._gitData = data; renderGitBar(data); }
+    })
+    .catch(function() { /* silent */ });
+}
+
+function refreshGitInfo() {
+  var id = typeof currentRunId === 'function' ? currentRunId() : selectedId;
+  if (id) loadGitInfo(id);
+}
+
+function timeAgo(isoDate) {
+  try {
+    var diff = Math.floor((Date.now() - new Date(isoDate).getTime()) / 1000);
+    if (diff < 60) return 'just now';
+    if (diff < 3600) return Math.floor(diff / 60) + ' min ago';
+    if (diff < 86400) return Math.floor(diff / 3600) + ' hr ago';
+    var d = Math.floor(diff / 86400); return d + ' day' + (d !== 1 ? 's' : '') + ' ago';
+  } catch(e) { return ''; }
+}
+
+function renderGitBar(data) {
+  var summaryEl = document.getElementById('gitBarSummary');
+  if (!summaryEl) return;
+  var text;
+  if (!data.available) {
+    text = '\u2387 Git unavailable \u2014 workspace history requires git on PATH';
+  } else if (!data.repoExists) {
+    text = '\u2387 Git repo not initialized';
+  } else if (data.commitCount === 0) {
+    text = '\u2387 ' + esc(data.branch || 'main') + '  \u2022  0 commits  \u2022  no history yet';
+  } else {
+    var lc = data.lastCommit || {};
+    var subj = (lc.subject || '');
+    var subjTrunc = subj.length > 55 ? subj.substring(0, 55) + '\u2026' : subj;
+    text = '\u2387 ' + esc(data.branch) + '  \u2022  ' + data.commitCount + ' commit' + (data.commitCount !== 1 ? 's' : '')
+      + '  \u2022  last: \u201c' + esc(subjTrunc) + '\u201d (' + timeAgo(lc.date) + ')';
+  }
+  summaryEl.textContent = text;
+  if (gitPanelExpanded && data.recent) renderGitLog(data.recent);
+}
+
+function toggleGitPanel() {
+  gitPanelExpanded = !gitPanelExpanded;
+  var bar = document.getElementById('gitBar');
+  var panel = document.getElementById('gitPanel');
+  if (bar) { if (gitPanelExpanded) bar.classList.add('open'); else bar.classList.remove('open'); }
+  if (panel) panel.style.display = gitPanelExpanded ? '' : 'none';
+  if (gitPanelExpanded && window._gitData && window._gitData.recent) renderGitLog(window._gitData.recent);
+}
+
+function renderGitLog(commits) {
+  var tb = document.getElementById('gitLogTable');
+  if (!tb) return;
+  if (!commits || commits.length === 0) {
+    tb.innerHTML = '<tr><td colspan="3" style="color:var(--text-muted);font-style:italic;">No commits yet.</td></tr>';
+    return;
+  }
+  var html = '';
+  for (var i = 0; i < commits.length; i++) {
+    var c = commits[i];
+    html += '<tr>'
+      + '<td>' + esc(c.shortHash) + '</td>'
+      + '<td>' + esc(c.subject) + '</td>'
+      + '<td>' + esc(timeAgo(c.date)) + '</td>'
+      + '</tr>';
+  }
+  tb.innerHTML = html;
 }
 
 // ── History navigation ───────────────────────────────────────────────────────
@@ -3783,6 +3908,14 @@ function applyUpdate(data) {
     // Flash dashboard card when any project transitions to completed
     if (!isNew && prevStatus !== 'completed' && newSt === 'completed') {
       flashDashCard(key);
+    }
+    // Refresh git info after any terminal-state transition for the active project
+    if (!isNew && prevStatus && prevStatus !== newSt &&
+        (newSt === 'completed' || newSt === 'failed' || newSt === 'cancelled' || newSt === 'paused')) {
+      if (key === selectedId) {
+        var _gitRefreshId = key;
+        setTimeout(function() { loadGitInfo(_gitRefreshId); }, 500);
+      }
     }
   }
   // Remove any local entries no longer reported by the server (e.g. deleted runs).
@@ -4061,7 +4194,7 @@ function runIterated() {
     .then(function(data) {
       if (data.error) {
         setGenStatus('error', data.error);
-        if (runBtn) { runBtn.disabled = false; runBtn.innerHTML = '&#9654;&ensp;Run Project'; }
+        if (runBtn) { runBtn.disabled = false; runBtn.innerHTML = '&#9654;&ensp;Create'; }
         return;
       }
       exitIterateMode();
@@ -4070,7 +4203,7 @@ function runIterated() {
     })
     .catch(function(e) {
       setGenStatus('error', 'Failed: ' + String(e));
-      if (runBtn) { runBtn.disabled = false; runBtn.innerHTML = '&#9654;&ensp;Run Project'; }
+      if (runBtn) { runBtn.disabled = false; runBtn.innerHTML = '&#9654;&ensp;Create'; }
     });
 }
 
@@ -4114,7 +4247,7 @@ function clearCreateForm() {
   var dotFileInput = document.getElementById('dotFileInput');
   if (nlInput)    { nlInput.value = ''; }
   if (dotPreview) { dotPreview.value = ''; }
-  if (runBtn)     { runBtn.disabled = true; runBtn.innerHTML = '&#9654;&ensp;Run Project'; }
+  if (runBtn)     { runBtn.disabled = true; runBtn.innerHTML = '&#9654;&ensp;Create'; }
   if (graphContent) { graphContent.innerHTML = '<div class="graph-placeholder">Generate a project first to see the graph.</div>'; }
   var createDownloadBtn = document.getElementById('createDownloadBtn');
   if (createDownloadBtn) createDownloadBtn.style.display = 'none';
@@ -4735,16 +4868,6 @@ function initDragPan(el) {
   el.addEventListener('mouseleave', stopDrag);
 }
 
-function downloadArtifacts() {
-  if (!selectedId) return;
-  var a = document.createElement('a');
-  a.href = '/api/download-artifacts?id=' + encodeURIComponent(currentRunId());
-  a.download = '';
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-}
-
 function exportRun() {
   if (!selectedId) return;
   var a = document.createElement('a');
@@ -5112,7 +5235,7 @@ function runGenerated() {
   .then(function(resp) {
     if (resp.error) {
       btn.disabled = false;
-      btn.textContent = '\u25B6\u2002Run Project';
+      btn.textContent = '\u25B6\u2002Create';
       setGenStatus('error', 'Run failed: ' + resp.error);
     } else {
       resetCreatePage();
@@ -5123,7 +5246,7 @@ function runGenerated() {
   })
   .catch(function(err) {
     btn.disabled = false;
-    btn.textContent = '\u25B6\u2002Run Project';
+    btn.textContent = '\u25B6\u2002Create';
     setGenStatus('error', 'Request failed: ' + err);
   });
 }
@@ -5139,7 +5262,7 @@ function resetCreatePage() {
   document.getElementById('nlInput').value = '';
   document.getElementById('dotPreview').value = '';
   document.getElementById('runBtn').disabled = true;
-  document.getElementById('runBtn').textContent = '\u25B6\u2002Run Project';
+  document.getElementById('runBtn').textContent = '\u25B6\u2002Create';
   setGenStatus('', 'Start typing to generate\u2026');
   document.getElementById('graphContent').innerHTML = '<div class="graph-placeholder">Generate a project first to see the graph.</div>';
   var createDownloadBtn = document.getElementById('createDownloadBtn');
@@ -5180,7 +5303,7 @@ function submitImport() {
   var msg = document.getElementById('importMsg');
   if (!input || !input.files || input.files.length === 0) return;
   var file = input.files[0];
-  if (btn) { btn.disabled = true; btn.textContent = 'Starting\u2026'; }
+  if (btn) { btn.disabled = true; btn.textContent = 'Importing\u2026'; }
   if (msg) { msg.textContent = ''; msg.style.color = ''; }
   var reader = new FileReader();
   reader.onload = function(e) {
@@ -5193,7 +5316,7 @@ function submitImport() {
     .then(function(resp) {
       if (resp.error) {
         if (msg) { msg.textContent = 'Error: ' + resp.error; msg.style.color = '#f85149'; }
-        if (btn) { btn.disabled = false; btn.textContent = 'Start Run'; }
+        if (btn) { btn.disabled = false; btn.textContent = 'Import'; }
       } else {
         closeImportModal();
         selectedId = resp.id;

@@ -1,4 +1,4 @@
-# Corey's Attractor REST API v1
+# Attractor REST API v1
 
 ## Overview
 
@@ -91,23 +91,66 @@ When the `full` variant is returned (single-project GET), the additional field `
 
 ---
 
-## `project-meta.json` schema (import / export)
+## Export ZIP format
 
-When exporting a project the ZIP archive contains a single file `project-meta.json`:
+When exporting a project the ZIP archive has the following structure:
+
+```
+project-{name}-{idSuffix}.zip
+├── project-meta.json
+└── artifacts/
+    ├── manifest.json
+    ├── checkpoint.json
+    ├── failure_report.json          ← only on failed projects
+    ├── workspace/                   ← all files the LLM created/modified
+    ├── {nodeId}/
+    │   ├── prompt.md
+    │   ├── response.md
+    │   ├── live.log
+    │   └── status.json
+    └── {nodeId}_repair/             ← only when a repair was attempted
+        └── ...
+```
+
+The `artifacts/` directory is only present if the project has an on-disk workspace (i.e. it was actually executed, not just metadata-imported).
+
+### `project-meta.json` schema
+
+All `StoredRun` fields are included (except the absolute `logsRoot` path, which is recomputed on import):
 
 ```json
 {
   "id": "run-1234567890-1",
   "fileName": "my-project.dot",
   "dotSource": "digraph MyProject { ... }",
-  "originalPrompt": "original prompt text",
-  "familyId": "run-1234567890-1",
+  "status": "completed",
   "simulate": false,
-  "autoApprove": true
+  "autoApprove": true,
+  "createdAt": 1700000000000,
+  "projectLog": "...",
+  "archived": false,
+  "originalPrompt": "original prompt text",
+  "finishedAt": 1700000060000,
+  "displayName": "Autumn Falcon",
+  "familyId": "run-1234567890-1"
 }
 ```
 
-Required fields for import: `fileName`, `dotSource`. All other fields are optional.
+Required fields for import: `fileName`, `dotSource`. All other fields default gracefully if absent (backward-compatible with old export ZIPs that contain only minimal metadata).
+
+### artifacts/ directory contents
+
+| Path | Description |
+|---|---|
+| `artifacts/manifest.json` | Run summary written at execution start: run ID, graph name, goal, start time |
+| `artifacts/checkpoint.json` | Resume state saved after every stage: completed nodes, context variables, retry counts, stage durations |
+| `artifacts/failure_report.json` | AI-generated failure diagnosis — only present when the project failed and was not recovered |
+| `artifacts/workspace/` | Shared working directory for the entire run — all files the LLM created or modified: source code, build output, test results, reports, etc. |
+| `artifacts/{nodeId}/prompt.md` | The exact prompt sent to the LLM for this stage, with all variable substitutions applied |
+| `artifacts/{nodeId}/response.md` | The complete LLM response text for this stage |
+| `artifacts/{nodeId}/live.log` | Real-time log of every tool call, command execution, and its output for this stage |
+| `artifacts/{nodeId}/status.json` | Stage outcome: SUCCESS / FAILED / PARTIAL_SUCCESS, notes, error message if any |
+| `artifacts/{nodeId}_repair/` | If Attractor attempted an LLM-guided repair, this holds the repair attempt's own prompt, response, log, and status |
 
 ---
 
@@ -567,28 +610,9 @@ curl http://localhost:8080/api/v1/projects/run-1700000000000-1/artifacts/writeTe
 
 ---
 
-#### 18. Download artifacts ZIP
-
-```
-GET /api/v1/projects/{id}/artifacts.zip
-```
-
-Streams all artifact files as a ZIP archive (`Content-Disposition: attachment; filename="artifacts-<name>.zip"`).
-
-**Response 200:** `Content-Type: application/zip`
-
-**Response 404:** No artifacts directory found
-
-**curl:**
-```bash
-curl -o artifacts.zip http://localhost:8080/api/v1/projects/run-1700000000000-1/artifacts.zip
-```
-
----
-
 ### Failure report
 
-#### 19. Get failure report
+#### 18. Get failure report
 
 ```
 GET /api/v1/projects/{id}/failure-report
@@ -609,15 +633,15 @@ curl http://localhost:8080/api/v1/projects/run-1700000000000-1/failure-report
 
 ### Import / Export / DOT file
 
-#### 20. Export a project
+#### 19. Export a project
 
 ```
 GET /api/v1/projects/{id}/export
 ```
 
-Downloads a ZIP archive containing `project-meta.json` with the project's DOT source and metadata. Use this to transfer a project between Attractor instances.
+Downloads a ZIP archive containing `project-meta.json` (all project fields) plus the full `artifacts/` directory (workspace, stage logs, prompts, responses). Use this to back up a project or transfer it between Attractor instances. See [Export ZIP format](#export-zip-format) above for the full structure.
 
-**Response 200:** `Content-Type: application/zip`, `Content-Disposition: attachment; filename="project-<id>.zip"`
+**Response 200:** `Content-Type: application/zip`, `Content-Disposition: attachment; filename="project-<name>-<idSuffix>.zip"`
 
 **curl:**
 ```bash
@@ -626,26 +650,26 @@ curl -o project.zip http://localhost:8080/api/v1/projects/run-1700000000000-1/ex
 
 ---
 
-#### 21. Import a project
+#### 20. Import a project
 
 ```
 POST /api/v1/projects/import?onConflict=skip
 Content-Type: application/zip
 ```
 
-Imports a project from a ZIP archive previously exported via the export endpoint. The request body must be the raw ZIP bytes.
+Imports a project from a ZIP archive previously exported via the export endpoint. The request body must be the raw ZIP bytes. The project is restored with its original status and artifacts — no re-run is triggered.
 
 **Query parameters:**
 
 | Parameter | Values | Default | Description |
 |---|---|---|---|
-| `onConflict` | `skip`, `replace` | `skip` | If `skip`, returns `{"status":"skipped"}` when a project with the same familyId already exists. If `replace`, always creates a new run. |
+| `onConflict` | `skip`, `overwrite` | `skip` | If `skip`, returns `{"status":"skipped"}` when a project with the same `familyId` already exists. If `overwrite`, always imports and replaces any existing entry. |
 
-The ZIP must contain a `project-meta.json` with at minimum `fileName` and `dotSource` fields.
+The ZIP must contain a `project-meta.json` with at minimum `fileName` and `dotSource` fields. All other fields default gracefully — old export ZIPs without `artifacts/` are still importable.
 
 **Response 201 (imported):**
 ```json
-{ "status": "started", "id": "run-1700000001000-3" }
+{ "status": "imported", "id": "run-1700000001000-3" }
 ```
 
 **Response 200 (skipped):**
@@ -664,7 +688,7 @@ curl -X POST "http://localhost:8080/api/v1/projects/import?onConflict=skip" \
 
 ---
 
-#### 22. Download a project's DOT file
+#### 21. Download a project's DOT file
 
 ```
 GET /api/v1/projects/{id}/dot
@@ -683,7 +707,7 @@ curl -o project.dot http://localhost:8080/api/v1/projects/run-1700000000000-1/do
 
 ---
 
-#### 23. Upload a DOT file to create a project
+#### 22. Upload a DOT file to create a project
 
 ```
 POST /api/v1/projects/dot
@@ -719,7 +743,7 @@ curl -X POST "http://localhost:8080/api/v1/projects/dot?fileName=my-project.dot"
 
 ### DOT operations
 
-#### 24. Render DOT to SVG
+#### 23. Render DOT to SVG
 
 ```
 POST /api/v1/dot/render
@@ -758,7 +782,7 @@ curl -X POST http://localhost:8080/api/v1/dot/render \
 
 ---
 
-#### 25. Validate DOT
+#### 24. Validate DOT
 
 ```
 POST /api/v1/dot/validate
@@ -798,7 +822,7 @@ curl -X POST http://localhost:8080/api/v1/dot/validate \
 
 ---
 
-#### 26. Generate DOT (blocking)
+#### 25. Generate DOT (blocking)
 
 ```
 POST /api/v1/dot/generate
@@ -832,7 +856,7 @@ curl -X POST http://localhost:8080/api/v1/dot/generate \
 
 ---
 
-#### 27. Generate DOT (streaming SSE)
+#### 26. Generate DOT (streaming SSE)
 
 ```
 GET /api/v1/dot/generate/stream?prompt=<encoded>
@@ -869,7 +893,7 @@ curl -N "http://localhost:8080/api/v1/dot/generate/stream?prompt=Build%20a%20CI%
 
 ---
 
-#### 28. Fix DOT (blocking)
+#### 27. Fix DOT (blocking)
 
 ```
 POST /api/v1/dot/fix
@@ -899,7 +923,7 @@ curl -X POST http://localhost:8080/api/v1/dot/fix \
 
 ---
 
-#### 29. Fix DOT (streaming SSE)
+#### 28. Fix DOT (streaming SSE)
 
 ```
 GET /api/v1/dot/fix/stream?dotSource=<encoded>&error=<encoded>
@@ -923,7 +947,7 @@ curl -N "http://localhost:8080/api/v1/dot/fix/stream?dotSource=digraph%20P%20%7B
 
 ---
 
-#### 30. Iterate DOT (blocking)
+#### 29. Iterate DOT (blocking)
 
 ```
 POST /api/v1/dot/iterate
@@ -953,7 +977,7 @@ curl -X POST http://localhost:8080/api/v1/dot/iterate \
 
 ---
 
-#### 31. Iterate DOT (streaming SSE)
+#### 30. Iterate DOT (streaming SSE)
 
 ```
 GET /api/v1/dot/iterate/stream?baseDot=<encoded>&changes=<encoded>
@@ -979,7 +1003,7 @@ curl -N "http://localhost:8080/api/v1/dot/iterate/stream?baseDot=digraph%20P%20%
 
 ### Settings
 
-#### 32. Get all settings
+#### 31. Get all settings
 
 ```
 GET /api/v1/settings
@@ -999,7 +1023,7 @@ curl http://localhost:8080/api/v1/settings
 
 ---
 
-#### 33. Get a single setting
+#### 32. Get a single setting
 
 ```
 GET /api/v1/settings/{key}
@@ -1030,7 +1054,7 @@ curl http://localhost:8080/api/v1/settings/fireworks_enabled
 
 ---
 
-#### 34. Update a setting
+#### 33. Update a setting
 
 ```
 PUT /api/v1/settings/{key}
@@ -1066,7 +1090,7 @@ curl -X PUT http://localhost:8080/api/v1/settings/fireworks_enabled \
 
 ### Models
 
-#### 35. List available models
+#### 34. List available models
 
 ```
 GET /api/v1/models
@@ -1100,7 +1124,7 @@ curl http://localhost:8080/api/v1/models
 
 ### Events (Server-Sent Events)
 
-#### 36. Global event stream
+#### 35. Global event stream
 
 ```
 GET /api/v1/events
@@ -1128,7 +1152,7 @@ curl -N http://localhost:8080/api/v1/events
 
 ---
 
-#### 37. Per-project event stream
+#### 36. Per-project event stream
 
 ```
 GET /api/v1/events/{id}
@@ -1155,6 +1179,79 @@ curl -N http://localhost:8080/api/v1/events/run-1700000000000-1
 
 ---
 
+### Git history
+
+#### 37. Get project git summary
+
+```
+GET /api/v1/projects/{id}/git
+```
+
+Returns a summary of the git repository in the project's workspace directory. The workspace git repository is initialized automatically when a project first runs and receives a commit after each terminal-state event (completed, failed, cancelled, paused).
+
+**Response 200:** `Content-Type: application/json`
+
+```json
+{
+  "available": true,
+  "repoExists": true,
+  "branch": "main",
+  "commitCount": 4,
+  "lastCommit": {
+    "hash": "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2",
+    "shortHash": "a1b2c3d",
+    "subject": "Run run-1700000000000-1 completed: 3 stages",
+    "date": "2026-03-04 14:22:10 -0800"
+  },
+  "dirty": false,
+  "trackedFiles": 12,
+  "recent": [
+    {
+      "hash": "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2",
+      "shortHash": "a1b2c3d",
+      "subject": "Run run-1700000000000-1 completed: 3 stages",
+      "date": "2026-03-04 14:22:10 -0800"
+    }
+  ]
+}
+```
+
+**Fields:**
+
+| Field | Type | Description |
+|---|---|---|
+| `available` | boolean | Whether the `git` binary is available on the server's PATH |
+| `repoExists` | boolean | Whether a `.git` directory exists in the project's workspace |
+| `branch` | string | Current branch name (empty if no commits or detached HEAD) |
+| `commitCount` | integer | Total number of commits in the repository |
+| `lastCommit` | object\|null | Most recent commit, or `null` if no commits exist |
+| `lastCommit.hash` | string | Full 40-character SHA-1 hash |
+| `lastCommit.shortHash` | string | Abbreviated 7-character hash |
+| `lastCommit.subject` | string | First line of the commit message |
+| `lastCommit.date` | string | ISO-8601 commit date with timezone offset |
+| `dirty` | boolean | Whether the workspace has uncommitted changes |
+| `trackedFiles` | integer | Number of files tracked by git |
+| `recent` | array | Up to 5 most recent commits in reverse-chronological order |
+
+**Degraded states:**
+
+| Condition | `available` | `repoExists` | `commitCount` | `lastCommit` |
+|---|---|---|---|---|
+| `git` not on PATH | `false` | `false` | `0` | `null` |
+| No workspace repo initialized | `true` | `false` | `0` | `null` |
+| Repo initialized, no commits yet | `true` | `true` | `0` | `null` |
+
+All known project IDs return HTTP 200 regardless of git state. The payload fields reflect the current state.
+
+**Response 404:** Project not found
+
+**curl:**
+```bash
+curl http://localhost:8080/api/v1/projects/run-1700000000000-1/git
+```
+
+---
+
 ## Endpoint summary
 
 | # | Method | Path | Description |
@@ -1176,23 +1273,23 @@ curl -N http://localhost:8080/api/v1/events/run-1700000000000-1
 | 15 | GET | `/api/v1/projects/{id}/stages/{nodeId}/log` | Get stage log text |
 | 16 | GET | `/api/v1/projects/{id}/artifacts` | List artifact files |
 | 17 | GET | `/api/v1/projects/{id}/artifacts/{path...}` | Download a specific artifact |
-| 18 | GET | `/api/v1/projects/{id}/artifacts.zip` | Download all artifacts as ZIP |
-| 19 | GET | `/api/v1/projects/{id}/failure-report` | Get failure report JSON |
-| 20 | GET | `/api/v1/projects/{id}/export` | Export project as ZIP |
-| 21 | POST | `/api/v1/projects/import` | Import project from ZIP |
-| 22 | GET | `/api/v1/projects/{id}/dot` | Download project DOT source as a file |
-| 23 | POST | `/api/v1/projects/dot` | Upload raw DOT to create and run a project |
-| 24 | POST | `/api/v1/dot/render` | Render DOT to SVG (blocking) |
-| 25 | POST | `/api/v1/dot/validate` | Validate and lint DOT source |
-| 26 | POST | `/api/v1/dot/generate` | Generate DOT from prompt (blocking) |
-| 27 | GET | `/api/v1/dot/generate/stream` | Generate DOT from prompt (SSE) |
-| 28 | POST | `/api/v1/dot/fix` | Fix broken DOT (blocking) |
-| 29 | GET | `/api/v1/dot/fix/stream` | Fix broken DOT (SSE) |
-| 30 | POST | `/api/v1/dot/iterate` | Iterate on existing DOT (blocking) |
-| 31 | GET | `/api/v1/dot/iterate/stream` | Iterate on existing DOT (SSE) |
-| 32 | GET | `/api/v1/settings` | Get all settings |
-| 33 | GET | `/api/v1/settings/{key}` | Get a single setting |
-| 34 | PUT | `/api/v1/settings/{key}` | Update a setting |
-| 35 | GET | `/api/v1/models` | List available LLM models |
-| 36 | GET | `/api/v1/events` | Global SSE event stream |
-| 37 | GET | `/api/v1/events/{id}` | Per-project SSE event stream |
+| 18 | GET | `/api/v1/projects/{id}/failure-report` | Get failure report JSON |
+| 19 | GET | `/api/v1/projects/{id}/export` | Export project as ZIP (metadata + artifacts) |
+| 20 | POST | `/api/v1/projects/import` | Import (restore) project from ZIP |
+| 21 | GET | `/api/v1/projects/{id}/dot` | Download project DOT source as a file |
+| 22 | POST | `/api/v1/projects/dot` | Upload raw DOT to create and run a project |
+| 23 | POST | `/api/v1/dot/render` | Render DOT to SVG (blocking) |
+| 24 | POST | `/api/v1/dot/validate` | Validate and lint DOT source |
+| 25 | POST | `/api/v1/dot/generate` | Generate DOT from prompt (blocking) |
+| 26 | GET | `/api/v1/dot/generate/stream` | Generate DOT from prompt (SSE) |
+| 27 | POST | `/api/v1/dot/fix` | Fix broken DOT (blocking) |
+| 28 | GET | `/api/v1/dot/fix/stream` | Fix broken DOT (SSE) |
+| 29 | POST | `/api/v1/dot/iterate` | Iterate on existing DOT (blocking) |
+| 30 | GET | `/api/v1/dot/iterate/stream` | Iterate on existing DOT (SSE) |
+| 31 | GET | `/api/v1/settings` | Get all settings |
+| 32 | GET | `/api/v1/settings/{key}` | Get a single setting |
+| 33 | PUT | `/api/v1/settings/{key}` | Update a setting |
+| 34 | GET | `/api/v1/models` | List available LLM models |
+| 35 | GET | `/api/v1/events` | Global SSE event stream |
+| 36 | GET | `/api/v1/events/{id}` | Per-project SSE event stream |
+| 37 | GET | `/api/v1/projects/{id}/git` | Get project workspace git summary |
