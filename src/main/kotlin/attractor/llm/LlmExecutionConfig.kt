@@ -7,13 +7,15 @@ enum class ExecutionMode { API, CLI }
 data class ProviderToggles(
     val anthropic: Boolean,
     val openai: Boolean,
-    val gemini: Boolean
+    val gemini: Boolean,
+    val copilot: Boolean
 )
 
 data class CliCommands(
     val anthropic: String,
     val openai: String,
-    val gemini: String
+    val gemini: String,
+    val copilot: String
 )
 
 data class LlmExecutionConfig(
@@ -25,6 +27,7 @@ data class LlmExecutionConfig(
         "anthropic" -> providerToggles.anthropic
         "openai"    -> providerToggles.openai
         "gemini"    -> providerToggles.gemini
+        "copilot"   -> providerToggles.copilot
         else        -> false
     }
 
@@ -46,12 +49,14 @@ data class LlmExecutionConfig(
                 providerToggles = ProviderToggles(
                     anthropic = parseBool(store.getSetting("provider_anthropic_enabled")),
                     openai    = parseBool(store.getSetting("provider_openai_enabled")),
-                    gemini    = parseBool(store.getSetting("provider_gemini_enabled"))
+                    gemini    = parseBool(store.getSetting("provider_gemini_enabled")),
+                    copilot   = parseBool(store.getSetting("provider_copilot_enabled"), default = false)
                 ),
                 cliCommands = CliCommands(
-                    anthropic = store.getSetting("cli_anthropic_command") ?: "claude -p {prompt}",
-                    openai    = store.getSetting("cli_openai_command")    ?: "codex -p {prompt}",
-                    gemini    = store.getSetting("cli_gemini_command")    ?: "gemini -p {prompt}"
+                    anthropic = store.getSetting("cli_anthropic_command") ?: "claude --dangerously-skip-permissions -p {prompt}",
+                    openai    = store.getSetting("cli_openai_command")    ?: "codex --full-auto -p {prompt}",
+                    gemini    = store.getSetting("cli_gemini_command")    ?: "gemini --yolo -p {prompt}",
+                    copilot   = store.getSetting("cli_copilot_command")   ?: "copilot --allow-all-tools -p {prompt}"
                 )
             )
         }

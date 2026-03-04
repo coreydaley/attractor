@@ -8,10 +8,10 @@ import java.util.UUID
  * OpenAI CLI-backed ProviderAdapter.
  * Invokes the `codex` CLI binary (or a custom command template) via ProcessBuilder.
  * The command template must contain `{prompt}` which is substituted with the full prompt text.
- * Example template: "codex -p {prompt}"
+ * Example template: "codex --full-auto -p {prompt}"
  */
 class OpenAICliAdapter(
-    private val commandTemplate: String = "codex -p {prompt}",
+    private val commandTemplate: String = "codex --full-auto -p {prompt}",
     private val runner: ProcessRunner = DefaultProcessRunner
 ) : ProviderAdapter {
 

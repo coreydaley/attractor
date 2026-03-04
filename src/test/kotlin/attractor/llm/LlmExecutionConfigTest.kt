@@ -27,9 +27,9 @@ class LlmExecutionConfigTest : FunSpec({
         cfg.providerToggles.anthropic shouldBe true
         cfg.providerToggles.openai shouldBe true
         cfg.providerToggles.gemini shouldBe true
-        cfg.cliCommands.anthropic shouldBe "claude -p {prompt}"
-        cfg.cliCommands.openai shouldBe "codex -p {prompt}"
-        cfg.cliCommands.gemini shouldBe "gemini -p {prompt}"
+        cfg.cliCommands.anthropic shouldBe "claude --dangerously-skip-permissions -p {prompt}"
+        cfg.cliCommands.openai shouldBe "codex --full-auto -p {prompt}"
+        cfg.cliCommands.gemini shouldBe "gemini --yolo -p {prompt}"
     }
 
     test("execution_mode cli roundtrip") {

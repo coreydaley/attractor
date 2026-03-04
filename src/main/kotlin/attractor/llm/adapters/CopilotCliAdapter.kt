@@ -5,20 +5,20 @@ import java.io.IOException
 import java.util.UUID
 
 /**
- * Google Gemini CLI-backed ProviderAdapter.
- * Invokes the `gemini` CLI binary (or a custom command template) via ProcessBuilder.
+ * GitHub Copilot CLI-backed ProviderAdapter.
+ * Invokes the `gh copilot suggest` CLI (or a custom command template) via ProcessBuilder.
  * The command template must contain `{prompt}` which is substituted with the full prompt text.
- * Example template: "gemini --yolo -p {prompt}"
+ * Example template: "copilot --allow-all-tools -p {prompt}"
  */
-class GeminiCliAdapter(
-    private val commandTemplate: String = "gemini --yolo -p {prompt}",
+class CopilotCliAdapter(
+    private val commandTemplate: String = "copilot --allow-all-tools -p {prompt}",
     private val runner: ProcessRunner = DefaultProcessRunner
 ) : ProviderAdapter {
 
-    override val name = "gemini"
+    override val name = "copilot"
 
     override fun initialize() {
-        val binary = commandTemplate.trim().split("\\s+".toRegex()).firstOrNull() ?: "gemini"
+        val binary = commandTemplate.trim().split("\\s+".toRegex()).firstOrNull() ?: "gh"
         try {
             val proc = ProcessBuilder(binary, "--version")
                 .redirectErrorStream(true)
@@ -46,7 +46,7 @@ class GeminiCliAdapter(
         return LlmResponse(
             id = UUID.randomUUID().toString(),
             model = request.model,
-            provider = "gemini",
+            provider = "copilot",
             message = msg,
             finishReason = FinishReason("stop", "end"),
             usage = Usage.empty()
@@ -59,7 +59,7 @@ class GeminiCliAdapter(
             val proc = try {
                 runner.start(args)
             } catch (e: IOException) {
-                val binary = commandTemplate.trim().split("\\s+".toRegex()).firstOrNull() ?: "gemini"
+                val binary = commandTemplate.trim().split("\\s+".toRegex()).firstOrNull() ?: "gh"
                 yield(StreamEvent(StreamEventType.ERROR,
                     error = ConfigurationError("CLI binary '$binary' not found. Install it or add it to PATH, or switch to API mode in Settings.")))
                 return@sequence
@@ -83,7 +83,7 @@ class GeminiCliAdapter(
             if (exit != 0) {
                 val stderr = proc.errorStream.bufferedReader().readText().take(2048)
                 yield(StreamEvent(StreamEventType.ERROR,
-                    error = ProviderError("CLI exited with code $exit: $stderr", "gemini")))
+                    error = ProviderError("CLI exited with code $exit: $stderr", "copilot")))
                 return@sequence
             }
 
@@ -91,7 +91,7 @@ class GeminiCliAdapter(
             val finalResponse = LlmResponse(
                 id = UUID.randomUUID().toString(),
                 model = request.model,
-                provider = "gemini",
+                provider = "copilot",
                 message = finalMsg,
                 finishReason = FinishReason("stop", "end"),
                 usage = Usage.empty()

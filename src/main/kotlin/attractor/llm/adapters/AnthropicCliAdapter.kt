@@ -8,10 +8,10 @@ import java.util.UUID
  * Anthropic CLI-backed ProviderAdapter.
  * Invokes the `claude` CLI binary (or a custom command template) via ProcessBuilder.
  * The command template must contain `{prompt}` which is substituted with the full prompt text.
- * Example template: "claude -p {prompt}"
+ * Example template: "claude --dangerously-skip-permissions -p {prompt}"
  */
 class AnthropicCliAdapter(
-    private val commandTemplate: String = "claude -p {prompt}",
+    private val commandTemplate: String = "claude --dangerously-skip-permissions -p {prompt}",
     private val runner: ProcessRunner = DefaultProcessRunner
 ) : ProviderAdapter {
 

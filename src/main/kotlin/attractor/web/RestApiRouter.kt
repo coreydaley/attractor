@@ -44,7 +44,9 @@ class RestApiRouter(
         "provider_gemini_enabled",
         "cli_anthropic_command",
         "cli_openai_command",
-        "cli_gemini_command"
+        "cli_gemini_command",
+        "provider_copilot_enabled",
+        "cli_copilot_command"
     )
 
     private val TEXT_EXTENSIONS = setOf("log", "txt", "md", "json", "dot", "kt", "py", "js", "sh", "yaml", "yml", "toml", "xml", "html", "css")
@@ -273,6 +275,7 @@ class RestApiRouter(
         sb.append("\"autoApprove\":${entry.options.autoApprove},")
         sb.append("\"familyId\":${js(entry.familyId)},")
         sb.append("\"originalPrompt\":${js(entry.originalPrompt)},")
+        sb.append("\"logsRoot\":${js(entry.logsRoot)},")
         if (full) sb.append("\"dotSource\":${js(entry.dotSource)},")
         val startedAt = state.startedAt.get()
         val finishedAt = state.finishedAt.get()
@@ -538,11 +541,11 @@ class RestApiRouter(
 
         val lastCommitJson = if (git.lastCommit != null) {
             val c = git.lastCommit
-            """{"hash":${js(c.hash)},"shortHash":${js(c.shortHash)},"subject":${js(c.subject)},"date":${js(c.date)}}"""
+            """{"hash":${js(c.hash)},"shortHash":${js(c.shortHash)},"subject":${js(c.subject)},"date":${js(c.date)},"body":${js(c.body)}}"""
         } else "null"
 
         val recentJson = git.recent.joinToString(",") { c ->
-            """{"hash":${js(c.hash)},"shortHash":${js(c.shortHash)},"subject":${js(c.subject)},"date":${js(c.date)}}"""
+            """{"hash":${js(c.hash)},"shortHash":${js(c.shortHash)},"subject":${js(c.subject)},"date":${js(c.date)},"body":${js(c.body)}}"""
         }
 
         jsonResponse(ex, 200, """{"available":${git.available},"repoExists":${git.repoExists},"branch":${js(git.branch)},"commitCount":${git.commitCount},"lastCommit":$lastCommitJson,"dirty":${git.dirty},"trackedFiles":${git.trackedFiles},"recent":[$recentJson]}""")
@@ -774,7 +777,7 @@ class RestApiRouter(
         val logsRoot = if (artifactFiles.isNotEmpty()) {
             val safeName = displayName.ifBlank { fileName.removeSuffix(".dot") }
                 .replace(Regex("[^A-Za-z0-9_-]"), "-").trim('-').ifBlank { newId }
-            val destDir = java.io.File("workspace/$safeName")
+            val destDir = java.io.File("projects/$safeName")
             destDir.mkdirs()
             for ((relPath, bytes) in artifactFiles) {
                 val destFile = java.io.File(destDir, relPath)
@@ -992,7 +995,8 @@ class RestApiRouter(
             "fireworks_enabled",
             "provider_anthropic_enabled",
             "provider_openai_enabled",
-            "provider_gemini_enabled"
+            "provider_gemini_enabled",
+            "provider_copilot_enabled"
         )
         val defaults = mapOf(
             "fireworks_enabled" to "true",
@@ -1000,9 +1004,11 @@ class RestApiRouter(
             "provider_anthropic_enabled" to "true",
             "provider_openai_enabled" to "true",
             "provider_gemini_enabled" to "true",
-            "cli_anthropic_command" to "claude -p {prompt}",
-            "cli_openai_command" to "codex -p {prompt}",
-            "cli_gemini_command" to "gemini -p {prompt}"
+            "provider_copilot_enabled" to "false",
+            "cli_anthropic_command" to "claude --dangerously-skip-permissions -p {prompt}",
+            "cli_openai_command" to "codex --full-auto -p {prompt}",
+            "cli_gemini_command" to "gemini --yolo -p {prompt}",
+            "cli_copilot_command" to "copilot --allow-all-tools -p {prompt}"
         )
         val sb = StringBuilder("{")
         KNOWN_SETTINGS.forEachIndexed { i, key ->
@@ -1024,9 +1030,11 @@ class RestApiRouter(
         "provider_anthropic_enabled" to "true",
         "provider_openai_enabled" to "true",
         "provider_gemini_enabled" to "true",
-        "cli_anthropic_command" to "claude -p {prompt}",
-        "cli_openai_command" to "codex -p {prompt}",
-        "cli_gemini_command" to "gemini -p {prompt}"
+        "provider_copilot_enabled" to "false",
+        "cli_anthropic_command" to "claude --dangerously-skip-permissions -p {prompt}",
+        "cli_openai_command" to "codex --full-auto -p {prompt}",
+        "cli_gemini_command" to "gemini --yolo -p {prompt}",
+        "cli_copilot_command" to "copilot --allow-all-tools -p {prompt}"
     )
 
     private fun handleGetSetting(ex: HttpExchange, key: String) {
@@ -1053,11 +1061,12 @@ class RestApiRouter(
             "execution_mode" -> if (value !in setOf("api", "cli")) {
                 errorResponse(ex, 400, "execution_mode must be 'api' or 'cli'", "BAD_REQUEST"); return
             }
-            "provider_anthropic_enabled", "provider_openai_enabled", "provider_gemini_enabled" ->
+            "provider_anthropic_enabled", "provider_openai_enabled", "provider_gemini_enabled",
+            "provider_copilot_enabled" ->
                 if (value !in setOf("true", "false")) {
                     errorResponse(ex, 400, "$key must be 'true' or 'false'", "BAD_REQUEST"); return
                 }
-            "cli_anthropic_command", "cli_openai_command", "cli_gemini_command" ->
+            "cli_anthropic_command", "cli_openai_command", "cli_gemini_command", "cli_copilot_command" ->
                 if (value.isBlank()) {
                     errorResponse(ex, 400, "$key must not be blank", "BAD_REQUEST"); return
                 }

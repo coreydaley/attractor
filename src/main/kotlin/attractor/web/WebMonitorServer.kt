@@ -84,7 +84,7 @@ class WebMonitorServer(private val requestedPort: Int, private val registry: Pro
                 ex.sendResponseHeaders(404, err.size.toLong()); ex.responseBody.use { it.write(err) }
                 return@createContext
             }
-            val body = "{\"id\":${js(entry.id)},\"fileName\":${js(entry.fileName)},\"dotSource\":${js(entry.dotSource)},\"originalPrompt\":${js(entry.originalPrompt)},\"familyId\":${js(entry.familyId)},\"simulate\":${entry.options.simulate},\"isHydratedViewOnly\":${entry.isHydratedViewOnly},\"state\":${entry.state.toJson()}}".toByteArray()
+            val body = "{\"id\":${js(entry.id)},\"fileName\":${js(entry.fileName)},\"dotSource\":${js(entry.dotSource)},\"originalPrompt\":${js(entry.originalPrompt)},\"familyId\":${js(entry.familyId)},\"simulate\":${entry.options.simulate},\"autoApprove\":${entry.options.autoApprove},\"logsRoot\":${js(entry.logsRoot)},\"displayName\":${js(entry.displayName)},\"isHydratedViewOnly\":${entry.isHydratedViewOnly},\"state\":${entry.state.toJson()}}".toByteArray()
             ex.responseHeaders.add("Content-Type", "application/json")
             ex.sendResponseHeaders(200, body.size.toLong()); ex.responseBody.use { it.write(body) }
         }
@@ -1119,7 +1119,7 @@ class WebMonitorServer(private val requestedPort: Int, private val registry: Pro
                 val logsRoot = if (artifactFiles.isNotEmpty()) {
                     val safeName = displayName.ifBlank { fileName.removeSuffix(".dot") }
                         .replace(Regex("[^A-Za-z0-9_-]"), "-").trim('-').ifBlank { newId }
-                    val destDir = java.io.File("workspace/$safeName")
+                    val destDir = java.io.File("projects/$safeName")
                     destDir.mkdirs()
                     for ((relPath, bytes) in artifactFiles) {
                         val destFile = java.io.File(destDir, relPath)
@@ -1169,18 +1169,22 @@ class WebMonitorServer(private val requestedPort: Int, private val registry: Pro
                 val anthEnabled = store.getSetting("provider_anthropic_enabled") ?: "true"
                 val oaiEnabled  = store.getSetting("provider_openai_enabled") ?: "true"
                 val gemEnabled  = store.getSetting("provider_gemini_enabled") ?: "true"
-                val anthCmd    = store.getSetting("cli_anthropic_command") ?: "claude -p {prompt}"
-                val oaiCmd     = store.getSetting("cli_openai_command") ?: "codex -p {prompt}"
-                val gemCmd     = store.getSetting("cli_gemini_command") ?: "gemini -p {prompt}"
+                val copilotEnabled = store.getSetting("provider_copilot_enabled") ?: "false"
+                val anthCmd    = store.getSetting("cli_anthropic_command") ?: "claude --dangerously-skip-permissions -p {prompt}"
+                val oaiCmd     = store.getSetting("cli_openai_command") ?: "codex --full-auto -p {prompt}"
+                val gemCmd     = store.getSetting("cli_gemini_command") ?: "gemini --yolo -p {prompt}"
+                val copilotCmd = store.getSetting("cli_copilot_command") ?: "copilot --allow-all-tools -p {prompt}"
                 val body = """{
                     "fireworks_enabled":$fireworks,
                     "execution_mode":${js(execMode)},
                     "provider_anthropic_enabled":$anthEnabled,
                     "provider_openai_enabled":$oaiEnabled,
                     "provider_gemini_enabled":$gemEnabled,
+                    "provider_copilot_enabled":$copilotEnabled,
                     "cli_anthropic_command":${js(anthCmd)},
                     "cli_openai_command":${js(oaiCmd)},
-                    "cli_gemini_command":${js(gemCmd)}
+                    "cli_gemini_command":${js(gemCmd)},
+                    "cli_copilot_command":${js(copilotCmd)}
                 }""".trimIndent().replace("\n", "").replace("    ", "").toByteArray()
                 ex.responseHeaders.add("Content-Type", "application/json")
                 ex.responseHeaders.add("Access-Control-Allow-Origin", "*")
@@ -1205,13 +1209,15 @@ class WebMonitorServer(private val requestedPort: Int, private val registry: Pro
                     proc.waitFor() == 0
                 } catch (_: Exception) { false }
             }
-            val anthCmd = store.getSetting("cli_anthropic_command") ?: "claude -p {prompt}"
-            val oaiCmd  = store.getSetting("cli_openai_command") ?: "codex -p {prompt}"
-            val gemCmd  = store.getSetting("cli_gemini_command") ?: "gemini -p {prompt}"
+            val anthCmd    = store.getSetting("cli_anthropic_command") ?: "claude --dangerously-skip-permissions -p {prompt}"
+            val oaiCmd     = store.getSetting("cli_openai_command") ?: "codex --full-auto -p {prompt}"
+            val gemCmd     = store.getSetting("cli_gemini_command") ?: "gemini --yolo -p {prompt}"
+            val copilotCmd = store.getSetting("cli_copilot_command") ?: "copilot --allow-all-tools -p {prompt}"
             val body = """{
                 "anthropic":${detectBinary(anthCmd)},
                 "openai":${detectBinary(oaiCmd)},
-                "gemini":${detectBinary(gemCmd)}
+                "gemini":${detectBinary(gemCmd)},
+                "copilot":${detectBinary(copilotCmd)}
             }""".trimIndent().replace("\n", "").replace("    ", "").toByteArray()
             ex.responseHeaders.add("Content-Type", "application/json")
             ex.sendResponseHeaders(200, body.size.toLong())
@@ -2120,7 +2126,7 @@ attractor artifact stage-log &lt;id&gt; &lt;nodeId&gt;</code></pre>
         val all = registry.getAll()
         all.forEachIndexed { i, entry ->
             if (i > 0) sb.append(",")
-            sb.append("{\"id\":${js(entry.id)},\"fileName\":${js(entry.fileName)},\"dotSource\":${js(entry.dotSource)},\"originalPrompt\":${js(entry.originalPrompt)},\"familyId\":${js(entry.familyId)},\"simulate\":${entry.options.simulate},\"isHydratedViewOnly\":${entry.isHydratedViewOnly},\"state\":${entry.state.toJson()}}")
+            sb.append("{\"id\":${js(entry.id)},\"fileName\":${js(entry.fileName)},\"dotSource\":${js(entry.dotSource)},\"originalPrompt\":${js(entry.originalPrompt)},\"familyId\":${js(entry.familyId)},\"simulate\":${entry.options.simulate},\"autoApprove\":${entry.options.autoApprove},\"logsRoot\":${js(entry.logsRoot)},\"displayName\":${js(entry.displayName)},\"isHydratedViewOnly\":${entry.isHydratedViewOnly},\"state\":${entry.state.toJson()}}")
         }
         sb.append("]}")
         return sb.toString()
@@ -2466,21 +2472,40 @@ main { max-width: 1200px; margin: 0 auto; padding: 20px; display: grid; grid-tem
 .btn-vh:hover { border-color: var(--accent); color: var(--text); }
 .view-err { font-size: 0.75rem; color: var(--danger, #f85149); margin-left: 8px; opacity: 1; transition: opacity 0.3s; }
 
-/* Git bar */
-.git-bar { display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%;padding:7px 12px;margin:0 0 8px;box-sizing:border-box;background:var(--surface2);border:1px solid var(--border);border-radius:6px;cursor:pointer;font-size:0.8rem;color:var(--text-muted);text-align:left;user-select:none; }
-.git-bar:hover { border-color:var(--accent);color:var(--text); }
-.git-bar.open { border-color:var(--accent); }
-.git-bar-right { display:flex;align-items:center;gap:6px;flex-shrink:0; }
-.git-bar-chevron { font-size:0.7rem;transition:transform 0.2s; }
-.git-bar.open .git-bar-chevron { transform:rotate(90deg); }
-.git-refresh-btn { background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:0.85rem;padding:0 2px;line-height:1; }
-.git-refresh-btn:hover { color:var(--accent); }
-.git-panel { padding:0 0 8px; }
-.git-log-table { width:100%;border-collapse:collapse;font-size:0.79rem; }
-.git-log-table td { padding:4px 8px;border-bottom:1px solid var(--border);vertical-align:top; }
-.git-log-table td:first-child { font-family:'Consolas','Cascadia Code','Courier New',monospace;color:var(--text-muted);white-space:nowrap; }
-.git-log-table td:last-child { color:var(--text-muted);white-space:nowrap;font-size:0.75rem; }
-.git-log-table tr:last-child td { border-bottom:none; }
+/* Inner tabs */
+.inner-tab-bar { display:flex;gap:0;border-bottom:2px solid var(--border);margin:0 0 10px; }
+.inner-tab-btn { background:none;border:none;border-bottom:2px solid transparent;margin-bottom:-2px;padding:6px 14px;font-size:0.82rem;font-weight:500;color:var(--text-muted);cursor:pointer;transition:color 0.15s,border-color 0.15s; }
+.inner-tab-btn:hover { color:var(--text); }
+.inner-tab-btn.active { color:var(--accent);border-bottom-color:var(--accent); }
+/* Details tab sections */
+.details-section { margin-bottom:12px; }
+.details-section-label { font-size:0.75rem;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.07em;margin-bottom:6px; }
+.details-workspace-value { font-family:'Consolas','Cascadia Code','Courier New',monospace;font-size:0.82rem;color:var(--text);word-break:break-all;background:var(--surface-muted);border:1px solid var(--border);border-radius:4px;padding:6px 10px;display:block; }
+.details-meta-table { width:100%;border-collapse:collapse;font-size:0.81rem; }
+.details-meta-table td { padding:4px 0;vertical-align:top; }
+.details-meta-label { width:110px;color:var(--text-muted);font-weight:500;white-space:nowrap;padding-right:12px; }
+.details-meta-value { color:var(--text); }
+main.details-mode { grid-template-columns:1fr; }
+
+/* Git tab */
+.git-tab-header { display:flex;align-items:center;justify-content:space-between;gap:8px;padding:7px 12px;margin:0 0 12px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;font-size:0.8rem;color:var(--text-muted); }
+.git-tab-summary { flex:1; }
+.git-refresh-btn { background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:0.82rem;padding:2px 6px;line-height:1;border:1px solid var(--border);border-radius:4px; }
+.git-refresh-btn:hover { color:var(--accent);border-color:var(--accent); }
+.git-commit-list { display:flex;flex-direction:column;gap:6px; }
+.git-commit-row { border:1px solid var(--border);border-radius:6px;overflow:hidden; }
+.git-commit-row.open { border-color:var(--accent); }
+.git-commit-header { display:flex;align-items:baseline;gap:8px;width:100%;padding:7px 10px;background:none;border:none;cursor:pointer;text-align:left;font-size:0.82rem;color:var(--text);transition:background 0.1s; }
+.git-commit-header:hover { background:var(--surface2); }
+.git-commit-chevron { font-size:0.65rem;color:var(--text-muted);flex-shrink:0;transition:transform 0.15s;margin-top:1px; }
+.git-commit-row.open .git-commit-chevron { transform:rotate(90deg); }
+.git-commit-hash { font-family:'Consolas','Cascadia Code','Courier New',monospace;font-size:0.78rem;color:var(--text-muted);flex-shrink:0; }
+.git-commit-subject { flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis; }
+.git-commit-date { font-size:0.75rem;color:var(--text-muted);white-space:nowrap;flex-shrink:0; }
+.git-commit-body { border-top:1px solid var(--border);padding:8px 10px;background:var(--surface2); }
+.git-commit-body-pre { margin:0;font-family:'Consolas','Cascadia Code','Courier New',monospace;font-size:0.78rem;color:var(--text);white-space:pre-wrap;word-break:break-word;line-height:1.5; }
+.git-commit-no-body { font-size:0.78rem;color:var(--text-muted);font-style:italic; }
+.git-empty { font-size:0.82rem;color:var(--text-muted);font-style:italic;padding:12px 0; }
 
 /* Artifact modal */
 .artifact-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.75); z-index: 200; display: none; align-items: center; justify-content: center; }
@@ -2761,6 +2786,15 @@ input:checked + .toggle-slider:before { transform:translateX(20px); }
         <button id="modeApiBtn" onclick="setExecutionMode('api')" style="padding:6px 18px; border-radius:6px; border:1px solid var(--border); cursor:pointer; font-size:0.9rem; background:var(--surface-muted); color:var(--text);">Direct API</button>
         <button id="modeCliBtn" onclick="setExecutionMode('cli')" style="padding:6px 18px; border-radius:6px; border:1px solid var(--border); cursor:pointer; font-size:0.9rem; background:var(--surface-muted); color:var(--text);">CLI subprocess</button>
       </div>
+      <div id="cliYoloWarning" style="display:none; padding:12px 16px; border-radius:8px; border:1px solid var(--danger); background:rgba(248,81,73,0.12); color:var(--text-strong); font-size:0.85rem; line-height:1.6;">
+        <div style="display:flex; align-items:flex-start; gap:10px;">
+          <span style="font-size:1.3rem; line-height:1.2; color:var(--danger);">&#9888;&#65039;</span>
+          <div>
+            <div style="font-weight:700; color:var(--danger); margin-bottom:2px;">YOLO mode active &mdash; use at your own risk</div>
+            <div style="color:var(--text); font-size:0.8rem;">CLI commands run without confirmation prompts and with full tool access. They can read, write, and execute anything on your system.</div>
+          </div>
+        </div>
+      </div>
     </div>
 
     <!-- Providers -->
@@ -2780,7 +2814,7 @@ input:checked + .toggle-slider:before { transform:translateX(20px); }
           </div>
           <span id="cliBadgeAnthropic" style="font-size:0.78rem; display:none;"></span>
         </div>
-        <input id="cliCmdAnthropic" type="text" placeholder="claude -p {prompt}"
+        <input id="cliCmdAnthropic" type="text" placeholder="claude --dangerously-skip-permissions -p {prompt}"
           style="display:none; width:100%; box-sizing:border-box; padding:6px 10px; border:1px solid var(--border); border-radius:6px; background:var(--surface-muted); color:var(--text); font-size:0.85rem; font-family:monospace;"
           onblur="saveSetting('cli_anthropic_command', this.value)">
       </div>
@@ -2797,7 +2831,7 @@ input:checked + .toggle-slider:before { transform:translateX(20px); }
           </div>
           <span id="cliBadgeOpenAI" style="font-size:0.78rem; display:none;"></span>
         </div>
-        <input id="cliCmdOpenAI" type="text" placeholder="codex -p {prompt}"
+        <input id="cliCmdOpenAI" type="text" placeholder="codex --full-auto -p {prompt}"
           style="display:none; width:100%; box-sizing:border-box; padding:6px 10px; border:1px solid var(--border); border-radius:6px; background:var(--surface-muted); color:var(--text); font-size:0.85rem; font-family:monospace;"
           onblur="saveSetting('cli_openai_command', this.value)">
       </div>
@@ -2814,9 +2848,26 @@ input:checked + .toggle-slider:before { transform:translateX(20px); }
           </div>
           <span id="cliBadgeGemini" style="font-size:0.78rem; display:none;"></span>
         </div>
-        <input id="cliCmdGemini" type="text" placeholder="gemini -p {prompt}"
+        <input id="cliCmdGemini" type="text" placeholder="gemini --yolo -p {prompt}"
           style="display:none; width:100%; box-sizing:border-box; padding:6px 10px; border:1px solid var(--border); border-radius:6px; background:var(--surface-muted); color:var(--text); font-size:0.85rem; font-family:monospace;"
           onblur="saveSetting('cli_gemini_command', this.value)">
+      </div>
+
+      <!-- Copilot — CLI-only provider, hidden in Direct API mode -->
+      <div id="copilotProviderRow" class="setting-row" style="flex-direction:column; align-items:flex-start; gap:6px; padding:10px 0;">
+        <div style="display:flex; align-items:center; justify-content:space-between; width:100%;">
+          <div style="display:flex; align-items:center; gap:10px;">
+            <label class="toggle-switch" style="margin:0;">
+              <input type="checkbox" id="settingCopilotEnabled" onchange="saveSetting('provider_copilot_enabled', this.checked)">
+              <span class="toggle-slider"></span>
+            </label>
+            <span class="setting-label">GitHub Copilot (gh)</span>
+          </div>
+          <span id="cliBadgeCopilot" style="font-size:0.78rem; display:none;"></span>
+        </div>
+        <input id="cliCmdCopilot" type="text" placeholder="copilot --allow-all-tools -p {prompt}"
+          style="display:none; width:100%; box-sizing:border-box; padding:6px 10px; border:1px solid var(--border); border-radius:6px; background:var(--surface-muted); color:var(--text); font-size:0.85rem; font-family:monospace;"
+          onblur="saveSetting('cli_copilot_command', this.value)">
       </div>
     </div>
   </div>
@@ -2875,6 +2926,7 @@ if (_storedTab && closedTabs[_storedTab]) { selectedId = DASHBOARD_TAB_ID; try {
 var _storedLayout; try { _storedLayout = localStorage.getItem('attractor-dashboard-layout'); } catch(e){}
 var dashLayout = (_storedLayout === 'list') ? 'list' : 'card';
 var panelBuiltFor = null;  // which id the main panel DOM was built for
+var innerTab = 'runs';     // 'runs' | 'details' — active project inner tab
 var logRenderedCount = {}; // id -> number of log lines already appended to DOM
 var elapsedTimer = null;   // interval that ticks the elapsed counter every second
 var dashboardTimer = null; // interval that ticks elapsed counters on the dashboard
@@ -3205,6 +3257,62 @@ function selectTab(id) {
   renderMain();
 }
 
+// ── Inner tabs ───────────────────────────────────────────────────────────────
+
+function _loadInnerTab() {
+  try {
+    var v = localStorage.getItem('attractor-project-inner-tab');
+    if (v === 'details' || v === 'git') return v;
+    return 'runs';
+  } catch(e) { return 'runs'; }
+}
+
+function _applyInnerTabButtons() {
+  var btnRuns    = document.getElementById('innerTabBtnRuns');
+  var btnDetails = document.getElementById('innerTabBtnDetails');
+  var btnGit     = document.getElementById('innerTabBtnGit');
+  if (btnRuns)    btnRuns.classList.toggle('active',    innerTab === 'runs');
+  if (btnDetails) btnDetails.classList.toggle('active', innerTab === 'details');
+  if (btnGit)     btnGit.classList.toggle('active',     innerTab === 'git');
+}
+
+function selectInnerTab(tab) {
+  if (tab === innerTab) return;
+  innerTab = tab;
+  try { localStorage.setItem('attractor-project-inner-tab', tab); } catch(e) {}
+  if (selectedId && selectedId !== DASHBOARD_TAB_ID) {
+    panelBuiltFor = null;
+    renderMain();
+  }
+}
+
+function renderDetailsTab(id) {
+  var p = projects[id];
+  if (!p) return;
+  var d = p.state || {};
+  var ws = document.getElementById('detailsWorkspace');
+  if (ws) ws.textContent = p.logsRoot || '\u2014';
+  var rows = [
+    ['Display name', esc(p.displayName || d.project || p.fileName || '\u2014'), false],
+    ['File',         esc(p.fileName || '\u2014'), false],
+    ['Family ID',    esc(p.familyId || '\u2014'), true],
+    ['Run ID',       esc(d.runId || '\u2014'), true],
+    ['Simulate',     p.simulate ? 'Yes' : 'No', false],
+    ['Auto-approve', p.autoApprove !== false ? 'Yes' : 'No', false],
+    ['Started',      d.startedAt ? esc(new Date(d.startedAt).toLocaleString()) : '\u2014', false],
+    ['Finished',     d.finishedAt ? esc(new Date(d.finishedAt).toLocaleString()) : '\u2014', false]
+  ];
+  var html = '';
+  for (var i = 0; i < rows.length; i++) {
+    var label = rows[i][0], value = rows[i][1], mono = rows[i][2];
+    html += '<tr><td class="details-meta-label">' + esc(label) + '</td>'
+      + '<td class="details-meta-value' + (mono ? '" style="font-family:monospace;font-size:0.8rem;"' : '"') + '>'
+      + value + '</td></tr>';
+  }
+  var tbody = document.querySelector('#detailsMetaTable tbody');
+  if (tbody) tbody.innerHTML = html;
+}
+
 // ── Main panel ──────────────────────────────────────────────────────────────
 
 // Build the static DOM scaffold for a project tab — called once per tab selection.
@@ -3217,90 +3325,138 @@ function buildPanel(id) {
   logRenderedCount[id] = 0;
   gitPanelExpanded = false;
   window._gitData = null;
-  document.getElementById('mainContent').innerHTML =
+  // Reset version history state on tab switch
+  vhExpanded = false;
+  vhData = null;
+  vhMembersById = {};
+  // Read persisted inner tab preference
+  innerTab = _loadInnerTab();
+
+  // Shared header (always present above the inner tab bar)
+  var sharedHeader =
     '<div id="panelLeft">'
     + '<div class="panel-header">'
     +   '<div class="project-title" id="pTitle"></div>'
     +   '<span class="badge badge-idle" id="pStatusBadge">idle</span>'
     + '</div>'
     + '<div class="project-meta" id="pMeta"></div>'
-    + '<div class="action-bar" id="actionBar">'
-    +   '<div class="action-bar-primary">'
-    +     '<button class="btn-cancel-run" id="cancelBtn" style="display:none;" onclick="cancelProject()">&#9632;&ensp;Cancel</button>'
-    +     '<button class="btn-pause-run"  id="pauseBtn"  style="display:none;" onclick="pauseProject()">&#9646;&#9646;&ensp;Pause</button>'
-    +     '<button class="btn-resume-run" id="resumeBtn" style="display:none;" onclick="resumeProject()">&#9654;&ensp;Resume</button>'
-    +     '<button class="btn-rerun" id="rerunBtn" style="display:none;" onclick="rerunProject()">&#8635;&ensp;Re-run</button>'
-    +     '<button class="btn-rerun" id="iterateBtn" style="display:none;" onclick="iterateProject()">&#9998;&ensp;Iterate</button>'
-    +   '</div>'
-    +   '<div class="action-bar-secondary">'
-    +     '<button class="btn-download" id="failureReportBtn" style="display:none;" onclick="openArtifacts(currentRunId(),\'Failure Report\')">&#128203;&ensp;View Failure Report</button>'
-    +     '<button class="btn-download" id="exportBtn" style="display:none;" onclick="exportRun()">&#8599;&ensp;Export</button>'
-    +     '<button class="btn-archive" id="archiveBtn" style="display:none;" onclick="archiveProject()">&#8595;&ensp;Archive</button>'
-    +     '<button class="btn-unarchive" id="unarchiveBtn" style="display:none;" onclick="unarchiveProject()">&#8593;&ensp;Unarchive</button>'
-    +     '<button class="btn-delete" id="deleteBtn" style="display:none;" onclick="showDeleteConfirm(currentRunId())">&#10005;&ensp;Delete</button>'
-    +   '</div>'
-    + '</div>'
-    + '<div id="projectDesc" style="display:none;" class="project-desc-block"><div class="project-desc-label">Prompt</div><div id="projectDescText"></div></div>'
-    + '<button class="git-bar" id="gitBar" onclick="toggleGitPanel()">'
-    +   '<span id="gitBarSummary" style="flex:1;">Loading git info\u2026</span>'
-    +   '<span class="git-bar-right">'
-    +     '<button class="git-refresh-btn" id="gitRefreshBtn" onclick="event.stopPropagation();refreshGitInfo()" title="Refresh git info">\u21bb</button>'
-    +     '<span class="git-bar-chevron" id="gitBarChevron">\u25b6</span>'
-    +   '</span>'
-    + '</button>'
-    + '<div class="git-panel" id="gitPanel" style="display:none;">'
-    +   '<table class="git-log-table"><tbody id="gitLogTable"></tbody></table>'
-    + '</div>'
-    + '<div class="card"><h2>Stages</h2><div class="stage-list" id="stageList"><div class="empty-note">No stages yet.</div></div></div>'
-    + '<div class="version-history" id="versionHistory" style="display:none;">'
-    +   '<button class="vh-header" onclick="toggleVersionHistory()">'
-    +     '<span id="vhChevron">&#9654;</span>&ensp;<span id="vhLabel">Version History</span>'
-    +   '</button>'
-    +   '<span class="view-err" id="viewError" style="display:none;"></span>'
-    +   '<div class="vh-list" id="vhList" style="display:none;"></div>'
-    + '</div>'
-    + '</div>'
-    + '<div class="card" id="rightPanel">'
-    +   '<div class="right-panel-tabs">'
-    +     '<button class="right-tab-btn active" id="rightTabGraph" onclick="switchRightPanel(\'graph\')">Graph</button>'
-    +     '<button class="right-tab-btn" id="rightTabLog" onclick="switchRightPanel(\'log\')">Live Log</button>'
-    +   '</div>'
-    +   '<div id="graphToolbarRow" class="graph-toolbar-row">'
-    +     '<button class="dot-download-btn" onclick="downloadMonitorDot()" title="Download .dot file">&#8675;</button>'
-    +     '<div style="flex:1;"></div>'
-    +     '<button class="graph-zoom-btn" title="Zoom out (or Ctrl+scroll)" onclick="zoomMonitor(-1)">&#x2212;</button>'
-    +     '<span class="graph-zoom-label" id="monitorZoomLabel">100%</span>'
-    +     '<button class="graph-zoom-btn" title="Zoom in (or Ctrl+scroll)" onclick="zoomMonitor(1)">+</button>'
-    +     '<button class="graph-zoom-btn" title="Reset zoom" onclick="resetMonitorZoom()">&#x21BA;</button>'
-    +   '</div>'
-    +   '<div class="log-panel" id="logPanel" style="display:none;"></div>'
-    +   '<div class="project-graph-view" id="graphView"><div id="graphViewInner"><div class="project-graph-placeholder">Waiting for project\u2026</div></div></div>'
+    + '<div class="inner-tab-bar">'
+    +   '<button class="inner-tab-btn" id="innerTabBtnRuns" onclick="selectInnerTab(\'runs\')">Runs</button>'
+    +   '<button class="inner-tab-btn" id="innerTabBtnDetails" onclick="selectInnerTab(\'details\')">Details</button>'
+    +   '<button class="inner-tab-btn" id="innerTabBtnGit" onclick="selectInnerTab(\'git\')">Git</button>'
     + '</div>';
-  monitorZoom = 1.0;
-  var gvEl = document.getElementById('graphView');
-  if (gvEl) {
-    gvEl.addEventListener('wheel', function(e) {
-      if (e.ctrlKey || e.metaKey) { e.preventDefault(); zoomMonitor(e.deltaY < 0 ? 1 : -1); }
-    }, { passive: false });
-    initDragPan(gvEl);
-  }
-  elapsedTimer = setInterval(tickElapsed, 1000);
-  // Reset version history state on tab switch
-  vhExpanded = false;
-  vhData = null;
-  vhMembersById = {};
-  loadVersionHistory(id);
-  loadGitInfo(id);
-  var sl = document.getElementById('stageList');
-  if (sl) {
-    sl.addEventListener('mousedown', function(e) {
-      if (e.button !== 0) return;
-      var logBtn = e.target.closest('.stage-log-btn');
-      if (logBtn) { showStageLog(logBtn.dataset.nodeId, logBtn.dataset.stageName); e.preventDefault(); return; }
 
-      var errBtn = e.target.closest('.stage-err-btn');
-      if (errBtn) { showStageError(parseInt(errBtn.dataset.pos, 10)); e.preventDefault(); }
-    });
+  var mainContent = '';
+  var rightPanel = '';
+
+  if (innerTab === 'details') {
+    // Details scaffold — full width, no right panel
+    mainContent = sharedHeader
+      + '<div class="details-section">'
+      +   '<div class="details-section-label">Workspace</div>'
+      +   '<span class="details-workspace-value" id="detailsWorkspace">\u2014</span>'
+      + '</div>'
+      + '<div class="details-section">'
+      +   '<div class="details-section-label">Project</div>'
+      +   '<table class="details-meta-table" id="detailsMetaTable"><tbody></tbody></table>'
+      + '</div>'
+      + '</div>';
+    // No right panel in Details mode
+  } else if (innerTab === 'git') {
+    // Git scaffold — full width, expandable commit list
+    mainContent = sharedHeader
+      + '<div class="git-tab-header">'
+      +   '<span class="git-tab-summary" id="gitBarSummary">Loading git info\u2026</span>'
+      +   '<button class="git-refresh-btn" onclick="refreshGitInfo()" title="Refresh">\u21bb Refresh</button>'
+      + '</div>'
+      + '<div class="git-commit-list" id="gitCommitList">'
+      +   '<div class="git-empty">Loading commits\u2026</div>'
+      + '</div>'
+      + '</div>';
+    // No right panel in Git mode
+  } else {
+    // Runs scaffold — two-column layout with right panel
+    mainContent = sharedHeader
+      + '<div class="action-bar" id="actionBar">'
+      +   '<div class="action-bar-primary">'
+      +     '<button class="btn-cancel-run" id="cancelBtn" style="display:none;" onclick="cancelProject()">&#9632;&ensp;Cancel</button>'
+      +     '<button class="btn-pause-run"  id="pauseBtn"  style="display:none;" onclick="pauseProject()">&#9646;&#9646;&ensp;Pause</button>'
+      +     '<button class="btn-resume-run" id="resumeBtn" style="display:none;" onclick="resumeProject()">&#9654;&ensp;Resume</button>'
+      +     '<button class="btn-rerun" id="rerunBtn" style="display:none;" onclick="rerunProject()">&#8635;&ensp;Re-run</button>'
+      +     '<button class="btn-rerun" id="iterateBtn" style="display:none;" onclick="iterateProject()">&#9998;&ensp;Iterate</button>'
+      +   '</div>'
+      +   '<div class="action-bar-secondary">'
+      +     '<button class="btn-download" id="failureReportBtn" style="display:none;" onclick="openArtifacts(currentRunId(),\'Failure Report\')">&#128203;&ensp;View Failure Report</button>'
+      +     '<button class="btn-download" id="exportBtn" style="display:none;" onclick="exportRun()">&#8599;&ensp;Export</button>'
+      +     '<button class="btn-archive" id="archiveBtn" style="display:none;" onclick="archiveProject()">&#8595;&ensp;Archive</button>'
+      +     '<button class="btn-unarchive" id="unarchiveBtn" style="display:none;" onclick="unarchiveProject()">&#8593;&ensp;Unarchive</button>'
+      +     '<button class="btn-delete" id="deleteBtn" style="display:none;" onclick="showDeleteConfirm(currentRunId())">&#10005;&ensp;Delete</button>'
+      +   '</div>'
+      + '</div>'
+      + '<div id="projectDesc" style="display:none;" class="project-desc-block"><div class="project-desc-label">Prompt</div><div id="projectDescText"></div></div>'
+      + '<div class="card"><h2>Stages</h2><div class="stage-list" id="stageList"><div class="empty-note">No stages yet.</div></div></div>'
+      + '<div class="version-history" id="versionHistory" style="display:none;">'
+      +   '<button class="vh-header" onclick="toggleVersionHistory()">'
+      +     '<span id="vhChevron">&#9654;</span>&ensp;<span id="vhLabel">Version History</span>'
+      +   '</button>'
+      +   '<span class="view-err" id="viewError" style="display:none;"></span>'
+      +   '<div class="vh-list" id="vhList" style="display:none;"></div>'
+      + '</div>'
+      + '</div>';
+    rightPanel =
+      '<div class="card" id="rightPanel">'
+      +   '<div class="right-panel-tabs">'
+      +     '<button class="right-tab-btn active" id="rightTabGraph" onclick="switchRightPanel(\'graph\')">Graph</button>'
+      +     '<button class="right-tab-btn" id="rightTabLog" onclick="switchRightPanel(\'log\')">Live Log</button>'
+      +   '</div>'
+      +   '<div id="graphToolbarRow" class="graph-toolbar-row">'
+      +     '<button class="dot-download-btn" onclick="downloadMonitorDot()" title="Download .dot file">&#8675;</button>'
+      +     '<div style="flex:1;"></div>'
+      +     '<button class="graph-zoom-btn" title="Zoom out (or Ctrl+scroll)" onclick="zoomMonitor(-1)">&#x2212;</button>'
+      +     '<span class="graph-zoom-label" id="monitorZoomLabel">100%</span>'
+      +     '<button class="graph-zoom-btn" title="Zoom in (or Ctrl+scroll)" onclick="zoomMonitor(1)">+</button>'
+      +     '<button class="graph-zoom-btn" title="Reset zoom" onclick="resetMonitorZoom()">&#x21BA;</button>'
+      +   '</div>'
+      +   '<div class="log-panel" id="logPanel" style="display:none;"></div>'
+      +   '<div class="project-graph-view" id="graphView"><div id="graphViewInner"><div class="project-graph-placeholder">Waiting for project\u2026</div></div></div>'
+      + '</div>';
+  }
+
+  document.getElementById('mainContent').innerHTML = mainContent + rightPanel;
+
+  // Apply full-width layout for Details and Git tabs
+  var mainEl = document.getElementById('mainContent');
+  if (mainEl) {
+    mainEl.classList.toggle('details-mode', innerTab === 'details' || innerTab === 'git');
+  }
+
+  _applyInnerTabButtons();
+  elapsedTimer = setInterval(tickElapsed, 1000);
+
+  if (innerTab === 'git') {
+    loadGitInfo(id);
+  } else if (innerTab === 'details') {
+    // Details tab has no async content to load
+  } else {
+    loadVersionHistory(id);
+    monitorZoom = 1.0;
+    var gvEl = document.getElementById('graphView');
+    if (gvEl) {
+      gvEl.addEventListener('wheel', function(e) {
+        if (e.ctrlKey || e.metaKey) { e.preventDefault(); zoomMonitor(e.deltaY < 0 ? 1 : -1); }
+      }, { passive: false });
+      initDragPan(gvEl);
+    }
+    var sl = document.getElementById('stageList');
+    if (sl) {
+      sl.addEventListener('mousedown', function(e) {
+        if (e.button !== 0) return;
+        var logBtn = e.target.closest('.stage-log-btn');
+        if (logBtn) { showStageLog(logBtn.dataset.nodeId, logBtn.dataset.stageName); e.preventDefault(); return; }
+        var errBtn = e.target.closest('.stage-err-btn');
+        if (errBtn) { showStageError(parseInt(errBtn.dataset.pos, 10)); e.preventDefault(); }
+      });
+    }
   }
 }
 
@@ -3543,6 +3699,9 @@ function updatePanel(id) {
 
   // Refresh version history panel (re-render from cached data, no network request)
   if (vhData !== null) renderVersionHistory(id, vhData);
+
+  // Populate Details tab content when active
+  if (innerTab === 'details') renderDetailsTab(id);
 }
 
 function renderMain() {
@@ -3550,6 +3709,7 @@ function renderMain() {
   if (selectedId === DASHBOARD_TAB_ID) { renderDashboard(); return; }
   if (!selectedId || !projects[selectedId]) {
     panelBuiltFor = null;
+    mainEl.classList.remove('details-mode');
     mainEl.innerHTML = '<div class="no-project"><h2>No project selected</h2>'
       + '<p>Use <strong>Create</strong> to generate and run a project.</p></div>';
     return;
@@ -3668,7 +3828,11 @@ function loadGitInfo(id) {
   fetch('/api/v1/projects/' + encodeURIComponent(id) + '/git')
     .then(function(r) { return r.ok ? r.json() : null; })
     .then(function(data) {
-      if (data && id === selectedId) { window._gitData = data; renderGitBar(data); }
+      if (data && id === selectedId) {
+        window._gitData = data;
+        renderGitBar(data);
+        renderGitCommitList(data.recent || []);
+      }
     })
     .catch(function() { /* silent */ });
 }
@@ -3709,32 +3873,42 @@ function renderGitBar(data) {
   if (gitPanelExpanded && data.recent) renderGitLog(data.recent);
 }
 
-function toggleGitPanel() {
-  gitPanelExpanded = !gitPanelExpanded;
-  var bar = document.getElementById('gitBar');
-  var panel = document.getElementById('gitPanel');
-  if (bar) { if (gitPanelExpanded) bar.classList.add('open'); else bar.classList.remove('open'); }
-  if (panel) panel.style.display = gitPanelExpanded ? '' : 'none';
-  if (gitPanelExpanded && window._gitData && window._gitData.recent) renderGitLog(window._gitData.recent);
-}
-
-function renderGitLog(commits) {
-  var tb = document.getElementById('gitLogTable');
-  if (!tb) return;
+function renderGitCommitList(commits) {
+  var el = document.getElementById('gitCommitList');
+  if (!el) return;
   if (!commits || commits.length === 0) {
-    tb.innerHTML = '<tr><td colspan="3" style="color:var(--text-muted);font-style:italic;">No commits yet.</td></tr>';
+    el.innerHTML = '<div class="git-empty">No commits yet.</div>';
     return;
   }
   var html = '';
   for (var i = 0; i < commits.length; i++) {
     var c = commits[i];
-    html += '<tr>'
-      + '<td>' + esc(c.shortHash) + '</td>'
-      + '<td>' + esc(c.subject) + '</td>'
-      + '<td>' + esc(timeAgo(c.date)) + '</td>'
-      + '</tr>';
+    html += '<div class="git-commit-row" id="gc-' + i + '">'
+      + '<button class="git-commit-header" onclick="toggleGitCommit(' + i + ')">'
+      +   '<span class="git-commit-chevron">\u25b6</span>'
+      +   '<span class="git-commit-hash">' + esc(c.shortHash) + '</span>'
+      +   '<span class="git-commit-subject">' + esc(c.subject) + '</span>'
+      +   '<span class="git-commit-date">' + esc(timeAgo(c.date)) + '</span>'
+      + '</button>'
+      + '<div class="git-commit-body" style="display:none;">'
+      +   (c.body ? '<pre class="git-commit-body-pre">' + esc(c.body) + '</pre>'
+                  : '<span class="git-commit-no-body">No additional message body.</span>')
+      + '</div>'
+      + '</div>';
   }
-  tb.innerHTML = html;
+  el.innerHTML = html;
+}
+
+function toggleGitCommit(idx) {
+  var row = document.getElementById('gc-' + idx);
+  if (!row) return;
+  var body = row.querySelector('.git-commit-body');
+  var chevron = row.querySelector('.git-commit-chevron');
+  if (!body) return;
+  var open = body.style.display !== 'none';
+  body.style.display = open ? 'none' : '';
+  if (chevron) chevron.textContent = open ? '\u25b6' : '\u25bc';
+  row.classList.toggle('open', !open);
 }
 
 // ── History navigation ───────────────────────────────────────────────────────
@@ -3959,12 +4133,16 @@ function loadSettings() {
       if (oaiEl) oaiEl.checked = s.provider_openai_enabled !== false;
       var gemEl = document.getElementById('settingGeminiEnabled');
       if (gemEl) gemEl.checked = s.provider_gemini_enabled !== false;
+      var copilotEl = document.getElementById('settingCopilotEnabled');
+      if (copilotEl) copilotEl.checked = s.provider_copilot_enabled === true || s.provider_copilot_enabled === 'true';
       var anthCmd = document.getElementById('cliCmdAnthropic');
-      if (anthCmd) anthCmd.value = s.cli_anthropic_command || 'claude -p {prompt}';
+      if (anthCmd) anthCmd.value = s.cli_anthropic_command || 'claude --dangerously-skip-permissions -p {prompt}';
       var oaiCmd = document.getElementById('cliCmdOpenAI');
-      if (oaiCmd) oaiCmd.value = s.cli_openai_command || 'codex -p {prompt}';
+      if (oaiCmd) oaiCmd.value = s.cli_openai_command || 'codex --full-auto -p {prompt}';
       var gemCmd = document.getElementById('cliCmdGemini');
-      if (gemCmd) gemCmd.value = s.cli_gemini_command || 'gemini -p {prompt}';
+      if (gemCmd) gemCmd.value = s.cli_gemini_command || 'gemini --yolo -p {prompt}';
+      var copilotCmd = document.getElementById('cliCmdCopilot');
+      if (copilotCmd) copilotCmd.value = s.cli_copilot_command || 'copilot --allow-all-tools -p {prompt}';
       applyExecutionModeUi(s.execution_mode || 'api');
     })
     .catch(function() {});
@@ -3979,8 +4157,8 @@ function setExecutionMode(mode) {
 function applyExecutionModeUi(mode) {
   var apiBtn = document.getElementById('modeApiBtn');
   var cliBtn = document.getElementById('modeCliBtn');
-  var cliFields = ['cliCmdAnthropic', 'cliCmdOpenAI', 'cliCmdGemini'];
-  var cliBadges = ['cliBadgeAnthropic', 'cliBadgeOpenAI', 'cliBadgeGemini'];
+  var cliFields = ['cliCmdAnthropic', 'cliCmdOpenAI', 'cliCmdGemini', 'cliCmdCopilot'];
+  var cliBadges = ['cliBadgeAnthropic', 'cliBadgeOpenAI', 'cliBadgeGemini', 'cliBadgeCopilot'];
   if (apiBtn) {
     apiBtn.style.background = mode === 'api' ? 'var(--accent, #4f8ef7)' : 'var(--surface-muted)';
     apiBtn.style.color = mode === 'api' ? '#fff' : 'var(--text)';
@@ -3991,6 +4169,8 @@ function applyExecutionModeUi(mode) {
     cliBtn.style.color = mode === 'cli' ? '#fff' : 'var(--text)';
     cliBtn.style.borderColor = mode === 'cli' ? 'var(--accent, #4f8ef7)' : 'var(--border)';
   }
+  var yoloWarning = document.getElementById('cliYoloWarning');
+  if (yoloWarning) yoloWarning.style.display = mode === 'cli' ? 'block' : 'none';
   cliFields.forEach(function(id) {
     var el = document.getElementById(id);
     if (el) el.style.display = mode === 'cli' ? 'block' : 'none';
@@ -3999,6 +4179,9 @@ function applyExecutionModeUi(mode) {
     var el = document.getElementById(id);
     if (el) el.style.display = mode === 'cli' ? 'inline' : 'none';
   });
+  // Copilot is CLI-only — hide the entire row in Direct API mode
+  var copilotRow = document.getElementById('copilotProviderRow');
+  if (copilotRow) copilotRow.style.display = mode === 'cli' ? '' : 'none';
 }
 
 function loadCliStatus() {
@@ -4014,6 +4197,7 @@ function loadCliStatus() {
       badge('cliBadgeAnthropic', s.anthropic);
       badge('cliBadgeOpenAI', s.openai);
       badge('cliBadgeGemini', s.gemini);
+      badge('cliBadgeCopilot', s.copilot);
     })
     .catch(function() {});
 }
@@ -4085,7 +4269,7 @@ function enterIterateMode(id, dot, prompt) {
     nlInput.value = prompt || '';
     nlInput.placeholder = 'Describe modifications to make to the existing project\u2026';
   }
-  if (runBtn) { runBtn.disabled = false; }
+  if (runBtn) { runBtn.disabled = false; runBtn.innerHTML = '&#9654;&ensp;Iterate'; }
   if (cancelBtn) cancelBtn.style.display = 'inline-block';
   setGenStatus('', 'Iterate mode \u2014 edit description to regenerate automatically, or edit DOT directly.');
   renderGraph();
@@ -4096,9 +4280,11 @@ function exitIterateMode() {
   var nlInput = document.getElementById('nlInput');
   var genHint = document.getElementById('genHint');
   var cancelBtn = document.getElementById('cancelIterateBtn');
+  var runBtn = document.getElementById('runBtn');
   if (nlInput) nlInput.placeholder = 'e.g. \u201cWrite comprehensive unit tests for a Python web app, run them, fix any failures, then generate a coverage report\u201d\n\nDescribe what you want in plain English. The project will be generated automatically as you type.';
   if (genHint) genHint.textContent = 'You can edit the DOT source before running.';
   if (cancelBtn) cancelBtn.style.display = 'none';
+  if (runBtn) runBtn.innerHTML = '&#9654;&ensp;Create';
   setGenStatus('', 'Start typing to generate\u2026');
 }
 
@@ -4194,7 +4380,7 @@ function runIterated() {
     .then(function(data) {
       if (data.error) {
         setGenStatus('error', data.error);
-        if (runBtn) { runBtn.disabled = false; runBtn.innerHTML = '&#9654;&ensp;Create'; }
+        if (runBtn) { runBtn.disabled = false; runBtn.innerHTML = '&#9654;&ensp;Iterate'; }
         return;
       }
       exitIterateMode();
@@ -4203,7 +4389,7 @@ function runIterated() {
     })
     .catch(function(e) {
       setGenStatus('error', 'Failed: ' + String(e));
-      if (runBtn) { runBtn.disabled = false; runBtn.innerHTML = '&#9654;&ensp;Create'; }
+      if (runBtn) { runBtn.disabled = false; runBtn.innerHTML = '&#9654;&ensp;Iterate'; }
     });
 }
 
@@ -5180,8 +5366,8 @@ function executeDelete() {
   var p = projects[tabKey];
   var familyId = p && p.familyId;
   var runId = (p && p.id) || tabKey;
-  // Dashboard card deletes the whole family; run-page delete removes only the single run.
-  var reqBody = (pendingDeleteFamily && familyId) ? { familyId: familyId } : { id: runId };
+  // Always delete the whole family when a familyId is available, regardless of entry point.
+  var reqBody = familyId ? { familyId: familyId } : { id: runId };
   var btn = document.getElementById('deleteConfirmBtn');
   if (btn) { btn.disabled = true; btn.textContent = 'Deleting\u2026'; }
   fetch('/api/delete', {

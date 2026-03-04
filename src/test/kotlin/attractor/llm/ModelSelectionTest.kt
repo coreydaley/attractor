@@ -10,14 +10,16 @@ class ModelSelectionTest : FunSpec({
         mode: ExecutionMode = ExecutionMode.API,
         anthropic: Boolean = true,
         openai: Boolean = true,
-        gemini: Boolean = true
+        gemini: Boolean = true,
+        copilot: Boolean = false
     ) = LlmExecutionConfig(
         mode = mode,
-        providerToggles = ProviderToggles(anthropic = anthropic, openai = openai, gemini = gemini),
+        providerToggles = ProviderToggles(anthropic = anthropic, openai = openai, gemini = gemini, copilot = copilot),
         cliCommands = CliCommands(
             anthropic = "claude -p {prompt}",
             openai = "codex -p {prompt}",
-            gemini = "gemini -p {prompt}"
+            gemini = "gemini -p {prompt}",
+            copilot = "gh copilot suggest {prompt}"
         )
     )
 

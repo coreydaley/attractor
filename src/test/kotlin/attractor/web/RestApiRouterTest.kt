@@ -472,4 +472,20 @@ class RestApiRouterTest : FunSpec({
         resp.statusCode() shouldBe 400
         resp.body() shouldContain "BAD_REQUEST"
     }
+
+    // ── Sprint 022: logsRoot in REST v1 project JSON ──────────────────────────
+
+    test("GET /api/v1/projects list response contains logsRoot field") {
+        registry!!.register("lr-list-run", "lr.dot", "digraph L { start [shape=Mdiamond] exit [shape=Msquare] start -> exit }", familyId = "lr-list-family")
+        val resp = get("/projects")
+        resp.statusCode() shouldBe 200
+        resp.body() shouldContain "\"logsRoot\""
+    }
+
+    test("GET /api/v1/projects/{id} response contains logsRoot field") {
+        registry!!.register("lr-id-run", "lr2.dot", "digraph L2 { start [shape=Mdiamond] exit [shape=Msquare] start -> exit }", familyId = "lr-id-family")
+        val resp = get("/projects/lr-id-run")
+        resp.statusCode() shouldBe 200
+        resp.body() shouldContain "\"logsRoot\""
+    }
 })

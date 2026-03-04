@@ -258,18 +258,65 @@ class WebMonitorServerBrowserApiTest : FunSpec({
         resp.body() shouldContain "renderGitBar"
     }
 
-    test("GET / body contains toggleGitPanel JS function") {
+    test("GET / body contains toggleGitCommit JS function") {
         val resp = get("/")
-        resp.body() shouldContain "toggleGitPanel"
+        resp.body() shouldContain "toggleGitCommit"
     }
 
-    test("GET / body contains git-bar CSS class") {
+    test("GET / body contains git-commit-list CSS class") {
         val resp = get("/")
-        resp.body() shouldContain "git-bar"
+        resp.body() shouldContain "git-commit-list"
     }
 
     test("GET / body contains gitPanel DOM id") {
         val resp = get("/")
         resp.body() shouldContain "gitPanel"
+    }
+
+    // ── Sprint 022: Project page two-tab layout ───────────────────────────────
+
+    test("GET / body contains innerTabBtnRuns DOM id") {
+        val resp = get("/")
+        resp.body() shouldContain "innerTabBtnRuns"
+    }
+
+    test("GET / body contains innerTabBtnDetails DOM id") {
+        val resp = get("/")
+        resp.body() shouldContain "innerTabBtnDetails"
+    }
+
+    test("GET / body contains selectInnerTab JS function") {
+        val resp = get("/")
+        resp.body() shouldContain "selectInnerTab"
+    }
+
+    test("GET / body contains renderDetailsTab JS function") {
+        val resp = get("/")
+        resp.body() shouldContain "renderDetailsTab"
+    }
+
+    test("GET / body contains detailsMetaTable DOM id") {
+        val resp = get("/")
+        resp.body() shouldContain "detailsMetaTable"
+    }
+
+    test("GET / body contains attractor-project-inner-tab localStorage key") {
+        val resp = get("/")
+        resp.body() shouldContain "attractor-project-inner-tab"
+    }
+
+    test("GET / body contains inner-tab-btn CSS class") {
+        val resp = get("/")
+        resp.body() shouldContain "inner-tab-btn"
+    }
+
+    test("GET / body contains details-mode CSS class") {
+        val resp = get("/")
+        resp.body() shouldContain "details-mode"
+    }
+
+    test("GET /api/projects response body contains logsRoot key") {
+        val resp = get("/api/projects")
+        resp.body() shouldContain "logsRoot"
     }
 })

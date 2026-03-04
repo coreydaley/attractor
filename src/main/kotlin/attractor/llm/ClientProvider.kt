@@ -60,6 +60,11 @@ object ClientProvider {
             }
         }
 
+        if (config.isProviderEnabled("copilot") && config.mode == ExecutionMode.CLI) {
+            providers["copilot"] = CopilotCliAdapter(config.cliCommands.copilot)
+            if (firstProvider == null) firstProvider = "copilot"
+        }
+
         if (providers.isEmpty()) {
             throw ConfigurationError(
                 "No provider available. Enable at least one provider in Settings."
