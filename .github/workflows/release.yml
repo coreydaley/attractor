@@ -6,9 +6,77 @@ on:
       - 'v*'
 
 jobs:
+  build-base:
+    name: Build Base Image
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      rebuilt: ${{ steps.detect.outputs.rebuild }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect if Dockerfile.base changed
+        id: detect
+        run: |
+          CURRENT_TAG="${GITHUB_REF_NAME}"
+          PREV_TAG=$(git tag --sort=-version:refname | grep '^v' | grep -v "^${CURRENT_TAG}$" | head -1)
+          if [ -z "$PREV_TAG" ]; then
+            echo "No previous v* tag found — rebuilding base image"
+            echo "rebuild=true" >> $GITHUB_OUTPUT
+          elif git diff --name-only "$PREV_TAG" HEAD -- Dockerfile.base | grep -q .; then
+            echo "Dockerfile.base changed since $PREV_TAG — rebuilding base image"
+            echo "rebuild=true" >> $GITHUB_OUTPUT
+          else
+            echo "Dockerfile.base unchanged since $PREV_TAG — skipping base image rebuild"
+            echo "rebuild=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Set up Docker Buildx
+        if: steps.detect.outputs.rebuild == 'true'
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        if: steps.detect.outputs.rebuild == 'true'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract base image metadata
+        if: steps.detect.outputs.rebuild == 'true'
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/attractor-base
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+            type=raw,value=latest
+
+      - name: Build and push base image
+        if: steps.detect.outputs.rebuild == 'true'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.base
+          push: true
+          platforms: linux/amd64,linux/arm64
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=attractor-base
+          cache-to: type=gha,mode=max,scope=attractor-base
+
   build-and-release:
     name: Build & Release
     runs-on: ubuntu-latest
+    needs: build-base
 
     permissions:
       contents: write
@@ -90,14 +158,16 @@ jobs:
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=semver,pattern={{major}}
+            type=raw,value=latest
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v6
         with:
           context: .
+          file: Dockerfile
           push: true
           platforms: linux/amd64,linux/arm64
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=attractor
+          cache-to: type=gha,mode=max,scope=attractor

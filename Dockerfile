@@ -1,47 +1,8 @@
-# ── Build stage ───────────────────────────────────────────────────────────────
-FROM eclipse-temurin:21-jdk AS builder
-
-WORKDIR /build
-
-COPY gradlew settings.gradle.kts build.gradle.kts ./
-COPY gradle/ gradle/
-
-# Download dependencies in a separate layer for better caching
-RUN --mount=type=cache,target=/root/.gradle,id=gradle-$TARGETARCH \
-    chmod +x gradlew && ./gradlew dependencies --no-daemon -q
-
-COPY src/ src/
-
-RUN --mount=type=cache,target=/root/.gradle,id=gradle-$TARGETARCH \
-    ./gradlew releaseJar --no-daemon -q
-
-# ── Runtime stage ─────────────────────────────────────────────────────────────
-FROM eclipse-temurin:21-jre
-
-RUN apt-get update && apt-get install -y --no-install-recommends \
-        # required tools
-        graphviz \
-        git \
-        # optional tools
-        python3 \
-        ruby \
-        nodejs \
-        npm \
-        golang-go \
-        rustc \
-        cargo \
-        gcc \
-        g++ \
-        clang \
-        make \
-        gradle \
-        maven \
-        curl \
-    && rm -rf /var/lib/apt/lists/*
+FROM ghcr.io/coreydaley/attractor-base:latest
 
 WORKDIR /app
 
-COPY --from=builder /build/build/libs/attractor-server-*.jar /app/attractor-server.jar
+COPY build/libs/attractor-server-*.jar /app/attractor-server.jar
 
 # Persist the SQLite database outside the container
 VOLUME /app/data

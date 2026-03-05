@@ -16,7 +16,7 @@ GRADLEW   := ./gradlew
 JAR        = build/libs/attractor-server-devel.jar
 WEB_PORT  ?= 7070
 
-.PHONY: help build test clean run run-jar dev jar cli-jar release dist check install-dev-deps install-runtime-deps openapi docker-build docker-run
+.PHONY: help build test clean run run-jar dev jar cli-jar release dist check install-dev-deps install-runtime-deps openapi docker-build-base docker-build docker-run
 
 # Default target — show available targets
 help:
@@ -35,8 +35,9 @@ help:
 	@echo "  make dist           Build distribution archives (tar + zip)"
 	@echo "  make check          Run tests and static checks"
 	@echo "  make openapi        Generate OpenAPI 3.0 specs (JSON + YAML)"
-	@echo "  make docker-build   Build a local Docker image (attractor:local)"
-	@echo "  make docker-run     Run the local Docker image (uses .env if present)"
+	@echo "  make docker-build-base  Build the base image locally (attractor-base:local)"
+	@echo "  make docker-build       Build the server image (attractor:local); builds base if needed"
+	@echo "  make docker-run         Run the local Docker image (uses .env if present)"
 	@echo "  make install-dev-deps       Install dev dependencies (Java 21, git, entr)"
 	@echo "  make install-runtime-deps   Install runtime dependencies (Java 21, git, graphviz)"
 	@echo ""
@@ -83,8 +84,12 @@ release:
 	  | grep -v -- '-devel' | sed 's/^/    /' || true
 	@echo ""
 
+docker-build-base:
+	docker build -f Dockerfile.base -t attractor-base:local -t ghcr.io/coreydaley/attractor-base:latest .
+
 docker-build:
-	docker build -t attractor:local .
+	@docker image inspect attractor-base:local > /dev/null 2>&1 || $(MAKE) docker-build-base
+	docker build -f Dockerfile -t attractor:local .
 
 # Run the local image. If a .env file exists in this directory it is loaded
 # automatically; copy .env.example to .env and fill in your API keys.

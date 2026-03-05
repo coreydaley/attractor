@@ -21,3 +21,4 @@ sprint_id	title	status	created_at	updated_at
 020	Workspace Git Versioning	completed	2026-03-04T19:26:15Z	2026-03-04T19:31:50Z
 021	Project Git History Panel	completed	2026-03-04T20:18:37Z	2026-03-04T20:27:16Z
 022	Hugo Docs Microsite on GitHub Pages	completed	2026-03-04T20:54:51Z	2026-03-05T03:51:08Z
+023	Split Docker Build into Base and Server Images	completed	2026-03-05T04:51:04Z	2026-03-05T04:52:41Z
