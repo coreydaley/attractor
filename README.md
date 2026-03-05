@@ -15,7 +15,7 @@ A DOT-based pipeline runner that orchestrates multi-stage AI workflows. You defi
 ## Features
 
 - **DOT pipelines** — define workflows as `.dot` directed graphs; nodes are tasks, edges are transitions
-- **LLM integration** — nodes call Anthropic Claude, OpenAI GPT, or Google Gemini based on configuration
+- **LLM integration** — nodes call Anthropic Claude, OpenAI GPT, Google Gemini, GitHub Copilot (CLI), or any OpenAI-compatible endpoint (Ollama, LM Studio, vLLM) based on configuration
 - **Conditional branching** — edges carry `condition=` attributes that route execution based on node outcomes
 - **Parallel execution** — fan-out / fan-in nodes run multiple branches concurrently
 - **Human gates** — `type="wait.human"` nodes pause execution for interactive approval/rejection
@@ -28,15 +28,17 @@ A DOT-based pipeline runner that orchestrates multi-stage AI workflows. You defi
 ## Requirements
 
 - **Java 21** (Gradle 8.7 is incompatible with Java 25+)
+- **git** — required for project git-integration features
+- **Graphviz** (`dot`) — required for DOT-to-SVG graph rendering in the dashboard
 - Gradle 8.7 (wrapper included, or use the system Gradle)
 - GNU Make (included on macOS and most Linux distros)
 
 ## Quick Start
 
 ```bash
-make install-deps   # install Java 21 and git (interactive, detects OS/package manager)
-make build          # compile and assemble
-make run            # start the web interface on port 7070
+make install-runtime-deps   # install Java 21, git, and graphviz (interactive, detects OS/package manager)
+make build                  # compile and assemble
+make run                    # start the web interface on port 7070
 ```
 
 ## Make Targets
@@ -55,7 +57,7 @@ make run            # start the web interface on port 7070
 | `make cli-jar` | Build the CLI fat JAR (`build/libs/attractor-cli-devel.jar`) |
 | `make release` | Build versioned server + CLI JARs for distribution |
 | `make dev` | Dev mode: watch `src/`, rebuild and restart on change (requires `entr`) |
-| `make install-deps` | Interactively install Java 21 and git using your OS package manager |
+| `make install-runtime-deps` | Interactively install Java 21, git, and graphviz using your OS package manager |
 | `make install-dev-deps` | Interactively install Java 21, git, and `entr` using your OS package manager |
 
 ### Make Options
@@ -112,10 +114,50 @@ java -jar build/libs/attractor-server-1.0.0.jar [options]
 
 | Variable | Description |
 |----------|-------------|
-| `ANTHROPIC_API_KEY` | API key for Anthropic Claude |
-| `OPENAI_API_KEY` | API key for OpenAI GPT |
-| `GEMINI_API_KEY` | API key for Google Gemini |
+| `ANTHROPIC_API_KEY` | API key for Anthropic Claude (Direct API mode) |
+| `OPENAI_API_KEY` | API key for OpenAI GPT (Direct API mode) |
+| `GEMINI_API_KEY` or `GOOGLE_API_KEY` | API key for Google Gemini (Direct API mode) |
 | `ATTRACTOR_DEBUG` | Set to any value to enable debug output and stack traces |
+
+## LLM Providers
+
+Attractor supports two execution modes, selectable in **Settings → Execution Mode**:
+
+- **Direct API** — makes HTTP calls directly to provider APIs using environment variable keys
+- **CLI subprocess** — shells out to installed CLI tools (`claude`, `codex`, `gemini`, `gh copilot`)
+
+### Direct API providers
+
+| Provider | Toggle key | Credential |
+|----------|-----------|------------|
+| Anthropic Claude | `provider_anthropic_enabled` | `ANTHROPIC_API_KEY` env var |
+| OpenAI GPT | `provider_openai_enabled` | `OPENAI_API_KEY` env var |
+| Google Gemini | `provider_gemini_enabled` | `GEMINI_API_KEY` or `GOOGLE_API_KEY` env var |
+| Custom (OpenAI-compatible) | `provider_custom_enabled` | Configurable API key (optional) |
+
+The **Custom** provider works with any endpoint that implements the OpenAI `/v1/chat/completions` format — including [Ollama](https://ollama.com), [LM Studio](https://lmstudio.ai), [vLLM](https://docs.vllm.ai), and similar local or self-hosted inference servers. Configure it in Settings with a host URL, port, optional API key, and model name. The badge shows whether the endpoint is reachable rather than whether a key is set.
+
+**Ollama quick start:**
+```bash
+ollama serve                 # starts on http://localhost:11434 by default
+ollama pull llama3.2
+# In Attractor Settings: enable Custom, set host=http://localhost, port=11434, model=llama3.2
+```
+
+### CLI subprocess providers
+
+| Provider | Binary | Install |
+|----------|--------|---------|
+| Anthropic Claude | `claude` | [Claude Code](https://claude.ai/code) |
+| OpenAI Codex | `codex` | `npm install -g @openai/codex` |
+| Google Gemini | `gemini` | [Gemini CLI](https://github.com/google-gemini/gemini-cli) |
+| GitHub Copilot | `gh copilot` | `gh extension install github/gh-copilot` |
+
+CLI mode does not require environment variable API keys — authentication is handled by the installed tool. Command templates are configurable per provider in Settings and support `{prompt}` substitution.
+
+### System tool warnings
+
+The Settings page shows a **Required** and **Optional** tool grid. Missing required tools (`java`, `git`, `dot`) trigger a warning banner at the top of the page. Use `make install-runtime-deps` to install all three interactively.
 
 ## Database Configuration
 
