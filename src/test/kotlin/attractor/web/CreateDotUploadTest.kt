@@ -68,7 +68,7 @@ class CreateDotUploadTest : FunSpec({
         get("/api/v1/projects").statusCode() shouldBe 200
     }
 
-    test("GET /docs still returns 200") {
-        get("/docs").statusCode() shouldBe 200
+    test("GET /docs returns 404 (endpoint removed)") {
+        get("/docs").statusCode() shouldBe 404
     }
 })

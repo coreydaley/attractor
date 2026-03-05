@@ -42,74 +42,16 @@ class DocsEndpointTest : FunSpec({
 
     // ── Route contract ────────────────────────────────────────────────────────
 
-    test("GET /docs returns 200") {
-        get("/docs").statusCode() shouldBe 200
+    test("GET /docs returns 404 (endpoint removed, docs moved to external site)") {
+        get("/docs").statusCode() shouldBe 404
     }
 
-    test("GET /docs/ trailing slash returns 200") {
-        get("/docs/").statusCode() shouldBe 200
+    test("GET /docs/ trailing slash returns 404") {
+        get("/docs/").statusCode() shouldBe 404
     }
 
     test("GET /docs/anything sub-path returns 404") {
         get("/docs/anything").statusCode() shouldBe 404
-    }
-
-    test("GET /docs has text/html content-type") {
-        val resp = get("/docs")
-        resp.statusCode() shouldBe 200
-        resp.headers().firstValue("content-type").orElse("") shouldContain "text/html"
-    }
-
-    // ── Page structure ────────────────────────────────────────────────────────
-
-    test("GET /docs body contains title") {
-        get("/docs").body() shouldContain "<title>Attractor Docs</title>"
-    }
-
-    test("GET /docs body contains Web App tab label") {
-        get("/docs").body() shouldContain "Web App"
-    }
-
-    test("GET /docs body contains REST API tab label") {
-        get("/docs").body() shouldContain "REST API"
-    }
-
-    test("GET /docs body contains CLI tab label") {
-        get("/docs").body() shouldContain "CLI"
-    }
-
-    test("GET /docs body contains DOT Format tab label") {
-        get("/docs").body() shouldContain "DOT Format"
-    }
-
-    // ── Content completeness markers ──────────────────────────────────────────
-
-    test("GET /docs REST API section contains /api/v1/projects") {
-        get("/docs").body() shouldContain "/api/v1/projects"
-    }
-
-    test("GET /docs REST API section contains POST /api/v1/dot/validate") {
-        get("/docs").body() shouldContain "POST /api/v1/dot/validate"
-    }
-
-    test("GET /docs CLI section contains attractor project list") {
-        get("/docs").body() shouldContain "attractor project list"
-    }
-
-    test("GET /docs CLI section contains attractor dot generate") {
-        get("/docs").body() shouldContain "attractor dot generate"
-    }
-
-    test("GET /docs DOT Format section contains shape=Mdiamond") {
-        get("/docs").body() shouldContain "shape=Mdiamond"
-    }
-
-    test("GET /docs export section describes artifacts/workspace/ directory") {
-        get("/docs").body() shouldContain "workspace/"
-    }
-
-    test("GET /docs artifact download section contains live.log description") {
-        get("/docs").body() shouldContain "live.log"
     }
 
     // ── Regression guard ──────────────────────────────────────────────────────
@@ -118,7 +60,7 @@ class DocsEndpointTest : FunSpec({
         get("/").statusCode() shouldBe 200
     }
 
-    test("GET / root page contains window.open for Docs nav button") {
-        get("/").body() shouldContain "window.open"
+    test("GET / root page Docs nav button opens external docs site") {
+        get("/").body() shouldContain "coreydaley.github.io/attractor"
     }
 })

@@ -153,9 +153,9 @@ class WebMonitorServerBrowserApiTest : FunSpec({
         resp.statusCode() shouldBe 200
     }
 
-    test("GET /docs returns 200 (docs still works)") {
+    test("GET /docs returns 404 (endpoint removed)") {
         val resp = get("/docs")
-        resp.statusCode() shouldBe 200
+        resp.statusCode() shouldBe 404
     }
 
     // ── Sprint 016: Closeable tabs markup presence ────────────────────────────
