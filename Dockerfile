@@ -31,6 +31,12 @@ COPY --from=builder /build/build/libs/attractor-server-*.jar /app/attractor-serv
 VOLUME /app/data
 ENV ATTRACTOR_DB_NAME=/app/data/attractor.db
 
+# LLM provider API keys — supply at runtime via --env-file or -e flags
+ENV ANTHROPIC_API_KEY=""
+ENV OPENAI_API_KEY=""
+ENV GEMINI_API_KEY=""
+ENV GOOGLE_API_KEY=""
+
 EXPOSE 7070
 
 ENTRYPOINT ["java", "-jar", "/app/attractor-server.jar"]

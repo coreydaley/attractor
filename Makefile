@@ -16,7 +16,7 @@ GRADLEW   := ./gradlew
 JAR        = build/libs/attractor-server-devel.jar
 WEB_PORT  ?= 7070
 
-.PHONY: help build test clean run run-jar dev jar cli-jar release dist check install-dev-deps install-runtime-deps openapi docker-build
+.PHONY: help build test clean run run-jar dev jar cli-jar release dist check install-dev-deps install-runtime-deps openapi docker-build docker-run
 
 # Default target — show available targets
 help:
@@ -36,6 +36,7 @@ help:
 	@echo "  make check          Run tests and static checks"
 	@echo "  make openapi        Generate OpenAPI 3.0 specs (JSON + YAML)"
 	@echo "  make docker-build   Build a local Docker image (attractor:local)"
+	@echo "  make docker-run     Run the local Docker image (uses .env if present)"
 	@echo "  make install-dev-deps       Install dev dependencies (Java 21, git, entr)"
 	@echo "  make install-runtime-deps   Install runtime dependencies (Java 21, git, graphviz)"
 	@echo ""
@@ -84,6 +85,14 @@ release:
 
 docker-build:
 	docker build -t attractor:local .
+
+# Run the local image. If a .env file exists in this directory it is loaded
+# automatically; copy .env.example to .env and fill in your API keys.
+docker-run:
+	docker run --rm -p $(WEB_PORT):7070 \
+	  -v "$(CURDIR)/data:/app/data" \
+	  $(if $(wildcard .env),--env-file .env) \
+	  attractor:local
 
 dist:
 	$(GRADLEW) distTar distZip
