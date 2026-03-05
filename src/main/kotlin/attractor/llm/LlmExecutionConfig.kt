@@ -8,7 +8,8 @@ data class ProviderToggles(
     val anthropic: Boolean,
     val openai: Boolean,
     val gemini: Boolean,
-    val copilot: Boolean
+    val copilot: Boolean,
+    val custom: Boolean
 )
 
 data class CliCommands(
@@ -18,16 +19,27 @@ data class CliCommands(
     val copilot: String
 )
 
+data class CustomApiConfig(
+    val host: String,
+    val port: String,
+    val apiKey: String,
+    val model: String
+) {
+    val baseUrl: String get() = if (port.isBlank()) host else "$host:$port"
+}
+
 data class LlmExecutionConfig(
     val mode: ExecutionMode,
     val providerToggles: ProviderToggles,
-    val cliCommands: CliCommands
+    val cliCommands: CliCommands,
+    val customApiConfig: CustomApiConfig
 ) {
     fun isProviderEnabled(name: String): Boolean = when (name) {
         "anthropic" -> providerToggles.anthropic
         "openai"    -> providerToggles.openai
         "gemini"    -> providerToggles.gemini
         "copilot"   -> providerToggles.copilot
+        "custom"    -> providerToggles.custom
         else        -> false
     }
 
@@ -50,13 +62,20 @@ data class LlmExecutionConfig(
                     anthropic = parseBool(store.getSetting("provider_anthropic_enabled"), default = false),
                     openai    = parseBool(store.getSetting("provider_openai_enabled"), default = false),
                     gemini    = parseBool(store.getSetting("provider_gemini_enabled"), default = false),
-                    copilot   = parseBool(store.getSetting("provider_copilot_enabled"), default = false)
+                    copilot   = parseBool(store.getSetting("provider_copilot_enabled"), default = false),
+                    custom    = parseBool(store.getSetting("provider_custom_enabled"), default = false)
                 ),
                 cliCommands = CliCommands(
                     anthropic = store.getSetting("cli_anthropic_command") ?: "claude --dangerously-skip-permissions -p {prompt}",
                     openai    = store.getSetting("cli_openai_command")    ?: "codex exec --full-auto {prompt}",
                     gemini    = store.getSetting("cli_gemini_command")    ?: "gemini --yolo -p {prompt}",
                     copilot   = store.getSetting("cli_copilot_command")   ?: "copilot --allow-all-tools -p {prompt}"
+                ),
+                customApiConfig = CustomApiConfig(
+                    host   = store.getSetting("custom_api_host")  ?: "http://localhost",
+                    port   = store.getSetting("custom_api_port")  ?: "11434",
+                    apiKey = store.getSetting("custom_api_key")   ?: "",
+                    model  = store.getSetting("custom_api_model") ?: "llama3.2"
                 )
             )
         }

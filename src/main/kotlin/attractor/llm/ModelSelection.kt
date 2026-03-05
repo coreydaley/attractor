@@ -41,6 +41,10 @@ object ModelSelection {
             return "copilot" to "copilot"
         }
 
+        if (config.isProviderEnabled("custom") && config.mode == ExecutionMode.API) {
+            return "custom" to config.customApiConfig.model
+        }
+
         throw ConfigurationError(
             "No LLM provider available. Enable at least one provider in Settings."
         )

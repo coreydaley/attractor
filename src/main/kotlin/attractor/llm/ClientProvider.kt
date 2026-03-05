@@ -65,6 +65,16 @@ object ClientProvider {
             if (firstProvider == null) firstProvider = "copilot"
         }
 
+        if (config.isProviderEnabled("custom") && config.mode == ExecutionMode.API) {
+            val c = config.customApiConfig
+            providers["custom"] = CustomApiAdapter(
+                baseUrl = c.baseUrl,
+                apiKey  = c.apiKey,
+                model   = c.model
+            )
+            if (firstProvider == null) firstProvider = "custom"
+        }
+
         if (providers.isEmpty()) {
             throw ConfigurationError(
                 "No provider available. Enable at least one provider in Settings."

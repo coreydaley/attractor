@@ -11,16 +11,18 @@ class ModelSelectionTest : FunSpec({
         anthropic: Boolean = true,
         openai: Boolean = true,
         gemini: Boolean = true,
-        copilot: Boolean = false
+        copilot: Boolean = false,
+        custom: Boolean = false
     ) = LlmExecutionConfig(
         mode = mode,
-        providerToggles = ProviderToggles(anthropic = anthropic, openai = openai, gemini = gemini, copilot = copilot),
+        providerToggles = ProviderToggles(anthropic = anthropic, openai = openai, gemini = gemini, copilot = copilot, custom = custom),
         cliCommands = CliCommands(
             anthropic = "claude -p {prompt}",
             openai = "codex -p {prompt}",
             gemini = "gemini -p {prompt}",
             copilot = "gh copilot suggest {prompt}"
-        )
+        ),
+        customApiConfig = CustomApiConfig(host = "http://localhost", port = "11434", apiKey = "", model = "llama3.2")
     )
 
     // ── API mode ──────────────────────────────────────────────────────────────
