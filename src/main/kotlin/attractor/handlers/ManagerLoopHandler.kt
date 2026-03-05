@@ -77,7 +77,7 @@ class ManagerLoopHandler(
                 if (jarPath.endsWith(".jar")) {
                     val childLogsRoot = "$logsRoot/child-${System.currentTimeMillis()}"
                     ProcessBuilder("java", "-jar", jarPath, dotfile, "--auto-approve",
-                        "--logs-root", childLogsRoot)
+                        "--projects-root", childLogsRoot)
                         .redirectOutput(ProcessBuilder.Redirect.INHERIT)
                         .redirectError(ProcessBuilder.Redirect.INHERIT)
                         .start()

@@ -54,7 +54,9 @@ make run            # start the web interface on port 7070
 | `make dist` | Build distribution archives (`.tar` and `.zip`) |
 | `make cli-jar` | Build the CLI fat JAR (`build/libs/attractor-cli-devel.jar`) |
 | `make release` | Build versioned server + CLI JARs for distribution |
+| `make dev` | Dev mode: watch `src/`, rebuild and restart on change (requires `entr`) |
 | `make install-deps` | Interactively install Java 21 and git using your OS package manager |
+| `make install-dev-deps` | Interactively install Java 21, git, and `entr` using your OS package manager |
 
 ### Make Options
 
@@ -90,6 +92,7 @@ The output jar is written to `build/libs/attractor-server-*.jar`.
 ```bash
 make run           # via Gradle (auto-reloads classpath changes)
 make run-jar       # via the pre-built fat JAR (faster startup)
+make dev           # dev mode: watch src/, rebuild + restart on change (requires entr)
 ```
 
 Or directly:
@@ -102,7 +105,7 @@ java -jar build/libs/attractor-server-1.0.0.jar [options]
 
 | Flag | Description |
 |------|-------------|
-| `--logs-root <dir>` | Directory for logs and artifacts (default: `logs/<name>-<timestamp>`) |
+| `--projects-root <dir>` | Directory for logs and artifacts (default: `logs/<name>-<timestamp>`) |
 | `--web-port <n>` | Web interface port (default: `7070`) |
 
 ### Environment Variables

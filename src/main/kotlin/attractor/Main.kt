@@ -40,7 +40,7 @@ fun parseArgs(args: Array<String>): ParsedArgs {
     var i = 0
     while (i < args.size) {
         when (args[i]) {
-            "--logs-root" -> {
+            "--projects-root" -> {
                 i++
                 if (i < args.size) logsRoot = args[i]
             }
