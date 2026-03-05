@@ -12,6 +12,8 @@ jobs:
 
     permissions:
       contents: write
+      id-token: write
+      attestations: write
 
     steps:
       - name: Checkout
@@ -48,6 +50,16 @@ jobs:
       - name: Find CLI JAR
         id: find-cli-jar
         run: echo "jar_path=$(find build/libs -name 'attractor-cli-*.jar' | grep -v devel | head -1)" >> "$GITHUB_OUTPUT"
+
+      - name: Attest server JAR
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: ${{ steps.find-server-jar.outputs.jar_path }}
+
+      - name: Attest CLI JAR
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: ${{ steps.find-cli-jar.outputs.jar_path }}
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
