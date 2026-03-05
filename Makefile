@@ -16,7 +16,7 @@ GRADLEW   := ./gradlew
 JAR        = build/libs/attractor-server-devel.jar
 WEB_PORT  ?= 7070
 
-.PHONY: help build test clean run run-jar dev jar cli-jar release dist check install-dev-deps install-runtime-deps openapi
+.PHONY: help build test clean run run-jar dev jar cli-jar release dist check install-dev-deps install-runtime-deps openapi docker-build
 
 # Default target — show available targets
 help:
@@ -35,6 +35,7 @@ help:
 	@echo "  make dist           Build distribution archives (tar + zip)"
 	@echo "  make check          Run tests and static checks"
 	@echo "  make openapi        Generate OpenAPI 3.0 specs (JSON + YAML)"
+	@echo "  make docker-build   Build a local Docker image (attractor:local)"
 	@echo "  make install-dev-deps       Install dev dependencies (Java 21, git, entr)"
 	@echo "  make install-runtime-deps   Install runtime dependencies (Java 21, git, graphviz)"
 	@echo ""
@@ -80,6 +81,9 @@ release:
 	@ls build/libs/attractor-server-*.jar build/libs/attractor-cli-*.jar 2>/dev/null \
 	  | grep -v -- '-devel' | sed 's/^/    /' || true
 	@echo ""
+
+docker-build:
+	docker build -t attractor:local .
 
 dist:
 	$(GRADLEW) distTar distZip
