@@ -2,6 +2,7 @@ package attractor.web
 
 import attractor.db.RunStore
 import attractor.llm.ClientProvider
+import attractor.llm.ConfigurationError
 import attractor.llm.LlmExecutionConfig
 import attractor.llm.Message
 import attractor.llm.ModelSelection
@@ -131,11 +132,17 @@ digraph ContentReview {
 
         val fullText = StringBuilder()
         for (event in client.stream(request)) {
-            if (event.type == StreamEventType.TEXT_DELTA && event.delta != null) {
-                onDelta(event.delta)
-                fullText.append(event.delta)
+            when {
+                event.type == StreamEventType.TEXT_DELTA && event.delta != null -> {
+                    onDelta(event.delta)
+                    fullText.append(event.delta)
+                }
+                event.type == StreamEventType.ERROR && event.error != null ->
+                    throw event.error
             }
         }
+
+        if (fullText.isEmpty()) throw ConfigurationError("No output received from provider ($provider). Check the CLI command or API key in Settings.")
 
         return extractDotSource(fullText.toString())
     }
@@ -212,11 +219,16 @@ Output ONLY the corrected raw DOT source — no markdown fences, no explanations
 
         val fullText = StringBuilder()
         for (event in client.stream(request)) {
-            if (event.type == StreamEventType.TEXT_DELTA && event.delta != null) {
-                onDelta(event.delta)
-                fullText.append(event.delta)
+            when {
+                event.type == StreamEventType.TEXT_DELTA && event.delta != null -> {
+                    onDelta(event.delta)
+                    fullText.append(event.delta)
+                }
+                event.type == StreamEventType.ERROR && event.error != null ->
+                    throw event.error
             }
         }
+        if (fullText.isEmpty()) throw ConfigurationError("No output received from provider ($provider). Check the CLI command or API key in Settings.")
         return extractDotSource(fullText.toString())
     }
 
@@ -248,9 +260,13 @@ Output ONLY the description — no labels, no headers, no markdown formatting.""
 
         val fullText = StringBuilder()
         for (event in client.stream(request)) {
-            if (event.type == StreamEventType.TEXT_DELTA && event.delta != null) {
-                onDelta(event.delta)
-                fullText.append(event.delta)
+            when {
+                event.type == StreamEventType.TEXT_DELTA && event.delta != null -> {
+                    onDelta(event.delta)
+                    fullText.append(event.delta)
+                }
+                event.type == StreamEventType.ERROR && event.error != null ->
+                    throw event.error
             }
         }
         return fullText.toString().trim()

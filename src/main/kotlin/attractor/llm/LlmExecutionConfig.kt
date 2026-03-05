@@ -47,14 +47,14 @@ data class LlmExecutionConfig(
             return LlmExecutionConfig(
                 mode = mode,
                 providerToggles = ProviderToggles(
-                    anthropic = parseBool(store.getSetting("provider_anthropic_enabled")),
-                    openai    = parseBool(store.getSetting("provider_openai_enabled")),
-                    gemini    = parseBool(store.getSetting("provider_gemini_enabled")),
+                    anthropic = parseBool(store.getSetting("provider_anthropic_enabled"), default = false),
+                    openai    = parseBool(store.getSetting("provider_openai_enabled"), default = false),
+                    gemini    = parseBool(store.getSetting("provider_gemini_enabled"), default = false),
                     copilot   = parseBool(store.getSetting("provider_copilot_enabled"), default = false)
                 ),
                 cliCommands = CliCommands(
                     anthropic = store.getSetting("cli_anthropic_command") ?: "claude --dangerously-skip-permissions -p {prompt}",
-                    openai    = store.getSetting("cli_openai_command")    ?: "codex --full-auto -p {prompt}",
+                    openai    = store.getSetting("cli_openai_command")    ?: "codex exec --full-auto {prompt}",
                     gemini    = store.getSetting("cli_gemini_command")    ?: "gemini --yolo -p {prompt}",
                     copilot   = store.getSetting("cli_copilot_command")   ?: "copilot --allow-all-tools -p {prompt}"
                 )

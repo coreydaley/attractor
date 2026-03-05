@@ -37,6 +37,10 @@ object ModelSelection {
             }
         }
 
+        if (config.isProviderEnabled("copilot") && config.mode == ExecutionMode.CLI) {
+            return "copilot" to "copilot"
+        }
+
         throw ConfigurationError(
             "No LLM provider available. Enable at least one provider in Settings."
         )
