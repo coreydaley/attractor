@@ -1,4 +1,4 @@
-FROM eclipse-temurin:22-jre-noble
+FROM eclipse-temurin:25-jre-noble
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
         # required tools

@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Build & Run
 
-**Requirements:** Java 22 (Gradle 8.7 is incompatible with Java 25+), `git`, `graphviz` (`dot`)
+**Requirements:** Java 25 (Gradle 9.4.0), `git`, `graphviz` (`dot`)
 
 ```bash
 make build          # compile and assemble
@@ -21,9 +21,9 @@ Run a single test class via Gradle:
 ./gradlew test --tests "attractor.engine.EngineTest"
 ```
 
-Override `JAVA_HOME` if Java 22 is not at the default Homebrew path:
+Override `JAVA_HOME` if Java 25 is not at the default Homebrew path:
 ```bash
-make build JAVA_HOME=/usr/lib/jvm/java-22-openjdk
+make build JAVA_HOME=/usr/lib/jvm/java-25-openjdk
 ```
 
 The server JAR is `build/libs/attractor-server-devel.jar`; the CLI JAR is `build/libs/attractor-cli-devel.jar`. Use `make release` to produce versioned JARs from a git tag.
@@ -82,7 +82,7 @@ Attractor is a **Kotlin/JVM pipeline runner** for DOT-graph-defined AI workflows
 
 ### Key conventions
 
-- The `build.gradle.kts` compiles to JVM target 22; Java 22 is required to run (Gradle 8.7 is incompatible with Java 25+).
+- The `build.gradle.kts` compiles to JVM target 22; Java 25 is required to run (Gradle 9.4.0).
 - Tests use JUnit 5 + Kotest assertions + H2 in-memory database for DB tests.
 - The `ATTRACTOR_DEBUG` env var enables debug logging and stack traces.
 - `bin/attractor` is a shell wrapper that auto-locates the latest CLI JAR.

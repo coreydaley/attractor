@@ -54,13 +54,13 @@ application {
 
 tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile> {
     kotlinOptions {
-        jvmTarget = "22"
+        jvmTarget = "25"
     }
 }
 
 tasks.withType<JavaCompile> {
-    sourceCompatibility = "22"
-    targetCompatibility = "22"
+    sourceCompatibility = "25"
+    targetCompatibility = "25"
 }
 
 tasks.test {

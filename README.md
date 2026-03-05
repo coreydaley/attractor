@@ -27,16 +27,16 @@ A DOT-based pipeline runner that orchestrates multi-stage AI workflows. You defi
 
 ## Requirements
 
-- **Java 22** (Gradle 8.7 is incompatible with Java 25+)
+- **Java 25** (Gradle 9.4.0)
 - **git** — required for project git-integration features
 - **Graphviz** (`dot`) — required for DOT-to-SVG graph rendering in the dashboard
-- Gradle 8.7 (wrapper included, or use the system Gradle)
+- Gradle 9.4.0 (wrapper included, or use the system Gradle)
 - GNU Make (included on macOS and most Linux distros)
 
 ## Quick Start
 
 ```bash
-make install-runtime-deps   # install Java 22, git, and graphviz (interactive, detects OS/package manager)
+make install-runtime-deps   # install Java 25, git, and graphviz (interactive, detects OS/package manager)
 make build                  # compile and assemble
 make run                    # start the web interface on port 7070
 ```
@@ -60,8 +60,8 @@ make run                    # start the web interface on port 7070
 | `make docker-build-base` | Build the base image locally (`attractor-base:local`) from `Dockerfile.base` |
 | `make docker-build` | Build the server image locally (`attractor:local`); builds base image first if not present |
 | `make docker-run` | Run `attractor:local`; auto-loads `.env` if present |
-| `make install-runtime-deps` | Interactively install Java 22, git, and graphviz using your OS package manager |
-| `make install-dev-deps` | Interactively install Java 22, git, and `entr` using your OS package manager |
+| `make install-runtime-deps` | Interactively install Java 25, git, and graphviz using your OS package manager |
+| `make install-dev-deps` | Interactively install Java 25, git, and `entr` using your OS package manager |
 
 ### Make Options
 
@@ -70,11 +70,11 @@ Pass these on the command line to override defaults:
 | Option | Default | Description |
 |--------|---------|-------------|
 | `WEB_PORT=<n>` | `7070` | Web UI port |
-| `JAVA_HOME=<path>` | `/opt/homebrew/opt/openjdk@22/…` | Path to JDK 21 |
+| `JAVA_HOME=<path>` | `/opt/homebrew/opt/openjdk@25/…` | Path to JDK 21 |
 
 ```bash
 make run WEB_PORT=8080
-make run-jar JAVA_HOME=/usr/lib/jvm/java-22-openjdk
+make run-jar JAVA_HOME=/usr/lib/jvm/java-25-openjdk
 ```
 
 ## Build
@@ -83,10 +83,10 @@ make run-jar JAVA_HOME=/usr/lib/jvm/java-22-openjdk
 make build
 ```
 
-Or manually (Java 22 must be active):
+Or manually (Java 25 must be active):
 
 ```bash
-export JAVA_HOME=/opt/homebrew/opt/openjdk@22/libexec/openjdk.jdk/Contents/Home
+export JAVA_HOME=/opt/homebrew/opt/openjdk@25/libexec/openjdk.jdk/Contents/Home
 ./gradlew jar
 ```
 
@@ -512,7 +512,7 @@ make check    # run tests and all static checks
 Or directly:
 
 ```bash
-export JAVA_HOME=/opt/homebrew/opt/openjdk@22/libexec/openjdk.jdk/Contents/Home
+export JAVA_HOME=/opt/homebrew/opt/openjdk@25/libexec/openjdk.jdk/Contents/Home
 ./gradlew test
 ```
 

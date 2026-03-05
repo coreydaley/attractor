@@ -1,15 +1,15 @@
 # =============================================================================
 # attractor — Makefile
 # =============================================================================
-# Gradle 8.7's bundled Kotlin DSL compiler does not support Java 25+.
-# JAVA_HOME is pinned to Java 22 (Homebrew). Override on the command line
-# if your Java 22 lives elsewhere:
-#   make build JAVA_HOME=/path/to/jdk22
+# Gradle 9.4.0's bundled Kotlin DSL compiler does not support Java 25+.
+# JAVA_HOME is pinned to Java 25 (Homebrew). Override on the command line
+# if your Java 25 lives elsewhere:
+#   make build JAVA_HOME=/path/to/jdk25
 # =============================================================================
 
 SHELL     := /bin/bash
 
-JAVA_HOME ?= /opt/homebrew/opt/openjdk@22/libexec/openjdk.jdk/Contents/Home
+JAVA_HOME ?= /opt/homebrew/opt/openjdk@25/libexec/openjdk.jdk/Contents/Home
 export JAVA_HOME
 
 GRADLEW   := ./gradlew
@@ -38,8 +38,8 @@ help:
 	@echo "  make docker-build-base  Build the base image locally (attractor-base:local)"
 	@echo "  make docker-build       Build the server image (attractor:local); builds base if needed"
 	@echo "  make docker-run         Run the local Docker image (uses .env if present)"
-	@echo "  make install-dev-deps       Install dev dependencies (Java 22, git, entr)"
-	@echo "  make install-runtime-deps   Install runtime dependencies (Java 22, git, graphviz)"
+	@echo "  make install-dev-deps       Install dev dependencies (Java 25, git, entr)"
+	@echo "  make install-runtime-deps   Install runtime dependencies (Java 25, git, graphviz)"
 	@echo ""
 	@echo "  Options (pass on command line):"
 	@echo "    WEB_PORT=<n>   Web UI port  (default: $(WEB_PORT))"
@@ -106,13 +106,13 @@ check:
 	$(GRADLEW) check
 
 # Detect the OS, ask which package manager to use, show the install command,
-# and offer to run it. Dependencies: Java 22 JDK, git, graphviz.
+# and offer to run it. Dependencies: Java 25 JDK, git, graphviz.
 install-runtime-deps:
 	@set -e; \
 	OS=$$(uname -s 2>/dev/null || echo "Unknown"); \
 	echo ""; \
 	echo "  Detected OS: $$OS"; \
-	echo "  Dependencies: Java 22 JDK, git, graphviz"; \
+	echo "  Dependencies: Java 25 JDK, git, graphviz"; \
 	echo ""; \
 	case "$$OS" in \
 	  Darwin) \
@@ -122,8 +122,8 @@ install-runtime-deps:
 	    echo ""; \
 	    read -rp "  Enter number [1-2]: " choice; \
 	    case "$$choice" in \
-	      1) CMD="brew install openjdk@22 git graphviz" ;; \
-	      2) CMD="sudo port install openjdk22 git graphviz" ;; \
+	      1) CMD="brew install openjdk@25 git graphviz" ;; \
+	      2) CMD="sudo port install openjdk25 git graphviz" ;; \
 	      *) echo "  Invalid choice." ; exit 1 ;; \
 	    esac \
 	    ;; \
@@ -139,13 +139,13 @@ install-runtime-deps:
 	    echo ""; \
 	    read -rp "  Enter number [1-7]: " choice; \
 	    case "$$choice" in \
-	      1) CMD="sudo apt-get install -y openjdk-22-jdk git graphviz" ;; \
-	      2) CMD="sudo dnf install -y java-22-openjdk-devel git graphviz" ;; \
-	      3) CMD="sudo yum install -y java-22-openjdk-devel git graphviz" ;; \
-	      4) CMD="sudo pacman -S --noconfirm jdk22-openjdk git graphviz" ;; \
-	      5) CMD="sudo apk add --no-cache openjdk22 git graphviz" ;; \
-	      6) CMD="sudo zypper install -y java-22-openjdk-devel git graphviz" ;; \
-	      7) CMD="brew install openjdk@22 git graphviz" ;; \
+	      1) CMD="sudo apt-get install -y openjdk-25-jdk git graphviz" ;; \
+	      2) CMD="sudo dnf install -y java-25-openjdk-devel git graphviz" ;; \
+	      3) CMD="sudo yum install -y java-25-openjdk-devel git graphviz" ;; \
+	      4) CMD="sudo pacman -S --noconfirm jdk25-openjdk git graphviz" ;; \
+	      5) CMD="sudo apk add --no-cache openjdk25 git graphviz" ;; \
+	      6) CMD="sudo zypper install -y java-25-openjdk-devel git graphviz" ;; \
+	      7) CMD="brew install openjdk@25 git graphviz" ;; \
 	      *) echo "  Invalid choice." ; exit 1 ;; \
 	    esac \
 	    ;; \
@@ -157,9 +157,9 @@ install-runtime-deps:
 	    echo ""; \
 	    read -rp "  Enter number [1-3]: " choice; \
 	    case "$$choice" in \
-	      1) CMD="winget install Microsoft.OpenJDK.22 Git.Git Graphviz.Graphviz" ;; \
-	      2) CMD="choco install openjdk22 git graphviz" ;; \
-	      3) CMD="scoop install openjdk22 git graphviz" ;; \
+	      1) CMD="winget install Microsoft.OpenJDK.25 Git.Git Graphviz.Graphviz" ;; \
+	      2) CMD="choco install openjdk25 git graphviz" ;; \
+	      3) CMD="scoop install openjdk25 git graphviz" ;; \
 	      *) echo "  Invalid choice." ; exit 1 ;; \
 	    esac \
 	    ;; \
@@ -179,17 +179,17 @@ install-runtime-deps:
 	    echo ""; \
 	    read -rp "  Enter number [1-11]: " choice; \
 	    case "$$choice" in \
-	      1)  CMD="brew install openjdk@22 git graphviz" ;; \
-	      2)  CMD="sudo apt-get install -y openjdk-22-jdk git graphviz" ;; \
-	      3)  CMD="sudo dnf install -y java-22-openjdk-devel git graphviz" ;; \
-	      4)  CMD="sudo yum install -y java-22-openjdk-devel git graphviz" ;; \
-	      5)  CMD="sudo pacman -S --noconfirm jdk22-openjdk git graphviz" ;; \
-	      6)  CMD="sudo apk add --no-cache openjdk22 git graphviz" ;; \
-	      7)  CMD="sudo zypper install -y java-22-openjdk-devel git graphviz" ;; \
-	      8)  CMD="sudo port install openjdk22 git graphviz" ;; \
-	      9)  CMD="winget install Microsoft.OpenJDK.22 Git.Git Graphviz.Graphviz" ;; \
-	      10) CMD="choco install openjdk22 git graphviz" ;; \
-	      11) CMD="scoop install openjdk22 git graphviz" ;; \
+	      1)  CMD="brew install openjdk@25 git graphviz" ;; \
+	      2)  CMD="sudo apt-get install -y openjdk-25-jdk git graphviz" ;; \
+	      3)  CMD="sudo dnf install -y java-25-openjdk-devel git graphviz" ;; \
+	      4)  CMD="sudo yum install -y java-25-openjdk-devel git graphviz" ;; \
+	      5)  CMD="sudo pacman -S --noconfirm jdk25-openjdk git graphviz" ;; \
+	      6)  CMD="sudo apk add --no-cache openjdk25 git graphviz" ;; \
+	      7)  CMD="sudo zypper install -y java-25-openjdk-devel git graphviz" ;; \
+	      8)  CMD="sudo port install openjdk25 git graphviz" ;; \
+	      9)  CMD="winget install Microsoft.OpenJDK.25 Git.Git Graphviz.Graphviz" ;; \
+	      10) CMD="choco install openjdk25 git graphviz" ;; \
+	      11) CMD="scoop install openjdk25 git graphviz" ;; \
 	      *)  echo "  Invalid choice." ; exit 1 ;; \
 	    esac \
 	    ;; \
@@ -217,7 +217,7 @@ openapi:
 	python3 scripts/generate-openapi.py
 
 # Detect the OS, ask which package manager to use, show the install command,
-# and offer to run it. Dependencies: Java 22 JDK, git, entr.
+# and offer to run it. Dependencies: Java 25 JDK, git, entr.
 #
 # Written as a single backslash-joined recipe line so it runs in one bash
 # invocation — compatible with GNU Make 3.81 (which pre-dates .ONESHELL).
@@ -226,7 +226,7 @@ install-dev-deps:
 	OS=$$(uname -s 2>/dev/null || echo "Unknown"); \
 	echo ""; \
 	echo "  Detected OS: $$OS"; \
-	echo "  Dependencies: Java 22 JDK, git, entr"; \
+	echo "  Dependencies: Java 25 JDK, git, entr"; \
 	echo ""; \
 	case "$$OS" in \
 	  Darwin) \
@@ -236,8 +236,8 @@ install-dev-deps:
 	    echo ""; \
 	    read -rp "  Enter number [1-2]: " choice; \
 	    case "$$choice" in \
-	      1) CMD="brew install openjdk@22 git entr" ;; \
-	      2) CMD="sudo port install openjdk22 git entr" ;; \
+	      1) CMD="brew install openjdk@25 git entr" ;; \
+	      2) CMD="sudo port install openjdk25 git entr" ;; \
 	      *) echo "  Invalid choice." ; exit 1 ;; \
 	    esac \
 	    ;; \
@@ -253,13 +253,13 @@ install-dev-deps:
 	    echo ""; \
 	    read -rp "  Enter number [1-7]: " choice; \
 	    case "$$choice" in \
-	      1) CMD="sudo apt-get install -y openjdk-22-jdk git entr" ;; \
-	      2) CMD="sudo dnf install -y java-22-openjdk-devel git entr" ;; \
-	      3) CMD="sudo yum install -y java-22-openjdk-devel git entr" ;; \
-	      4) CMD="sudo pacman -S --noconfirm jdk22-openjdk git entr" ;; \
-	      5) CMD="sudo apk add --no-cache openjdk22 git entr" ;; \
-	      6) CMD="sudo zypper install -y java-22-openjdk-devel git entr" ;; \
-	      7) CMD="brew install openjdk@22 git entr" ;; \
+	      1) CMD="sudo apt-get install -y openjdk-25-jdk git entr" ;; \
+	      2) CMD="sudo dnf install -y java-25-openjdk-devel git entr" ;; \
+	      3) CMD="sudo yum install -y java-25-openjdk-devel git entr" ;; \
+	      4) CMD="sudo pacman -S --noconfirm jdk25-openjdk git entr" ;; \
+	      5) CMD="sudo apk add --no-cache openjdk25 git entr" ;; \
+	      6) CMD="sudo zypper install -y java-25-openjdk-devel git entr" ;; \
+	      7) CMD="brew install openjdk@25 git entr" ;; \
 	      *) echo "  Invalid choice." ; exit 1 ;; \
 	    esac \
 	    ;; \
@@ -273,9 +273,9 @@ install-dev-deps:
 	    echo ""; \
 	    read -rp "  Enter number [1-3]: " choice; \
 	    case "$$choice" in \
-	      1) CMD="winget install Microsoft.OpenJDK.22 Git.Git" ;; \
-	      2) CMD="choco install openjdk22 git" ;; \
-	      3) CMD="scoop install openjdk22 git" ;; \
+	      1) CMD="winget install Microsoft.OpenJDK.25 Git.Git" ;; \
+	      2) CMD="choco install openjdk25 git" ;; \
+	      3) CMD="scoop install openjdk25 git" ;; \
 	      *) echo "  Invalid choice." ; exit 1 ;; \
 	    esac \
 	    ;; \
@@ -295,17 +295,17 @@ install-dev-deps:
 	    echo ""; \
 	    read -rp "  Enter number [1-11]: " choice; \
 	    case "$$choice" in \
-	      1)  CMD="brew install openjdk@22 git entr" ;; \
-	      2)  CMD="sudo apt-get install -y openjdk-22-jdk git entr" ;; \
-	      3)  CMD="sudo dnf install -y java-22-openjdk-devel git entr" ;; \
-	      4)  CMD="sudo yum install -y java-22-openjdk-devel git entr" ;; \
-	      5)  CMD="sudo pacman -S --noconfirm jdk22-openjdk git entr" ;; \
-	      6)  CMD="sudo apk add --no-cache openjdk22 git entr" ;; \
-	      7)  CMD="sudo zypper install -y java-22-openjdk-devel git entr" ;; \
-	      8)  CMD="sudo port install openjdk22 git entr" ;; \
-	      9)  CMD="winget install Microsoft.OpenJDK.22 Git.Git" ;; \
-	      10) CMD="choco install openjdk22 git" ;; \
-	      11) CMD="scoop install openjdk22 git" ;; \
+	      1)  CMD="brew install openjdk@25 git entr" ;; \
+	      2)  CMD="sudo apt-get install -y openjdk-25-jdk git entr" ;; \
+	      3)  CMD="sudo dnf install -y java-25-openjdk-devel git entr" ;; \
+	      4)  CMD="sudo yum install -y java-25-openjdk-devel git entr" ;; \
+	      5)  CMD="sudo pacman -S --noconfirm jdk25-openjdk git entr" ;; \
+	      6)  CMD="sudo apk add --no-cache openjdk25 git entr" ;; \
+	      7)  CMD="sudo zypper install -y java-25-openjdk-devel git entr" ;; \
+	      8)  CMD="sudo port install openjdk25 git entr" ;; \
+	      9)  CMD="winget install Microsoft.OpenJDK.25 Git.Git" ;; \
+	      10) CMD="choco install openjdk25 git" ;; \
+	      11) CMD="scoop install openjdk25 git" ;; \
 	      *)  echo "  Invalid choice." ; exit 1 ;; \
 	    esac \
 	    ;; \
