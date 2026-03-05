@@ -5,7 +5,12 @@ weight: 50
 
 ## Overview
 
-Attractor ships as a multi-stage Docker image published to the GitHub Container Registry on every versioned release. The image bundles a Java 21 JRE, `graphviz`, and `git` — everything needed to run the server. SQLite data is stored in a mounted volume so it persists across container restarts.
+Attractor uses two Docker images published to the GitHub Container Registry:
+
+- **`ghcr.io/coreydaley/attractor-base`** — A base image built on Ubuntu 24.04 LTS (Noble) containing the Java 21 JRE and all system tools (`graphviz`, `git`, `python3`, `ruby`, `nodejs`, `golang-go`, `rustc`, and more). It is only rebuilt when `Dockerfile.base` changes between releases, keeping release builds fast.
+- **`ghcr.io/coreydaley/attractor`** — The server image. Built on every release by copying the pre-built JAR on top of `attractor-base`. On a typical release where only the code changes, this step completes in ~2 minutes instead of ~8.
+
+SQLite data is stored in a mounted volume so it persists across container restarts.
 
 ## Quick Start
 
@@ -21,25 +26,36 @@ Open http://localhost:7070 once the container is running.
 
 ## Image Tags
 
-Each release publishes three tags:
+Each release publishes the following tags for the server image (`ghcr.io/coreydaley/attractor`):
 
 | Tag | Example | Notes |
 |-----|---------|-------|
+| `latest` | `latest` | Most recent release |
 | `<major>.<minor>.<patch>` | `1.2.3` | Exact release — recommended for production |
 | `<major>.<minor>` | `1.2` | Latest patch in this minor series |
 | `<major>` | `1` | Latest release in this major series |
 
+The base image (`ghcr.io/coreydaley/attractor-base`) is tagged the same way, but only on releases where `Dockerfile.base` has changed. The server image always uses `attractor-base:latest`.
+
 ## Building Locally
 
 ```bash
-make docker-build     # builds attractor:local
-make docker-run       # runs attractor:local, auto-loads .env if present
+make docker-build-base   # build the base image (attractor-base:local)
+make docker-build        # build the server image (attractor:local); builds base if not present
+make docker-run          # run attractor:local, auto-loads .env if present
 ```
+
+`make docker-build` checks for `attractor-base:local` and only rebuilds it when it is missing, so a plain `make docker-build` is safe to run repeatedly.
 
 Or directly with Docker:
 
 ```bash
-docker build -t attractor:local .
+# Build base first (only needed once, or when Dockerfile.base changes)
+docker build -f Dockerfile.base -t attractor-base:local -t ghcr.io/coreydaley/attractor-base:latest .
+
+# Build server image
+docker build -f Dockerfile -t attractor:local .
+
 docker run --rm -p 7070:7070 -v "$(pwd)/data:/app/data" attractor:local
 ```
 
