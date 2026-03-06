@@ -7,7 +7,7 @@ weight: 50
 
 Attractor uses two Docker images published to the GitHub Container Registry:
 
-- **`ghcr.io/coreydaley/attractor-base`** — A base image built on Ubuntu 24.04 LTS (Noble) containing the Java 25 JRE and all system tools (`graphviz`, `git`, `python3`, `ruby`, `nodejs`, `golang-go`, `rustc`, and more). It is only rebuilt when `docker/Dockerfile.base` changes between releases, keeping release builds fast.
+- **`ghcr.io/coreydaley/attractor-base`** — A base image built on Ubuntu 24.04 LTS (Noble) containing the Java 25 JRE and all system tools (`graphviz`, `git`, `python3`, `ruby`, `nodejs`, `golang-go`, `rustc`, `docker`, and more). It is only rebuilt when `docker/Dockerfile.base` changes between releases, keeping release builds fast.
 - **`ghcr.io/coreydaley/attractor`** — The server image. Built on every release by copying the pre-built JAR on top of `attractor-base`. On a typical release where only the code changes, this step completes in ~2 minutes instead of ~8.
 
 The container runs as a non-root user (`attractor`). All persistent state — the SQLite database and pipeline output — is written to mounted volumes.
@@ -39,7 +39,7 @@ The base image (`ghcr.io/coreydaley/attractor-base`) is tagged the same way, but
 
 ## Docker Compose
 
-`docker/compose.yml` is the recommended way to run Attractor. It supports optional profiles for Ollama and PostgreSQL, and mounts named volumes for all persistent data.
+`docker/compose.yml` is the recommended way to run Attractor. It supports optional profiles for Ollama, PostgreSQL, and Docker-out-of-Docker, and mounts named volumes for all persistent data.
 
 ### Default (SQLite)
 
@@ -91,12 +91,36 @@ ATTRACTOR_DB_USER=attractor
 ATTRACTOR_DB_PASSWORD=attractor
 ```
 
+### With Docker-out-of-Docker
+
+Mounts the host Docker socket into the container so that the `docker` CLI inside Attractor talks to the host daemon. Containers launched from within Attractor are siblings on the host, not children of the Attractor container.
+
+```bash
+make docker-up PROFILES=docker
+# or:
+make docker-run PROFILES=docker   # local image
+```
+
+> **Security warning:** Mounting `/var/run/docker.sock` grants the container root-equivalent access to the host. Any process that can reach the Docker daemon can create privileged containers with full host filesystem access. Only enable this if you understand and accept that risk.
+
+If your host's `docker` group GID differs from `999`, set `DOCKER_GID` in your `.env`:
+
+```bash
+# Find your docker group GID:
+getent group docker | cut -d: -f3
+
+# Then add to .env:
+DOCKER_GID=<gid>
+```
+
 ### Combining profiles
 
 ```bash
 docker compose -f docker/compose.yml --profile ollama --profile postgres up -d
 # or:
 make docker-up PROFILES="ollama postgres"
+make docker-up PROFILES="docker ollama"
+make docker-up PROFILES="docker ollama postgres"
 ```
 
 ### Stopping
@@ -111,9 +135,11 @@ Named volumes (`attractor-data`, `attractor-projects`, `ollama-data`, `postgres-
 
 ## CLI Subprocess Mode
 
-CLI subprocess mode is **not supported** when running Attractor inside Docker. The AI CLI tools (`claude`, `codex`, `gemini`, `gh copilot`) are not installed in the container, and their authentication state is not available inside the container.
+CLI subprocess mode is **not supported** when running Attractor inside Docker. The AI CLI tools (`claude`, `codex`, `gemini`, `copilot`) are not installed in the container, and their authentication state is not available inside the container.
 
 Use **Direct API mode** instead — pass your API keys as environment variables at runtime. See [Passing API Keys](#passing-api-keys) below.
+
+> **Note:** The `docker` CLI *is* available in the container and can be connected to the host daemon via the [Docker-out-of-Docker profile](#with-docker-out-of-docker).
 
 ---
 
@@ -164,6 +190,12 @@ These env vars bootstrap the custom provider settings on first start. Values sav
 | `ATTRACTOR_DB_PASSWORD` | — | Database password |
 | `ATTRACTOR_DB_URL` | — | Full JDBC URL — overrides all individual `ATTRACTOR_DB_*` vars |
 | `ATTRACTOR_PROJECTS_DIR` | `/app/projects` | Directory where pipeline output is written (logs, workspaces, artifacts) |
+
+### Docker-out-of-Docker
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `DOCKER_GID` | `999` | GID of the `docker` group on the host. Only needed when using `PROFILES=docker` and your host GID differs from `999`. Find it with `getent group docker \| cut -d: -f3`. |
 
 ### Debug
 

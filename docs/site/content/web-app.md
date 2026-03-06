@@ -219,7 +219,7 @@ Attractor creates the database schema automatically on first start. A misconfigu
 | Anthropic (claude) | API, CLI | API: requires `ATTRACTOR_ANTHROPIC_API_KEY`. CLI: requires the `claude` binary. |
 | OpenAI (codex) | API, CLI | API: requires `ATTRACTOR_OPENAI_API_KEY`. CLI: requires the `codex` binary. |
 | Google (gemini) | API, CLI | API: requires `ATTRACTOR_GEMINI_API_KEY` or `ATTRACTOR_GOOGLE_API_KEY`. CLI: requires the `gemini` binary. |
-| GitHub Copilot (gh) | CLI only | Requires `gh copilot` extension. Hidden in Direct API mode. |
+| GitHub Copilot | CLI only | Requires `gh copilot` extension. Hidden in Direct API mode. |
 | Custom (OpenAI-compatible) | API only | Any endpoint implementing `/v1/chat/completions` — Ollama, LM Studio, vLLM, etc. Configure host, port, optional API key, and model name. The badge shows endpoint reachability. |
 
 > **Custom provider tip:** For Ollama, set host to `http://localhost`, port to `11434`, leave API key blank, and set model to the name of a pulled model (e.g. `llama3.2`). The endpoint must be running before Attractor attempts to reach it.

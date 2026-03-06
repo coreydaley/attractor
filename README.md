@@ -172,7 +172,7 @@ Full documentation: https://attractor.coreydaley.dev/docker/
 Attractor supports two execution modes, selectable in **Settings → Execution Mode**:
 
 - **Direct API** — makes HTTP calls directly to provider APIs using environment variable keys
-- **CLI subprocess** — shells out to installed CLI tools (`claude`, `codex`, `gemini`, `gh copilot`)
+- **CLI subprocess** — shells out to installed CLI tools (`claude`, `codex`, `gemini`, `copilot`)
 
 ### Direct API providers
 
@@ -199,7 +199,7 @@ ollama pull llama3.2
 | Anthropic Claude | `claude` | [Claude Code](https://claude.ai/code) |
 | OpenAI Codex | `codex` | `npm install -g @openai/codex` |
 | Google Gemini | `gemini` | [Gemini CLI](https://github.com/google-gemini/gemini-cli) |
-| GitHub Copilot | `gh copilot` | `gh extension install github/gh-copilot` |
+| GitHub Copilot | `copilot` | `gh extension install github/gh-copilot` |
 
 CLI mode does not require environment variable API keys — authentication is handled by the installed tool. Command templates are configurable per provider in Settings and support `{prompt}` substitution.
 
