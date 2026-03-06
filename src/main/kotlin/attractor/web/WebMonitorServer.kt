@@ -1269,8 +1269,10 @@ class WebMonitorServer(private val requestedPort: Int, private val registry: Pro
             if (ex.requestMethod != "GET") {
                 ex.sendResponseHeaders(405, 0); ex.responseBody.close(); return@createContext
             }
-            fun probe(binary: String, vararg args: String): Boolean = try {
-                ProcessBuilder(binary, *args).redirectErrorStream(true).start().waitFor() == 0
+            fun probe(binary: String, vararg args: String, env: Map<String, String> = emptyMap()): Boolean = try {
+                val pb = ProcessBuilder(binary, *args).redirectErrorStream(true)
+                if (env.isNotEmpty()) pb.environment().putAll(env)
+                pb.start().waitFor() == 0
             } catch (_: Exception) { false }
             val results = linkedMapOf(
                 "git"     to probe("git",      "--version"),
@@ -1286,7 +1288,9 @@ class WebMonitorServer(private val requestedPort: Int, private val registry: Pro
                 "clang"   to probe("clang",    "--version"),
                 "clangxx" to probe("clang++",  "--version"),
                 "make"    to probe("make",     "--version"),
-                "gradle"  to probe("gradle",   "--version"),
+                // gradle writes to GRADLE_USER_HOME (~/.gradle by default); the container user
+                // has no home directory, so point it at a writable temp path instead.
+                "gradle"  to probe("gradle",   "--version", env = mapOf("GRADLE_USER_HOME" to "/tmp/.gradle")),
                 "mvn"     to probe("mvn",      "--version"),
                 "docker"  to probe("docker",   "--version"),
                 "curl"    to probe("curl",     "--version")
