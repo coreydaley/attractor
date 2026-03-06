@@ -20,7 +20,7 @@ class ModelSelectionTest : FunSpec({
             anthropic = "claude -p {prompt}",
             openai = "codex -p {prompt}",
             gemini = "gemini -p {prompt}",
-            copilot = "gh copilot suggest {prompt}"
+            copilot = "copilot --allow-all-tools -p {prompt}"
         ),
         customApiConfig = CustomApiConfig(host = "http://localhost", port = "11434", apiKey = "", model = "llama3.2")
     )
