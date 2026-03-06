@@ -109,6 +109,48 @@ make docker-down
 
 Named volumes (`attractor-data`, `attractor-projects`, `ollama-data`, `postgres-data`) are preserved when you stop. Pass `--volumes` to remove them too.
 
+## CLI Subprocess Mode
+
+CLI subprocess mode is **not supported** when running Attractor inside Docker. The AI CLI tools (`claude`, `codex`, `gemini`, `gh copilot`) are not installed in the container, and their authentication state (OAuth tokens stored in `~/.claude/`, `~/.config/gh/`, etc.) is not available inside the container.
+
+**Direct API mode is the recommended approach for Docker.** Pass your API keys as environment variables at runtime — see [Passing API Keys](#passing-api-keys) below.
+
+If you specifically need CLI subprocess mode, there are two options:
+
+### Option 1: Mount host authentication directories
+
+If the CLI tool is installed and authenticated on the host, mount its config directory into the container. The container runs as the `attractor` user, so paths resolve relative to `/home/attractor/`.
+
+```bash
+# Claude CLI — mount host auth state read-only
+docker run --rm -p 7070:7070 \
+  -v ~/.claude:/home/attractor/.claude:ro \
+  -v "$(pwd)/data:/app/data" \
+  -v "$(pwd)/projects:/app/projects" \
+  ghcr.io/coreydaley/attractor:latest
+```
+
+The CLI binary itself still needs to be available inside the container. The `attractor-base` image does not include any AI CLI tools.
+
+### Option 2: Build a custom image
+
+Extend `attractor-base` with the CLI tools you need:
+
+```dockerfile
+FROM ghcr.io/coreydaley/attractor-base:latest
+
+# Install Claude CLI (authenticates via ANTHROPIC_API_KEY — no browser login needed)
+RUN npm install -g @anthropic-ai/claude-code
+
+# Copy your server JAR
+COPY build/libs/attractor-server-*.jar /app/attractor-server.jar
+# ... rest of your Dockerfile
+```
+
+The Claude CLI is the easiest to use in a container because it authenticates via the `ATTRACTOR_ANTHROPIC_API_KEY` environment variable without requiring a browser login. Other CLIs (`codex`, `gemini`, `gh copilot`) require interactive OAuth flows that are difficult to complete inside a container.
+
+---
+
 ## Passing API Keys
 
 API keys are passed as environment variables at run time — they are never baked into the image.
