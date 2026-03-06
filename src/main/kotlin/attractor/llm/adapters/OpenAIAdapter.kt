@@ -16,10 +16,10 @@ import java.util.concurrent.TimeUnit
  * Uses the native Responses API at /v1/responses.
  */
 class OpenAIAdapter(
-    apiKey: String = System.getenv("OPENAI_API_KEY") ?: "",
-    private val baseUrl: String = System.getenv("OPENAI_BASE_URL") ?: "https://api.openai.com",
-    private val orgId: String? = System.getenv("OPENAI_ORG_ID"),
-    private val projectId: String? = System.getenv("OPENAI_PROJECT_ID"),
+    apiKey: String = System.getenv("ATTRACTOR_OPENAI_API_KEY") ?: "",
+    private val baseUrl: String = System.getenv("ATTRACTOR_OPENAI_BASE_URL") ?: "https://api.openai.com",
+    private val orgId: String? = System.getenv("ATTRACTOR_OPENAI_ORG_ID"),
+    private val projectId: String? = System.getenv("ATTRACTOR_OPENAI_PROJECT_ID"),
     private val defaultHeaders: Map<String, String> = emptyMap(),
     timeoutSeconds: Long = 120L
 ) : ProviderAdapter {
@@ -43,7 +43,7 @@ class OpenAIAdapter(
 
     override fun initialize() {
         if (effectiveApiKey.isBlank()) {
-            throw ConfigurationError("OpenAI API key is missing. Set OPENAI_API_KEY environment variable.")
+            throw ConfigurationError("OpenAI API key is missing. Set ATTRACTOR_OPENAI_API_KEY environment variable.")
         }
     }
 

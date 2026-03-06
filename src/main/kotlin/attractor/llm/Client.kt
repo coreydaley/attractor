@@ -58,22 +58,22 @@ class Client(
             var firstProvider: String? = null
 
             // Anthropic
-            val anthropicKey = System.getenv("ANTHROPIC_API_KEY") ?: ""
+            val anthropicKey = System.getenv("ATTRACTOR_ANTHROPIC_API_KEY") ?: ""
             if (anthropicKey.isNotBlank()) {
                 providers["anthropic"] = AnthropicAdapter(apiKey = anthropicKey)
                 if (firstProvider == null) firstProvider = "anthropic"
             }
 
             // OpenAI
-            val openaiKey = System.getenv("OPENAI_API_KEY") ?: ""
+            val openaiKey = System.getenv("ATTRACTOR_OPENAI_API_KEY") ?: ""
             if (openaiKey.isNotBlank()) {
                 providers["openai"] = OpenAIAdapter(apiKey = openaiKey)
                 if (firstProvider == null) firstProvider = "openai"
             }
 
             // Gemini
-            val geminiKey = System.getenv("GEMINI_API_KEY")
-                ?: System.getenv("GOOGLE_API_KEY") ?: ""
+            val geminiKey = System.getenv("ATTRACTOR_GEMINI_API_KEY")
+                ?: System.getenv("ATTRACTOR_GOOGLE_API_KEY") ?: ""
             if (geminiKey.isNotBlank()) {
                 providers["gemini"] = GeminiAdapter(apiKey = geminiKey)
                 if (firstProvider == null) firstProvider = "gemini"

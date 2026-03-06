@@ -117,9 +117,9 @@ java -jar build/libs/attractor-server-1.0.0.jar [options]
 
 | Variable | Description |
 |----------|-------------|
-| `ANTHROPIC_API_KEY` | API key for Anthropic Claude (Direct API mode) |
-| `OPENAI_API_KEY` | API key for OpenAI GPT (Direct API mode) |
-| `GEMINI_API_KEY` or `GOOGLE_API_KEY` | API key for Google Gemini (Direct API mode) |
+| `ATTRACTOR_ANTHROPIC_API_KEY` | API key for Anthropic Claude (Direct API mode) |
+| `ATTRACTOR_OPENAI_API_KEY` | API key for OpenAI GPT (Direct API mode) |
+| `ATTRACTOR_GEMINI_API_KEY` or `ATTRACTOR_GOOGLE_API_KEY` | API key for Google Gemini (Direct API mode) |
 | `ATTRACTOR_DEBUG` | Set to any value to enable debug output and stack traces |
 | `ATTRACTOR_HOST` | Default server URL for the CLI (overridden by `--host`; e.g. `http://attractor.example.com:7070`) |
 
@@ -134,9 +134,9 @@ Attractor supports two execution modes, selectable in **Settings → Execution M
 
 | Provider | Toggle key | Credential |
 |----------|-----------|------------|
-| Anthropic Claude | `provider_anthropic_enabled` | `ANTHROPIC_API_KEY` env var |
-| OpenAI GPT | `provider_openai_enabled` | `OPENAI_API_KEY` env var |
-| Google Gemini | `provider_gemini_enabled` | `GEMINI_API_KEY` or `GOOGLE_API_KEY` env var |
+| Anthropic Claude | `provider_anthropic_enabled` | `ATTRACTOR_ANTHROPIC_API_KEY` env var |
+| OpenAI GPT | `provider_openai_enabled` | `ATTRACTOR_OPENAI_API_KEY` env var |
+| Google Gemini | `provider_gemini_enabled` | `ATTRACTOR_GEMINI_API_KEY` or `ATTRACTOR_GOOGLE_API_KEY` env var |
 | Custom (OpenAI-compatible) | `provider_custom_enabled` | Configurable API key (optional) |
 
 The **Custom** provider works with any endpoint that implements the OpenAI `/v1/chat/completions` format — including [Ollama](https://ollama.com), [LM Studio](https://lmstudio.ai), [vLLM](https://docs.vllm.ai), and similar local or self-hosted inference servers. Configure it in Settings with a host URL, port, optional API key, and model name. The badge shows whether the endpoint is reachable rather than whether a key is set.

@@ -28,42 +28,42 @@ class ModelSelectionTest : FunSpec({
     // ── API mode ──────────────────────────────────────────────────────────────
 
     test("API mode: anthropic wins when key is present") {
-        val env = mapOf("ANTHROPIC_API_KEY" to "sk-test", "OPENAI_API_KEY" to "sk-oai")
+        val env = mapOf("ATTRACTOR_ANTHROPIC_API_KEY" to "sk-test", "ATTRACTOR_OPENAI_API_KEY" to "sk-oai")
         val (provider, model) = ModelSelection.selectModel(config(mode = ExecutionMode.API), env)
         provider shouldBe "anthropic"
         model shouldBe "claude-sonnet-4-6"
     }
 
     test("API mode: openai wins when anthropic has no key") {
-        val env = mapOf("OPENAI_API_KEY" to "sk-oai", "GEMINI_API_KEY" to "gem-key")
+        val env = mapOf("ATTRACTOR_OPENAI_API_KEY" to "sk-oai", "ATTRACTOR_GEMINI_API_KEY" to "gem-key")
         val (provider, model) = ModelSelection.selectModel(config(mode = ExecutionMode.API), env)
         provider shouldBe "openai"
         model shouldBe "gpt-5.2-mini"
     }
 
     test("API mode: gemini wins when only gemini key present") {
-        val env = mapOf("GEMINI_API_KEY" to "gem-key")
+        val env = mapOf("ATTRACTOR_GEMINI_API_KEY" to "gem-key")
         val (provider, model) = ModelSelection.selectModel(config(mode = ExecutionMode.API), env)
         provider shouldBe "gemini"
         model shouldBe "gemini-3-flash-preview"
     }
 
-    test("API mode: GOOGLE_API_KEY used as gemini fallback") {
-        val env = mapOf("GOOGLE_API_KEY" to "google-key")
+    test("API mode: ATTRACTOR_GOOGLE_API_KEY used as gemini fallback") {
+        val env = mapOf("ATTRACTOR_GOOGLE_API_KEY" to "google-key")
         val (provider, model) = ModelSelection.selectModel(config(mode = ExecutionMode.API), env)
         provider shouldBe "gemini"
         model shouldBe "gemini-3-flash-preview"
     }
 
     test("API mode: anthropic disabled, openai selected despite anthropic key") {
-        val env = mapOf("ANTHROPIC_API_KEY" to "sk-test", "OPENAI_API_KEY" to "sk-oai")
+        val env = mapOf("ATTRACTOR_ANTHROPIC_API_KEY" to "sk-test", "ATTRACTOR_OPENAI_API_KEY" to "sk-oai")
         val cfg = config(mode = ExecutionMode.API, anthropic = false)
         val (provider, _) = ModelSelection.selectModel(cfg, env)
         provider shouldBe "openai"
     }
 
     test("API mode: all disabled throws ConfigurationError") {
-        val env = mapOf("ANTHROPIC_API_KEY" to "sk-test")
+        val env = mapOf("ATTRACTOR_ANTHROPIC_API_KEY" to "sk-test")
         val cfg = config(mode = ExecutionMode.API, anthropic = false, openai = false, gemini = false)
         shouldThrow<ConfigurationError> {
             ModelSelection.selectModel(cfg, env)

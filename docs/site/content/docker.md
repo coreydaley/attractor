@@ -85,7 +85,7 @@ docker run --rm -p 7070:7070 \
 ```bash
 docker run --rm -p 7070:7070 \
   -v "$(pwd)/data:/app/data" \
-  -e ANTHROPIC_API_KEY=sk-ant-... \
+  -e ATTRACTOR_ANTHROPIC_API_KEY=sk-ant-... \
   ghcr.io/coreydaley/attractor:latest
 ```
 
@@ -95,10 +95,10 @@ docker run --rm -p 7070:7070 \
 
 | Variable | Description |
 |----------|-------------|
-| `ANTHROPIC_API_KEY` | API key for Anthropic Claude (Direct API mode) |
-| `OPENAI_API_KEY` | API key for OpenAI GPT (Direct API mode) |
-| `GEMINI_API_KEY` | API key for Google Gemini (Direct API mode) |
-| `GOOGLE_API_KEY` | Alternative to `GEMINI_API_KEY` |
+| `ATTRACTOR_ANTHROPIC_API_KEY` | API key for Anthropic Claude (Direct API mode) |
+| `ATTRACTOR_OPENAI_API_KEY` | API key for OpenAI GPT (Direct API mode) |
+| `ATTRACTOR_GEMINI_API_KEY` | API key for Google Gemini (Direct API mode) |
+| `ATTRACTOR_GOOGLE_API_KEY` | Alternative to `ATTRACTOR_GEMINI_API_KEY` |
 
 ### Custom OpenAI-Compatible API
 
@@ -151,8 +151,8 @@ services:
     volumes:
       - attractor-data:/app/data
     environment:
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
-      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      ATTRACTOR_ANTHROPIC_API_KEY: ${ATTRACTOR_ANTHROPIC_API_KEY}
+      ATTRACTOR_OPENAI_API_KEY: ${ATTRACTOR_OPENAI_API_KEY}
 
 volumes:
   attractor-data:

@@ -15,7 +15,7 @@ object ClientProvider {
         if (config.isProviderEnabled("anthropic")) {
             when (config.mode) {
                 ExecutionMode.API -> {
-                    val key = env["ANTHROPIC_API_KEY"] ?: ""
+                    val key = env["ATTRACTOR_ANTHROPIC_API_KEY"] ?: ""
                     if (key.isNotBlank()) {
                         providers["anthropic"] = AnthropicAdapter(apiKey = key)
                         if (firstProvider == null) firstProvider = "anthropic"
@@ -31,7 +31,7 @@ object ClientProvider {
         if (config.isProviderEnabled("openai")) {
             when (config.mode) {
                 ExecutionMode.API -> {
-                    val key = env["OPENAI_API_KEY"] ?: ""
+                    val key = env["ATTRACTOR_OPENAI_API_KEY"] ?: ""
                     if (key.isNotBlank()) {
                         providers["openai"] = OpenAIAdapter(apiKey = key)
                         if (firstProvider == null) firstProvider = "openai"
@@ -47,7 +47,7 @@ object ClientProvider {
         if (config.isProviderEnabled("gemini")) {
             when (config.mode) {
                 ExecutionMode.API -> {
-                    val key = env["GEMINI_API_KEY"] ?: env["GOOGLE_API_KEY"] ?: ""
+                    val key = env["ATTRACTOR_GEMINI_API_KEY"] ?: env["ATTRACTOR_GOOGLE_API_KEY"] ?: ""
                     if (key.isNotBlank()) {
                         providers["gemini"] = GeminiAdapter(apiKey = key)
                         if (firstProvider == null) firstProvider = "gemini"

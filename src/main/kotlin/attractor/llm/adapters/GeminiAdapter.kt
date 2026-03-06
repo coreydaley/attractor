@@ -16,8 +16,8 @@ import java.util.concurrent.TimeUnit
  * Uses the native Gemini API at /v1beta/models/{model}/generateContent.
  */
 class GeminiAdapter(
-    apiKey: String = System.getenv("GEMINI_API_KEY") ?: System.getenv("GOOGLE_API_KEY") ?: "",
-    private val baseUrl: String = System.getenv("GEMINI_BASE_URL") ?: "https://generativelanguage.googleapis.com",
+    apiKey: String = System.getenv("ATTRACTOR_GEMINI_API_KEY") ?: System.getenv("ATTRACTOR_GOOGLE_API_KEY") ?: "",
+    private val baseUrl: String = System.getenv("ATTRACTOR_GEMINI_BASE_URL") ?: "https://generativelanguage.googleapis.com",
     private val defaultHeaders: Map<String, String> = emptyMap(),
     timeoutSeconds: Long = 120L
 ) : ProviderAdapter {
@@ -44,7 +44,7 @@ class GeminiAdapter(
 
     override fun initialize() {
         if (effectiveApiKey.isBlank()) {
-            throw ConfigurationError("Gemini API key is missing. Set GEMINI_API_KEY or GOOGLE_API_KEY environment variable.")
+            throw ConfigurationError("Gemini API key is missing. Set ATTRACTOR_GEMINI_API_KEY or ATTRACTOR_GOOGLE_API_KEY environment variable.")
         }
     }
 

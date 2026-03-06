@@ -1239,9 +1239,9 @@ class WebMonitorServer(private val requestedPort: Int, private val registry: Pro
                 ex.sendResponseHeaders(405, 0); ex.responseBody.close(); return@createContext
             }
             val env = System.getenv()
-            val anthropic = (env["ANTHROPIC_API_KEY"] ?: "").isNotBlank()
-            val openai    = (env["OPENAI_API_KEY"] ?: "").isNotBlank()
-            val gemini    = (env["GEMINI_API_KEY"] ?: env["GOOGLE_API_KEY"] ?: "").isNotBlank()
+            val anthropic = (env["ATTRACTOR_ANTHROPIC_API_KEY"] ?: "").isNotBlank()
+            val openai    = (env["ATTRACTOR_OPENAI_API_KEY"] ?: "").isNotBlank()
+            val gemini    = (env["ATTRACTOR_GEMINI_API_KEY"] ?: env["ATTRACTOR_GOOGLE_API_KEY"] ?: "").isNotBlank()
             val customHost  = store.getSetting("custom_api_host") ?: "http://localhost"
             val customPort  = store.getSetting("custom_api_port") ?: "11434"
             val customBaseUrl = if (customPort.isBlank()) customHost else "$customHost:$customPort"
@@ -3685,9 +3685,9 @@ function loadApiKeyStatus() {
           if (!found) toggle.checked = false;
         }
       }
-      apiBadge('apiBadgeAnthropic', 'settingAnthropicEnabled', s.anthropic, 'ANTHROPIC_API_KEY');
-      apiBadge('apiBadgeOpenAI',    'settingOpenAIEnabled',    s.openai,    'OPENAI_API_KEY');
-      apiBadge('apiBadgeGemini',    'settingGeminiEnabled',    s.gemini,    'GEMINI_API_KEY or GOOGLE_API_KEY');
+      apiBadge('apiBadgeAnthropic', 'settingAnthropicEnabled', s.anthropic, 'ATTRACTOR_ANTHROPIC_API_KEY');
+      apiBadge('apiBadgeOpenAI',    'settingOpenAIEnabled',    s.openai,    'ATTRACTOR_OPENAI_API_KEY');
+      apiBadge('apiBadgeGemini',    'settingGeminiEnabled',    s.gemini,    'ATTRACTOR_GEMINI_API_KEY or ATTRACTOR_GOOGLE_API_KEY');
       // Custom: badge shows reachability, not a key requirement
       var customBadge = document.getElementById('apiBadgeCustom');
       if (customBadge) {

@@ -16,8 +16,8 @@ import java.util.concurrent.TimeUnit
  * Uses the native Messages API at /v1/messages.
  */
 class AnthropicAdapter(
-    apiKey: String = System.getenv("ANTHROPIC_API_KEY") ?: "",
-    private val baseUrl: String = System.getenv("ANTHROPIC_BASE_URL") ?: "https://api.anthropic.com",
+    apiKey: String = System.getenv("ATTRACTOR_ANTHROPIC_API_KEY") ?: "",
+    private val baseUrl: String = System.getenv("ATTRACTOR_ANTHROPIC_BASE_URL") ?: "https://api.anthropic.com",
     private val defaultHeaders: Map<String, String> = emptyMap(),
     timeoutSeconds: Long = 120L
 ) : ProviderAdapter {
@@ -41,7 +41,7 @@ class AnthropicAdapter(
 
     override fun initialize() {
         if (effectiveApiKey.isBlank()) {
-            throw ConfigurationError("Anthropic API key is missing. Set ANTHROPIC_API_KEY environment variable.")
+            throw ConfigurationError("Anthropic API key is missing. Set ATTRACTOR_ANTHROPIC_API_KEY environment variable.")
         }
     }
 
