@@ -16,14 +16,20 @@ Thanks for your interest in contributing! This is a personal learning project, b
 
 ### Prerequisites
 
-- Java 21 (see `make install-deps` for automated setup)
+- Java 25
 - Git
+- Graphviz (`dot`) — required for graph rendering
+
+```bash
+make install-runtime-deps   # installs Java 25, git, and graphviz (interactive)
+make install-dev-deps       # also installs entr for dev-mode file watching
+```
 
 ### Local Setup
 
 ```bash
 git clone https://github.com/coreydaley/attractor.git
-cd coreys-attractor
+cd attractor
 make build
 make test
 ```
@@ -38,9 +44,16 @@ make run WEB_PORT=8080   # use a different port
 Set at least one LLM API key before running pipelines:
 
 ```bash
-export ANTHROPIC_API_KEY=...
-export OPENAI_API_KEY=...
-export GEMINI_API_KEY=...
+export ATTRACTOR_ANTHROPIC_API_KEY=...
+export ATTRACTOR_OPENAI_API_KEY=...
+export ATTRACTOR_GEMINI_API_KEY=...
+```
+
+### Running with Docker
+
+```bash
+cp .env.example .env   # fill in your API keys
+make docker-up         # starts the server via Docker Compose
 ```
 
 ---
@@ -104,7 +117,7 @@ feat: add retry backoff to ManagerLoopHandler
 docs: update pipeline format table in README
 ```
 
-Prefixes: `feat`, `fix`, `docs`, `test`, `chore`, `refactor`.
+Prefixes: `feat`, `fix`, `docs`, `test`, `chore`, `refactor`, `ci`, `style`, `perf`.
 
 ---
 
