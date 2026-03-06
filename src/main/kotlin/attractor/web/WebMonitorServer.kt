@@ -39,9 +39,13 @@ class WebMonitorServer(private val requestedPort: Int, private val registry: Pro
         httpServer.executor = Executors.newCachedThreadPool()
 
         // ── Dashboard HTML ───────────────────────────────────────────────────
+        val appVersion   = WebMonitorServer::class.java.`package`?.implementationVersion ?: "dev"
+        val baseVersion  = System.getenv("ATTRACTOR_BASE_VERSION")  ?: "dev"
+        val imageVersion = System.getenv("ATTRACTOR_IMAGE_VERSION") ?: "dev"
+        val cachedDashboard = dashboardHtml(appVersion, baseVersion, imageVersion).toByteArray()
         httpServer.createContext("/") { ex ->
             if (ex.requestMethod == "GET" && ex.requestURI.path == "/") {
-                respond(ex, 200, "text/html; charset=utf-8", dashboardHtml().toByteArray())
+                respond(ex, 200, "text/html; charset=utf-8", cachedDashboard)
             } else {
                 ex.sendResponseHeaders(404, 0)
                 ex.responseBody.close()
@@ -1445,7 +1449,7 @@ class WebMonitorServer(private val requestedPort: Int, private val registry: Pro
     private fun js(s: String): String =
         "\"${s.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n").replace("\r", "\\r").replace("\t", "\\t")}\""
 
-    private fun dashboardHtml(): String = """<!DOCTYPE html>
+    private fun dashboardHtml(appVersion: String, baseVersion: String, imageVersion: String): String = """<!DOCTYPE html>
 <html lang="en">
 <head>
 <script>(function(){var t=localStorage.getItem('attractor-theme')||'light';document.documentElement.setAttribute('data-theme',t);document.documentElement.style.colorScheme=t;})();</script>
@@ -1518,7 +1522,7 @@ class WebMonitorServer(private val requestedPort: Int, private val registry: Pro
   --badge-paused-fg: #5b21b6;
 }
 * { box-sizing: border-box; margin: 0; padding: 0; }
-body { font-family: 'Figtree', 'Segoe UI', system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+body { font-family: 'Figtree', 'Segoe UI', system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; padding-bottom: 28px; }
 button { font-variant-emoji: text; }
 
 /* Header */
@@ -1526,7 +1530,6 @@ button { font-variant-emoji: text; }
 header { background: var(--surface); border-bottom: 1px solid var(--border); padding: 12px 20px; display: flex; align-items: center; gap: 12px; }
 #agentWarningBanner, #requiredToolsWarningBanner { display:flex; align-items:center; gap:10px; padding:9px 20px; background:#7c3500; color:#fde8c8; font-size:0.85rem; border-bottom:1px solid #a04800; }
 header h1 { font-size: 1.05rem; font-weight: 600; color: var(--text-strong); flex: 1; }
-.conn-indicator { display: flex; align-items: center; gap: 5px; font-size: 0.72rem; color: var(--text-faint); }
 .conn-dot { width: 10px; height: 10px; border-radius: 50%; background: radial-gradient(circle at 35% 32%, #b0b8c4, #6e7681 55%, #3a3f47); box-shadow: 0 1px 3px rgba(0,0,0,0.5), inset 0 -1px 2px rgba(0,0,0,0.3); }
 .conn-dot.live    { background: radial-gradient(circle at 35% 32%, #80ffaa, #34d058 50%, #137a2e); box-shadow: 0 1px 5px rgba(0,220,80,0.7), inset 0 -1px 2px rgba(0,0,0,0.25); animation: pulse 2s infinite; }
 .conn-dot.offline { background: radial-gradient(circle at 35% 32%, #ff9090, #f85149 50%, #a01020); box-shadow: 0 1px 5px rgba(248,60,60,0.7), inset 0 -1px 2px rgba(0,0,0,0.25); animation: pulse 1.4s infinite; }
@@ -1559,7 +1562,11 @@ header h1 { font-size: 1.05rem; font-weight: 600; color: var(--text-strong); fle
 @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }
 .pulse { animation: pulse 1.4s infinite; }
 .badge-dot-checking { color: #d97706; animation: pulse 0.9s infinite; display:inline-block; }
-#toast { position:fixed; bottom:28px; right:28px; display:flex; align-items:center; gap:10px; padding:12px 16px 12px 14px; border-radius:10px; font-size:0.84rem; font-weight:500; min-width:200px; max-width:320px; box-shadow:0 8px 32px rgba(0,0,0,0.22), 0 1px 4px rgba(0,0,0,0.12); z-index:9999; opacity:0; transform:translateY(12px) scale(0.97); transition:opacity 0.22s ease, transform 0.22s ease; pointer-events:none; border-left:3px solid transparent; }
+#app-footer { position:fixed; bottom:0; left:0; right:0; height:28px; display:flex; align-items:center; justify-content:space-between; padding:0 16px; background:var(--surface); border-top:1px solid var(--border); font-size:0.72rem; color:var(--text-muted); z-index:99; }
+#app-footer .footer-left { display:flex; align-items:center; gap:8px; }
+#app-footer .footer-right { display:flex; align-items:center; gap:16px; }
+#footerRunCount { color:var(--accent,#4f46e5); font-weight:600; display:none; }
+#toast { position:fixed; top:60px; right:28px; display:flex; align-items:center; gap:10px; padding:12px 16px 12px 14px; border-radius:10px; font-size:0.84rem; font-weight:500; min-width:200px; max-width:320px; box-shadow:0 8px 32px rgba(0,0,0,0.22), 0 1px 4px rgba(0,0,0,0.12); z-index:9999; opacity:0; transform:translateY(-12px) scale(0.97); transition:opacity 0.22s ease, transform 0.22s ease; pointer-events:none; border-left:3px solid transparent; }
 #toast.toast-show { opacity:1; transform:translateY(0) scale(1); }
 #toast.toast-success { background:#f0faf4; color:#166534; border-left-color:#22c55e; box-shadow:0 8px 32px rgba(34,197,94,0.12), 0 1px 4px rgba(0,0,0,0.08); }
 #toast.toast-error   { background:#fef2f2; color:#991b1b; border-left-color:#ef4444; box-shadow:0 8px 32px rgba(239,68,68,0.12), 0 1px 4px rgba(0,0,0,0.08); }
@@ -1934,9 +1941,6 @@ input:checked + .toggle-slider:before { transform:translateX(20px); }
     <a class="nav-btn" href="https://attractor.coreydaley.dev" target="_blank" rel="noopener noreferrer" style="text-decoration:none;">&#128218; Docs</a>
     <a class="nav-btn" href="https://github.com/coreydaley/attractor/releases/latest" target="_blank" rel="noopener noreferrer" style="text-decoration:none;">&#11015;&#65039; Download CLI</a>
   </nav>
-  <div class="conn-indicator">
-    <span id="connDot" class="conn-dot offline" title="Offline"></span>
-  </div>
 </header>
 
 <div id="agentWarningBanner" style="display:none;">
@@ -2093,6 +2097,15 @@ input:checked + .toggle-slider:before { transform:translateX(20px); }
           </div>
         </div>
       </div>
+      <div id="cliDockerWarning" style="display:none; padding:12px 16px; border-radius:8px; border:1px solid #d97706; background:rgba(217,119,6,0.1); color:var(--text-strong); font-size:0.85rem; line-height:1.6;">
+        <div style="display:flex; align-items:flex-start; gap:10px;">
+          <span style="font-size:1.3rem; line-height:1.2; color:#d97706;">&#9432;&#65039;</span>
+          <div>
+            <div style="font-weight:700; color:#d97706; margin-bottom:4px;">CLI subprocess mode is not supported in Docker</div>
+            <div style="color:var(--text); font-size:0.8rem; line-height:1.6;">The AI CLI tools (<code>claude</code>, <code>codex</code>, <code>gemini</code>, <code>gh copilot</code>) are not installed in the container and their authentication state is not available. Use <strong>Direct API</strong> mode instead, or see the <a href="https://attractor.coreydaley.dev/docker/" target="_blank" rel="noopener noreferrer" style="color:#d97706;">Docker documentation</a> for workarounds.</div>
+          </div>
+        </div>
+      </div>
     </div>
 
     <!-- Providers -->
@@ -2231,6 +2244,32 @@ input:checked + .toggle-slider:before { transform:translateX(20px); }
     <div class="setting-label" style="font-size:0.78rem; text-transform:uppercase; letter-spacing:0.05em; color:var(--text-muted); margin-bottom:6px;">Optional &mdash; depending on projects you create</div>
     <div id="systemToolsOptional" class="system-tools-grid"></div>
   </div>
+
+  <!-- Info -->
+  <div style="margin-top:28px; padding-top:24px; border-top:1px solid var(--border);">
+    <h2 style="margin:0 0 16px; font-size:1.05rem; font-weight:600; color:var(--text-strong);">Info</h2>
+    <div class="setting-row">
+      <div class="setting-info">
+        <div class="setting-label">Application Version</div>
+        <div class="setting-desc">The running version of Attractor</div>
+      </div>
+      <span style="font-family:monospace; font-size:0.85rem; color:var(--text-muted);">$appVersion</span>
+    </div>
+${if (baseVersion != "dev") """    <div class="setting-row">
+      <div class="setting-info">
+        <div class="setting-label">Base Image Version</div>
+        <div class="setting-desc">The <code>attractor-base</code> image this container was built from</div>
+      </div>
+      <span style="font-family:monospace; font-size:0.85rem; color:var(--text-muted);">$baseVersion</span>
+    </div>""" else ""}
+${if (imageVersion != "dev") """    <div class="setting-row">
+      <div class="setting-info">
+        <div class="setting-label">Server Image Version</div>
+        <div class="setting-desc">The <code>attractor</code> server image version</div>
+      </div>
+      <span style="font-family:monospace; font-size:0.85rem; color:var(--text-muted);">$imageVersion</span>
+    </div>""" else ""}
+  </div>
 </div>
 
 <!-- Error detail modal -->
@@ -2275,6 +2314,7 @@ input:checked + .toggle-slider:before { transform:translateX(20px); }
 </div>
 
 <script>
+var IS_DOCKER = ${imageVersion != "dev"};
 var DASHBOARD_TAB_ID = '__dashboard__';
 var projects = {};     // id -> {id, fileName, state}
 var _storedTab = localStorage.getItem('attractor-selected-tab');
@@ -3455,13 +3495,30 @@ function applyUpdate(data) {
   if (selectedId === DASHBOARD_TAB_ID || (selectedId && projects[selectedId])) renderMain();
   var archivedView = document.getElementById('viewArchived');
   if (archivedView && archivedView.style.display !== 'none') renderArchivedView();
+  updateFooterRunCount();
 }
 
 // ── SSE connection ───────────────────────────────────────────────────────────
 function setConnected(live) {
-  var dot = document.getElementById('connDot');
-  dot.className = 'conn-dot' + (live ? ' live' : ' offline');
-  dot.title = live ? 'Online' : 'Offline';
+  var fdot = document.getElementById('footerConnDot');
+  if (fdot) fdot.className = 'conn-dot' + (live ? ' live' : ' offline');
+  var ftxt = document.getElementById('footerConnText');
+  if (ftxt) ftxt.textContent = live ? 'Online' : 'Offline';
+}
+
+function updateFooterRunCount() {
+  var count = 0;
+  for (var id in projects) {
+    if (projects[id].state && projects[id].state.status === 'running') count++;
+  }
+  var el = document.getElementById('footerRunCount');
+  if (!el) return;
+  if (count > 0) {
+    el.textContent = count + ' running';
+    el.style.display = '';
+  } else {
+    el.style.display = 'none';
+  }
 }
 
 var sseDelay = 500;
@@ -3574,6 +3631,8 @@ function applyExecutionModeUi(mode) {
   if (apiYoloWarning) apiYoloWarning.style.display = mode === 'api' ? 'block' : 'none';
   var yoloWarning = document.getElementById('cliYoloWarning');
   if (yoloWarning) yoloWarning.style.display = mode === 'cli' ? 'block' : 'none';
+  var dockerWarning = document.getElementById('cliDockerWarning');
+  if (dockerWarning) dockerWarning.style.display = (mode === 'cli' && IS_DOCKER) ? 'block' : 'none';
   cliFields.forEach(function(id) {
     var el = document.getElementById(id);
     if (el) el.style.display = mode === 'cli' ? 'block' : 'none';
@@ -5098,6 +5157,18 @@ document.getElementById('errorDetailModal').addEventListener('click', function(e
       <div class="artifact-files" id="artifactFiles"></div>
       <div class="artifact-view" id="artifactView">Select a file to view</div>
     </div>
+  </div>
+</div>
+<div id="app-footer">
+  <div class="footer-left">
+    <span id="footerConnDot" class="conn-dot offline"></span>
+    <span id="footerConnText">Offline</span>
+  </div>
+  <div class="footer-right">
+    <span id="footerRunCount"></span>
+    <span>v$appVersion</span>${if (baseVersion != "dev") """
+    <span>base: $baseVersion</span>""" else ""}${if (imageVersion != "dev") """
+    <span>image: $imageVersion</span>""" else ""}
   </div>
 </div>
 <div id="toast"></div>
