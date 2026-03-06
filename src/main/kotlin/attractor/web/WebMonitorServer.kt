@@ -1904,6 +1904,9 @@ input:checked + .toggle-slider:before { transform:translateX(20px); }
 .tool-badge-status { font-size:0.72rem; }
 .tool-badge-status.found   { color:#3c9e5f; }
 .tool-badge-status.missing { color:#c0392b; }
+.tool-badge-hint { display:inline-flex; align-items:center; justify-content:center; width:13px; height:13px; border-radius:50%; background:var(--border); color:var(--text-strong); font-size:0.62rem; font-weight:700; cursor:default; vertical-align:middle; margin-left:3px; position:relative; }
+.tool-badge-hint::after { content:attr(data-tip); position:absolute; bottom:calc(100% + 5px); left:50%; transform:translateX(-50%); background:#333; color:#fff; font-size:0.7rem; font-weight:400; font-family:sans-serif; padding:5px 9px; border-radius:5px; pointer-events:none; opacity:0; transition:opacity 0.15s; z-index:100; width:200px; white-space:normal; line-height:1.4; text-align:center; }
+.tool-badge-hint:hover::after { opacity:1; }
 
 /* Light theme depth & style overrides */
 [data-theme="light"] header { box-shadow: 0 1px 4px rgba(0,0,0,0.08); }
@@ -2102,7 +2105,7 @@ input:checked + .toggle-slider:before { transform:translateX(20px); }
           <span style="font-size:1.3rem; line-height:1.2; color:#d97706;">&#9432;&#65039;</span>
           <div>
             <div style="font-weight:700; color:#d97706; margin-bottom:4px;">CLI subprocess mode is not supported in Docker</div>
-            <div style="color:var(--text); font-size:0.8rem; line-height:1.6;">The AI CLI tools (<code>claude</code>, <code>codex</code>, <code>gemini</code>, <code>gh copilot</code>) are not installed in the container and their authentication state is not available. Use <strong>Direct API</strong> mode instead.</div>
+            <div style="color:var(--text); font-size:0.8rem; line-height:1.6;">The AI CLI tools (<code>claude</code>, <code>codex</code>, <code>gemini</code>, <code>copilot</code>) are not installed in the container and their authentication state is not available. Use <strong>Direct API</strong> mode instead.</div>
           </div>
         </div>
       </div>
@@ -3783,8 +3786,11 @@ function renderToolBadges(gridId, toolMap) {
   var grid = document.getElementById(gridId);
   if (!grid) return;
   grid.innerHTML = Object.keys(toolMap).map(function(id) {
+    var hint = (id === 'docker' && IS_DOCKER)
+      ? '<span class="tool-badge-hint" data-tip="Docker is not available by default inside a container. To enable it, start with PROFILES=docker to mount the host Docker socket.">?</span>'
+      : '';
     return '<div class="tool-badge" id="toolBadge_' + id + '">' +
-      '<span class="tool-badge-name">' + toolMap[id] + '</span>' +
+      '<span class="tool-badge-name">' + toolMap[id] + hint + '</span>' +
       '<span class="tool-badge-status"><span class="badge-dot-checking">checking\u2026</span></span>' +
       '</div>';
   }).join('');
