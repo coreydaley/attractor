@@ -76,9 +76,12 @@ make run                    # start the web interface on port 7070
 | `make cli-jar` | Build the CLI fat JAR (`build/libs/attractor-cli-devel.jar`) |
 | `make release` | Build versioned server + CLI JARs for distribution |
 | `make dev` | Dev mode: watch `src/`, rebuild and restart on change (requires `entr`) |
+| `make openapi` | Generate OpenAPI 3.0 specs (JSON + YAML) into `src/main/resources/api/` |
 | `make docker-build-base` | Build the base image locally (`attractor-base:local`) from `docker/Dockerfile.base` |
 | `make docker-build` | Build the server image locally (`attractor:local`); builds base image first if not present |
 | `make docker-run` | Run `attractor:local`; auto-loads `.env` if present |
+| `make docker-up` | Start Attractor with Docker Compose (pulls latest image); auto-loads `.env` if present |
+| `make docker-down` | Stop and remove Compose containers (volumes are preserved) |
 | `make install-runtime-deps` | Interactively install Java 25, git, and graphviz using your OS package manager |
 | `make install-dev-deps` | Interactively install Java 25, git, and `entr` using your OS package manager |
 
@@ -90,10 +93,12 @@ Pass these on the command line to override defaults:
 |--------|---------|-------------|
 | `WEB_PORT=<n>` | `7070` | Web UI port |
 | `JAVA_HOME=<path>` | `/opt/homebrew/opt/openjdk@25/…` | Path to JDK 25 |
+| `PROFILES=<names>` | — | Compose profiles to activate: `ollama`, `postgres`, `docker` (space-separated, e.g. `"docker ollama"`) |
 
 ```bash
 make run WEB_PORT=8080
 make run-jar JAVA_HOME=/usr/lib/jvm/java-25-openjdk
+make docker-up PROFILES="docker ollama"
 ```
 
 ## Build
@@ -151,6 +156,12 @@ make docker-up PROFILES=ollama
 
 # Or with PostgreSQL
 make docker-up PROFILES=postgres
+
+# Or with host Docker socket mounted (Docker-out-of-Docker)
+make docker-up PROFILES=docker
+
+# Stop
+make docker-down
 ```
 
 API keys and other configuration are passed as environment variables — never baked into the image. Copy `.env.example` to `.env` and fill in the values you need.
