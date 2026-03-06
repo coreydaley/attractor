@@ -28,11 +28,11 @@ jobs:
           if [ -z "$PREV_TAG" ]; then
             echo "No previous v* tag found — rebuilding base image"
             echo "rebuild=true" >> $GITHUB_OUTPUT
-          elif git diff --name-only "$PREV_TAG" HEAD -- Dockerfile.base | grep -q .; then
-            echo "Dockerfile.base changed since $PREV_TAG — rebuilding base image"
+          elif git diff --name-only "$PREV_TAG" HEAD -- docker/Dockerfile.base | grep -q .; then
+            echo "docker/Dockerfile.base changed since $PREV_TAG — rebuilding base image"
             echo "rebuild=true" >> $GITHUB_OUTPUT
           else
-            echo "Dockerfile.base unchanged since $PREV_TAG — skipping base image rebuild"
+            echo "docker/Dockerfile.base unchanged since $PREV_TAG — skipping base image rebuild"
             echo "rebuild=false" >> $GITHUB_OUTPUT
           fi
 
@@ -65,7 +65,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: Dockerfile.base
+          file: docker/Dockerfile.base
           push: true
           platforms: linux/amd64,linux/arm64
           tags: ${{ steps.meta.outputs.tags }}
@@ -164,7 +164,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: Dockerfile
+          file: docker/Dockerfile
           push: true
           platforms: linux/amd64,linux/arm64
           tags: ${{ steps.meta.outputs.tags }}

@@ -57,7 +57,7 @@ make run                    # start the web interface on port 7070
 | `make cli-jar` | Build the CLI fat JAR (`build/libs/attractor-cli-devel.jar`) |
 | `make release` | Build versioned server + CLI JARs for distribution |
 | `make dev` | Dev mode: watch `src/`, rebuild and restart on change (requires `entr`) |
-| `make docker-build-base` | Build the base image locally (`attractor-base:local`) from `Dockerfile.base` |
+| `make docker-build-base` | Build the base image locally (`attractor-base:local`) from `docker/Dockerfile.base` |
 | `make docker-build` | Build the server image locally (`attractor:local`); builds base image first if not present |
 | `make docker-run` | Run `attractor:local`; auto-loads `.env` if present |
 | `make install-runtime-deps` | Interactively install Java 25, git, and graphviz using your OS package manager |

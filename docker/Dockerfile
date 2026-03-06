@@ -1,18 +1,25 @@
 FROM ghcr.io/coreydaley/attractor-base:latest
 
+RUN groupadd --system attractor && useradd --system --gid attractor --no-create-home attractor
+
 WORKDIR /app
 
 COPY build/libs/attractor-server-*.jar /app/attractor-server.jar
 
-# Persist the SQLite database outside the container
+# Persist the SQLite database and project output outside the container
 VOLUME /app/data
+VOLUME /app/projects
 ENV ATTRACTOR_DB_NAME=/app/data/attractor.db
+ENV ATTRACTOR_PROJECTS_DIR=/app/projects
+
+RUN chown -R attractor:attractor /app
+USER attractor
 
 # LLM provider API keys — supply at runtime via --env-file or -e flags
-ENV ANTHROPIC_API_KEY=""
-ENV OPENAI_API_KEY=""
-ENV GEMINI_API_KEY=""
-ENV GOOGLE_API_KEY=""
+ENV ATTRACTOR_ANTHROPIC_API_KEY=""
+ENV ATTRACTOR_OPENAI_API_KEY=""
+ENV ATTRACTOR_GEMINI_API_KEY=""
+ENV ATTRACTOR_GOOGLE_API_KEY=""
 
 # Custom OpenAI-compatible API (Ollama, LM Studio, vLLM, etc.)
 # These bootstrap the settings on first start; values saved via the UI take precedence.

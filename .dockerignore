@@ -3,6 +3,7 @@
 # Exclude build output, but allow the release server JAR
 build/
 !build/libs/attractor-server-*.jar
+docker/
 docs/
 scripts/
 *.md

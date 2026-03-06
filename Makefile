@@ -16,7 +16,7 @@ GRADLEW   := ./gradlew
 JAR        = build/libs/attractor-server-devel.jar
 WEB_PORT  ?= 7070
 
-.PHONY: help build test clean run run-jar dev jar cli-jar release dist check install-dev-deps install-runtime-deps openapi docker-build-base docker-build docker-run
+.PHONY: help build test clean run run-jar dev jar cli-jar release dist check install-dev-deps install-runtime-deps openapi docker-build-base docker-build docker-run docker-up docker-down
 
 # Default target — show available targets
 help:
@@ -38,12 +38,15 @@ help:
 	@echo "  make docker-build-base  Build the base image locally (attractor-base:local)"
 	@echo "  make docker-build       Build the server image (attractor:local); builds base if needed"
 	@echo "  make docker-run         Run the local Docker image (uses .env if present)"
+	@echo "  make docker-up          Start Attractor with Docker Compose (pulls latest image)"
+	@echo "  make docker-down        Stop and remove Compose containers"
 	@echo "  make install-dev-deps       Install dev dependencies (Java 25, git, entr)"
 	@echo "  make install-runtime-deps   Install runtime dependencies (Java 25, git, graphviz)"
 	@echo ""
 	@echo "  Options (pass on command line):"
-	@echo "    WEB_PORT=<n>   Web UI port  (default: $(WEB_PORT))"
-	@echo "    JAVA_HOME=<p>  JDK 25 path  (default: $(JAVA_HOME))"
+	@echo "    WEB_PORT=<n>       Web UI port  (default: $(WEB_PORT))"
+	@echo "    JAVA_HOME=<p>      JDK 25 path  (default: $(JAVA_HOME))"
+	@echo "    PROFILES=<names>   Compose profiles to activate (e.g. PROFILES=\"ollama postgres\")"
 	@echo ""
 
 build:
@@ -85,19 +88,35 @@ release:
 	@echo ""
 
 docker-build-base:
-	docker build -f Dockerfile.base -t attractor-base:local -t ghcr.io/coreydaley/attractor-base:latest .
+	docker build -f docker/Dockerfile.base -t attractor-base:local -t ghcr.io/coreydaley/attractor-base:latest .
 
 docker-build:
 	@docker image inspect attractor-base:local > /dev/null 2>&1 || $(MAKE) docker-build-base
-	docker build -f Dockerfile -t attractor:local .
+	docker build -f docker/Dockerfile -t attractor:local .
 
 # Run the local image. If a .env file exists in this directory it is loaded
 # automatically; copy .env.example to .env and fill in your API keys.
 docker-run:
 	docker run --rm -p $(WEB_PORT):7070 \
 	  -v "$(CURDIR)/data:/app/data" \
+	  -v "$(CURDIR)/projects:/app/projects" \
 	  $(if $(wildcard .env),--env-file .env) \
 	  attractor:local
+
+COMPOSE := docker compose -f docker/compose.yml
+PROFILE_FLAGS := $(if $(PROFILES),$(addprefix --profile ,$(PROFILES)))
+
+# Start Attractor (and any optional services) using Docker Compose.
+# Pulls the latest published image. Optional profiles: ollama, postgres.
+#   make docker-up
+#   make docker-up PROFILES=ollama
+#   make docker-up PROFILES="ollama postgres"
+docker-up:
+	$(COMPOSE) $(PROFILE_FLAGS) up --pull always -d
+
+# Stop and remove Compose containers (volumes are preserved).
+docker-down:
+	$(COMPOSE) down
 
 dist:
 	$(GRADLEW) distTar distZip
