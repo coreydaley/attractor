@@ -6,14 +6,16 @@ WORKDIR /app
 
 COPY build/libs/attractor-server-*.jar /app/attractor-server.jar
 
+# Create data directories and set ownership before declaring volumes.
+# Docker discards RUN changes to volume paths made after VOLUME is declared.
+RUN mkdir -p /app/data /app/projects && chown -R attractor:attractor /app
+USER attractor
+
 # Persist the SQLite database and project output outside the container
 VOLUME /app/data
 VOLUME /app/projects
 ENV ATTRACTOR_DB_NAME=/app/data/attractor.db
 ENV ATTRACTOR_PROJECTS_DIR=/app/projects
-
-RUN chown -R attractor:attractor /app
-USER attractor
 
 # LLM provider API keys — supply at runtime via --env-file or -e flags
 ENV ATTRACTOR_ANTHROPIC_API_KEY=""
