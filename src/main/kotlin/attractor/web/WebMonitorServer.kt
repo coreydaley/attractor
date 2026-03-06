@@ -1932,6 +1932,7 @@ input:checked + .toggle-slider:before { transform:translateX(20px); }
     <button class="nav-btn" id="navArchived" onclick="showView('archived')">&#128193; Archived</button>
     <button class="nav-btn" id="navSettings" onclick="showView('settings')">&#9881;&#65039; Settings</button>
     <a class="nav-btn" href="https://attractor.coreydaley.dev" target="_blank" rel="noopener noreferrer" style="text-decoration:none;">&#128218; Docs</a>
+    <a class="nav-btn" href="https://github.com/coreydaley/attractor/releases/latest" target="_blank" rel="noopener noreferrer" style="text-decoration:none;">&#11015;&#65039; Download CLI</a>
   </nav>
   <div class="conn-indicator">
     <span id="connDot" class="conn-dot offline" title="Offline"></span>
@@ -3710,7 +3711,7 @@ function showToast(message, type) {
   toastTimer = setTimeout(function() { el.className = ''; }, 3000);
 }
 
-var systemToolsRequired = { git:'git', java:'java', dot:'dot (graphviz)' };
+var systemToolsRequired = { git:'git', java:'java', dot:'graphviz' };
 var requiredToolsStatus = {};
 var systemToolsOptional = {
   python3:'python3', ruby:'ruby', node:'node', go:'go', rustc:'rustc',
