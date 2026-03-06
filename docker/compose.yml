@@ -11,6 +11,8 @@
 # Optional profiles:
 #   --profile ollama     Add Ollama for local LLM inference
 #   --profile postgres   Add PostgreSQL instead of SQLite
+#   PROFILES=docker      Mount the host Docker socket (Docker-out-of-Docker)
+#                        WARNING: grants the container root-equivalent host access
 #
 # Examples:
 #   docker compose -f docker/compose.yml --profile ollama up
@@ -21,6 +23,8 @@
 #   make docker-up
 #   make docker-up PROFILES=ollama
 #   make docker-up PROFILES="ollama postgres"
+#   make docker-up PROFILES=docker
+#   make docker-up PROFILES="docker ollama"
 # =============================================================================
 
 services:

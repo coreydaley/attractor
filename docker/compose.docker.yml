@@ -1,0 +1,28 @@
+# =============================================================================
+# Attractor — Docker Compose override: Docker-out-of-Docker (DooD)
+# =============================================================================
+#
+# Merged automatically by `make docker-up PROFILES=docker`.
+#
+# Mounts the host Docker socket into the Attractor container so that
+# the `docker` CLI inside the container talks to the host daemon.
+# Containers launched from within Attractor are siblings on the host,
+# not children of the Attractor container.
+#
+# SECURITY WARNING
+# Mounting /var/run/docker.sock grants the container root-equivalent
+# access to the host. Any process that can reach the Docker daemon can
+# create privileged containers with full host filesystem access. Only
+# enable this if you understand and accept that risk.
+#
+# If your host docker group GID differs from 999, set DOCKER_GID in .env:
+#   DOCKER_GID=<gid>
+# Find it with: getent group docker | cut -d: -f3
+# =============================================================================
+
+services:
+  attractor:
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    group_add:
+      - "${DOCKER_GID:-999}"

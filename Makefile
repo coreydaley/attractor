@@ -40,13 +40,16 @@ help:
 	@echo "  make docker-run         Run the local Docker image (uses .env if present)"
 	@echo "  make docker-up          Start Attractor with Docker Compose (pulls latest image)"
 	@echo "  make docker-down        Stop and remove Compose containers"
+	@echo "  make docker-run  PROFILES=docker          Mount host Docker socket (DooD)"
+	@echo "  make docker-up   PROFILES=docker          Mount host Docker socket (DooD)"
+	@echo "  make docker-up   PROFILES=\"docker ollama\"  Combine profiles"
 	@echo "  make install-dev-deps       Install dev dependencies (Java 25, git, entr)"
 	@echo "  make install-runtime-deps   Install runtime dependencies (Java 25, git, graphviz)"
 	@echo ""
 	@echo "  Options (pass on command line):"
 	@echo "    WEB_PORT=<n>       Web UI port  (default: $(WEB_PORT))"
 	@echo "    JAVA_HOME=<p>      JDK 25 path  (default: $(JAVA_HOME))"
-	@echo "    PROFILES=<names>   Compose profiles to activate (e.g. PROFILES=\"ollama postgres\")"
+	@echo "    PROFILES=<names>   Compose profiles to activate (e.g. PROFILES=\"docker ollama postgres\")"
 	@echo ""
 
 build:
@@ -96,23 +99,30 @@ docker-build:
 
 # Run the local image. If a .env file exists in this directory it is loaded
 # automatically; copy .env.example to .env and fill in your API keys.
+# Add PROFILES=docker to mount the host Docker socket (Docker-out-of-Docker).
 docker-run:
 	docker run --rm -p $(WEB_PORT):7070 \
 	  -v "$(CURDIR)/data:/app/data" \
 	  -v "$(CURDIR)/projects:/app/projects" \
 	  $(if $(wildcard .env),--env-file .env) \
+	  $(if $(filter docker,$(PROFILES)),-v /var/run/docker.sock:/var/run/docker.sock --group-add $$(stat -f '%g' /var/run/docker.sock 2>/dev/null || stat -c '%g' /var/run/docker.sock 2>/dev/null || echo 999)) \
 	  attractor:local
 
-COMPOSE := docker compose -f docker/compose.yml
-PROFILE_FLAGS := $(if $(PROFILES),$(addprefix --profile ,$(PROFILES)))
+COMPOSE          := docker compose -f docker/compose.yml
+# docker profile is handled via compose.docker.yml override, not a Compose profile flag
+DOCKER_OVERRIDE  := $(if $(filter docker,$(PROFILES)),-f docker/compose.docker.yml)
+NON_DOCKER_PROFS := $(filter-out docker,$(PROFILES))
+PROFILE_FLAGS    := $(if $(NON_DOCKER_PROFS),$(addprefix --profile ,$(NON_DOCKER_PROFS)))
 
 # Start Attractor (and any optional services) using Docker Compose.
-# Pulls the latest published image. Optional profiles: ollama, postgres.
+# Pulls the latest published image. Optional profiles: ollama, postgres, docker.
 #   make docker-up
 #   make docker-up PROFILES=ollama
 #   make docker-up PROFILES="ollama postgres"
+#   make docker-up PROFILES=docker
+#   make docker-up PROFILES="docker ollama"
 docker-up:
-	$(COMPOSE) $(PROFILE_FLAGS) $(if $(wildcard .env),--env-file .env) up --pull always -d
+	$(COMPOSE) $(DOCKER_OVERRIDE) $(PROFILE_FLAGS) $(if $(wildcard .env),--env-file .env) up --pull always -d
 
 # Stop and remove Compose containers (volumes are preserved).
 docker-down:
