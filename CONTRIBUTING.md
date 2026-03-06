@@ -56,6 +56,35 @@ cp .env.example .env   # fill in your API keys
 make docker-up         # starts the server via Docker Compose
 ```
 
+### Building Docker Images Locally
+
+Attractor uses two images: a **base image** (`attractor-base`) containing the JRE and system tools, and a **server image** (`attractor`) that layers the application JAR on top. The base image must exist before the server image can be built.
+
+```bash
+# 1. Build the base image (only needed once, or when docker/Dockerfile.base changes)
+make docker-build-base
+
+# 2. Build the server image (requires the base image to exist)
+make docker-build
+
+# 3. Run the locally built image
+make docker-run
+```
+
+`make docker-build` checks for `attractor-base:local` automatically and rebuilds it if missing, so it is also safe to just run `make docker-build` directly.
+
+**When to rebuild the base image:**
+
+The base image only needs to be rebuilt when `docker/Dockerfile.base` changes — for example, when system packages or the JRE version are updated. For normal code changes, only the server image needs to be rebuilt.
+
+**Rebuilding from scratch:**
+
+```bash
+docker rmi attractor-base:local attractor:local
+make docker-build-base
+make docker-build
+```
+
 ---
 
 ## How to Contribute
