@@ -112,7 +112,7 @@ PROFILE_FLAGS := $(if $(PROFILES),$(addprefix --profile ,$(PROFILES)))
 #   make docker-up PROFILES=ollama
 #   make docker-up PROFILES="ollama postgres"
 docker-up:
-	$(COMPOSE) $(PROFILE_FLAGS) up --pull always -d
+	$(COMPOSE) $(PROFILE_FLAGS) $(if $(wildcard .env),--env-file .env) up --pull always -d
 
 # Stop and remove Compose containers (volumes are preserved).
 docker-down:
