@@ -12,6 +12,25 @@
 
 A DOT-based pipeline runner that orchestrates multi-stage AI workflows. You define pipelines as directed graphs in [Graphviz DOT](https://graphviz.org/doc/info/lang.html) format, and Attractor executes each node by dispatching work to an LLM, waiting for human review, running parallel branches, or following conditional edges — all observable in real time through a built-in web dashboard.
 
+## Contents
+
+- [Features](#features)
+- [Requirements](#requirements)
+- [Quick Start](#quick-start)
+- [Make Targets](#make-targets)
+- [Build](#build)
+- [Run](#run)
+- [Docker](#docker)
+- [Environment Variables](#environment-variables)
+- [LLM Providers](#llm-providers)
+- [Database Configuration](#database-configuration)
+- [Pipeline Format](#pipeline-format)
+- [Web API](#web-api)
+- [CLI](#cli)
+- [Project Structure](#project-structure)
+- [Running Tests](#running-tests)
+- [License](#license)
+
 ## Features
 
 - **DOT pipelines** — define workflows as `.dot` directed graphs; nodes are tasks, edges are transitions
