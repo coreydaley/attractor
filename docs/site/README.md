@@ -5,26 +5,23 @@ Hugo microsite published to GitHub Pages at https://attractor.coreydaley.dev.
 ## Requirements
 
 - [Hugo extended](https://gohugo.io/installation/) v0.157.0+
+- [Node.js](https://nodejs.org/) (for Pagefind search indexing)
 
-## Build
-
-```bash
-hugo --minify --source docs-site
-```
-
-Output is written to `docs-site/public/` (git-ignored).
-
-## Local preview
+## Common tasks
 
 ```bash
-hugo server --source docs-site
+make serve          # live-reload dev server on http://localhost:1313 (no search)
+make build          # production build into public/
+make index          # run Pagefind on public/ to generate the search index
+make serve-search   # build + index + serve static site with search working
+make clean          # delete public/ and resources/
 ```
 
-Open http://localhost:1313 in your browser. The server reloads automatically on file changes.
+Run from this directory (`docs/site/`) or from the repo root with `make -C docs/site <target>`.
 
 ## Content
 
-All pages live in `docs-site/content/`. Each file is plain Markdown with a small front matter block:
+All pages live in `docs/site/content/`. Each file is plain Markdown with a front matter block:
 
 ```
 ---
@@ -37,4 +34,10 @@ weight: 10
 
 ## Deployment
 
-Pushes to `main` that touch any file under `docs-site/` automatically trigger the [Docs workflow](../.github/workflows/docs.yml), which builds and deploys to GitHub Pages.
+Pushes to `main` that touch any file under `docs/site/` automatically trigger the
+[Docs workflow](../../.github/workflows/docs.yml), which builds, indexes with Pagefind,
+and deploys to GitHub Pages.
+
+---
+
+Full documentation: https://attractor.coreydaley.dev

@@ -7,19 +7,19 @@ weight: 50
 
 Attractor uses two Docker images published to the GitHub Container Registry:
 
-- **`ghcr.io/coreydaley/attractor-base`** — A base image built on Ubuntu 24.04 LTS (Noble) containing the Java 25 JRE and all system tools (`graphviz`, `git`, `python3`, `ruby`, `nodejs`, `golang-go`, `rustc`, and more). It is only rebuilt when `Dockerfile.base` changes between releases, keeping release builds fast.
+- **`ghcr.io/coreydaley/attractor-base`** — A base image built on Ubuntu 24.04 LTS (Noble) containing the Java 25 JRE and all system tools (`graphviz`, `git`, `python3`, `ruby`, `nodejs`, `golang-go`, `rustc`, and more). It is only rebuilt when `docker/Dockerfile.base` changes between releases, keeping release builds fast.
 - **`ghcr.io/coreydaley/attractor`** — The server image. Built on every release by copying the pre-built JAR on top of `attractor-base`. On a typical release where only the code changes, this step completes in ~2 minutes instead of ~8.
 
-SQLite data is stored in a mounted volume so it persists across container restarts.
+The container runs as a non-root user (`attractor`). All persistent state — the SQLite database and pipeline output — is written to mounted volumes.
 
 ## Quick Start
 
-```bash
-# Pull the latest release
-docker pull ghcr.io/coreydaley/attractor:latest
+The easiest way to run Attractor is with Docker Compose using the `docker/compose.yml` file in the repository:
 
-# Run with a local data volume (SQLite persisted to ./data/attractor.db)
-docker run --rm -p 7070:7070 -v "$(pwd)/data:/app/data" ghcr.io/coreydaley/attractor:latest
+```bash
+docker compose -f docker/compose.yml up -d
+# or:
+make docker-up
 ```
 
 Open http://localhost:7070 once the container is running.
@@ -35,59 +35,91 @@ Each release publishes the following tags for the server image (`ghcr.io/coreyda
 | `<major>.<minor>` | `1.2` | Latest patch in this minor series |
 | `<major>` | `1` | Latest release in this major series |
 
-The base image (`ghcr.io/coreydaley/attractor-base`) is tagged the same way, but only on releases where `Dockerfile.base` has changed. The server image always uses `attractor-base:latest`.
+The base image (`ghcr.io/coreydaley/attractor-base`) is tagged the same way, but only on releases where `docker/Dockerfile.base` has changed. The server image always uses `attractor-base:latest`.
 
-## Building Locally
+## Docker Compose
 
-```bash
-make docker-build-base   # build the base image (attractor-base:local)
-make docker-build        # build the server image (attractor:local); builds base if not present
-make docker-run          # run attractor:local, auto-loads .env if present
-```
+`docker/compose.yml` is the recommended way to run Attractor. It supports optional profiles for Ollama and PostgreSQL, and mounts named volumes for all persistent data.
 
-`make docker-build` checks for `attractor-base:local` and only rebuilds it when it is missing, so a plain `make docker-build` is safe to run repeatedly.
-
-Or directly with Docker:
+### Default (SQLite)
 
 ```bash
-# Build base first (only needed once, or when Dockerfile.base changes)
-docker build -f Dockerfile.base -t attractor-base:local -t ghcr.io/coreydaley/attractor-base:latest .
-
-# Build server image
-docker build -f Dockerfile -t attractor:local .
-
-docker run --rm -p 7070:7070 -v "$(pwd)/data:/app/data" attractor:local
+docker compose -f docker/compose.yml up -d
+# or:
+make docker-up
 ```
+
+### With Ollama (local LLM)
+
+```bash
+docker compose -f docker/compose.yml --profile ollama up -d
+# or:
+make docker-up PROFILES=ollama
+```
+
+Configure Attractor to reach the Ollama container by adding these to your `.env`:
+
+```bash
+ATTRACTOR_CUSTOM_API_ENABLED=true
+ATTRACTOR_CUSTOM_API_HOST=http://ollama
+ATTRACTOR_CUSTOM_API_PORT=11434
+ATTRACTOR_CUSTOM_API_MODEL=llama3.2
+```
+
+Pull a model once both containers are running:
+
+```bash
+docker compose -f docker/compose.yml exec ollama ollama pull llama3.2
+```
+
+### With PostgreSQL
+
+```bash
+docker compose -f docker/compose.yml --profile postgres up -d
+# or:
+make docker-up PROFILES=postgres
+```
+
+Add these to your `.env` to point Attractor at the Compose-managed database:
+
+```bash
+ATTRACTOR_DB_TYPE=postgresql
+ATTRACTOR_DB_HOST=postgres
+ATTRACTOR_DB_PORT=5432
+ATTRACTOR_DB_NAME=attractor
+ATTRACTOR_DB_USER=attractor
+ATTRACTOR_DB_PASSWORD=attractor
+```
+
+### Combining profiles
+
+```bash
+docker compose -f docker/compose.yml --profile ollama --profile postgres up -d
+# or:
+make docker-up PROFILES="ollama postgres"
+```
+
+### Stopping
+
+```bash
+docker compose -f docker/compose.yml down
+# or:
+make docker-down
+```
+
+Named volumes (`attractor-data`, `attractor-projects`, `ollama-data`, `postgres-data`) are preserved when you stop. Pass `--volumes` to remove them too.
 
 ## Passing API Keys
 
-LLM provider API keys are passed as environment variables at run time — they are never baked into the image.
-
-### Using a .env file (recommended)
+API keys are passed as environment variables at run time — they are never baked into the image.
 
 ```bash
 cp .env.example .env
 # edit .env and fill in your keys
-make docker-run       # automatically passes --env-file .env when .env exists
+make docker-up        # Compose picks up .env automatically
 ```
 
-Or with Docker directly:
-
-```bash
-docker run --rm -p 7070:7070 \
-  -v "$(pwd)/data:/app/data" \
-  --env-file .env \
-  ghcr.io/coreydaley/attractor:latest
-```
-
-### Inline -e flags
-
-```bash
-docker run --rm -p 7070:7070 \
-  -v "$(pwd)/data:/app/data" \
-  -e ATTRACTOR_ANTHROPIC_API_KEY=sk-ant-... \
-  ghcr.io/coreydaley/attractor:latest
-```
+Docker Compose loads `.env` from the project root automatically. When running `docker run` directly, pass keys via `--env-file .env` or individual `-e KEY=value` flags.
 
 ## Environment Variables
 
@@ -112,76 +144,62 @@ These env vars bootstrap the custom provider settings on first start. Values sav
 | `ATTRACTOR_CUSTOM_API_KEY` | — | API key (optional — Ollama does not require one) |
 | `ATTRACTOR_CUSTOM_API_MODEL` | `llama3.2` | Model name to use for requests |
 
-> **Ollama tip:** If running Ollama as a separate container on the same Docker network, set `ATTRACTOR_CUSTOM_API_HOST` to the Ollama service name (e.g. `http://ollama`) rather than `localhost`.
-
-### Database
-
-By default the container uses SQLite at `/app/data/attractor.db` (set via `ATTRACTOR_DB_NAME`). To use MySQL or PostgreSQL instead, set the following variables:
+### Storage
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `ATTRACTOR_DB_TYPE` | `sqlite` | `sqlite`, `mysql`, or `postgresql` |
-| `ATTRACTOR_DB_HOST` | `localhost` | Database server hostname |
+| `ATTRACTOR_DB_TYPE` | `sqlite` | Database backend: `sqlite`, `mysql`, or `postgresql` |
+| `ATTRACTOR_DB_NAME` | `/app/data/attractor.db` | Database name or SQLite file path |
+| `ATTRACTOR_DB_HOST` | — | Database server hostname (MySQL/PostgreSQL) |
 | `ATTRACTOR_DB_PORT` | — | Database port (defaults by type) |
-| `ATTRACTOR_DB_NAME` | `attractor` | Database name (or SQLite file path) |
 | `ATTRACTOR_DB_USER` | — | Database username |
 | `ATTRACTOR_DB_PASSWORD` | — | Database password |
 | `ATTRACTOR_DB_URL` | — | Full JDBC URL — overrides all individual `ATTRACTOR_DB_*` vars |
+| `ATTRACTOR_PROJECTS_DIR` | `/app/projects` | Directory where pipeline output is written (logs, workspaces, artifacts) |
+
+### Debug
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `ATTRACTOR_DEBUG` | — | Set to any non-empty value to enable debug logging and stack traces |
 
 ## Volumes
 
-| Path | Description |
-|------|-------------|
-| `/app/data` | SQLite database and any other persistent data. Mount this to preserve state across restarts. |
+| Container path | Compose volume | Description |
+|----------------|----------------|-------------|
+| `/app/data` | `attractor-data` | SQLite database and persistent app data |
+| `/app/projects` | `attractor-projects` | Pipeline output: stage logs, workspaces, checkpoints, and artifacts |
+
+Both paths must be mounted to preserve state across container restarts and upgrades.
 
 ## Ports
 
 | Port | Description |
 |------|-------------|
-| `7070` | Web UI and REST API. Map with `-p <host-port>:7070`. |
+| `7070` | Web UI and REST API. Map with `-p <host-port>:7070`. Override the host port with `ATTRACTOR_PORT` in your `.env`. |
 
-## Docker Compose Example
+## Building Locally
 
-```yaml
-services:
-  attractor:
-    image: ghcr.io/coreydaley/attractor:latest
-    ports:
-      - "7070:7070"
-    volumes:
-      - attractor-data:/app/data
-    environment:
-      ATTRACTOR_ANTHROPIC_API_KEY: ${ATTRACTOR_ANTHROPIC_API_KEY}
-      ATTRACTOR_OPENAI_API_KEY: ${ATTRACTOR_OPENAI_API_KEY}
-
-volumes:
-  attractor-data:
+```bash
+make docker-build-base   # build the base image (attractor-base:local)
+make docker-build        # build the server image (attractor:local); builds base if not present
+make docker-run          # run attractor:local, auto-loads .env if present
 ```
 
-With Ollama on the same network:
+`make docker-build` checks for `attractor-base:local` and only rebuilds it when missing, so it is safe to run repeatedly.
 
-```yaml
-services:
-  attractor:
-    image: ghcr.io/coreydaley/attractor:latest
-    ports:
-      - "7070:7070"
-    volumes:
-      - attractor-data:/app/data
-    environment:
-      ATTRACTOR_CUSTOM_API_ENABLED: "true"
-      ATTRACTOR_CUSTOM_API_HOST: "http://ollama"
-      ATTRACTOR_CUSTOM_API_PORT: "11434"
-      ATTRACTOR_CUSTOM_API_MODEL: "llama3.2"
-    depends_on:
-      - ollama
+Or directly with Docker:
 
-  ollama:
-    image: ollama/ollama:latest
-    volumes:
-      - ollama-data:/root/.ollama
+```bash
+# Build base first (only needed once, or when docker/Dockerfile.base changes)
+docker build -f docker/Dockerfile.base -t attractor-base:local .
 
-volumes:
-  attractor-data:
-  ollama-data:
+# Build server image
+docker build -f docker/Dockerfile -t attractor:local .
+
+# Run with both volumes mounted
+docker run --rm -p 7070:7070 \
+  -v "$(pwd)/data:/app/data" \
+  -v "$(pwd)/projects:/app/projects" \
+  attractor:local
 ```

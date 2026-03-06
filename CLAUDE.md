@@ -30,7 +30,7 @@ The server JAR is `build/libs/attractor-server-devel.jar`; the CLI JAR is `build
 
 **Docker:**
 ```bash
-make docker-build-base   # builds attractor-base:local from Dockerfile.base
+make docker-build-base   # builds attractor-base:local from docker/Dockerfile.base
 make docker-build        # builds attractor:local (builds base first if absent)
 make docker-run          # runs attractor:local, auto-loads .env if present
 ```
@@ -86,3 +86,23 @@ Attractor is a **Kotlin/JVM pipeline runner** for DOT-graph-defined AI workflows
 - Tests use JUnit 5 + Kotest assertions + H2 in-memory database for DB tests.
 - The `ATTRACTOR_DEBUG` env var enables debug logging and stack traces.
 - `bin/attractor` is a shell wrapper that auto-locates the latest CLI JAR.
+
+## Documentation
+
+Whenever a change affects user-facing behavior, configuration, environment variables, file paths, commands, or architecture, update the documentation as part of the same change:
+
+1. **Docs site** (`docs/site/content/`) — the authoritative user-facing reference at https://attractor.coreydaley.dev. Update the relevant page(s) to reflect the change. If no suitable page exists, create one.
+
+2. **Root `README.md`** — keep in sync with any changes to top-level commands, environment variables, or project structure that are summarized there.
+
+3. **Subdirectory `README.md` files** — each subdirectory that warrants one should contain only minimal usage information relevant to that directory (what it is, how to use it). All detail belongs in the docs site. Every subdirectory README must include a link to the relevant section of the docs at https://attractor.coreydaley.dev.
+
+### README conventions
+
+- Keep subdirectory READMEs short — a brief description, the essential commands, and a pointer to the docs site.
+- Do not duplicate content that already lives in the docs site.
+- Use this pattern for the docs link:
+
+  ```
+  Full documentation: https://attractor.coreydaley.dev/<section>/
+  ```
