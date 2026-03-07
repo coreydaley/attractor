@@ -7,7 +7,8 @@ import java.util.UUID
 /**
  * Anthropic CLI-backed ProviderAdapter.
  * Invokes the `claude` CLI binary (or a custom command template) via ProcessBuilder.
- * The command template must contain `{prompt}` which is substituted with the full prompt text.
+ * The command template supports `{prompt}` and optionally `{model}` substitution tokens.
+ * By default the model is omitted, letting the CLI tool use its own configured default.
  * Example template: "claude --dangerously-skip-permissions -p {prompt}"
  */
 class AnthropicCliAdapter(
@@ -109,11 +110,10 @@ internal fun buildArgs(commandTemplate: String, request: Request): List<String> 
     val args = mutableListOf<String>()
     var promptInserted = false
     for (token in tokens) {
-        if (token == "{prompt}") {
-            args.add(promptText)
-            promptInserted = true
-        } else {
-            args.add(token)
+        when (token) {
+            "{prompt}" -> { args.add(promptText); promptInserted = true }
+            "{model}"  -> args.add(request.model)
+            else       -> args.add(token)
         }
     }
     if (!promptInserted) args.add(promptText)

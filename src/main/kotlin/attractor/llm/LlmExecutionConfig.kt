@@ -59,19 +59,20 @@ data class LlmExecutionConfig(
                 "cli" -> ExecutionMode.CLI
                 else  -> ExecutionMode.API
             }
+            val modeKey = if (mode == ExecutionMode.API) "api" else "cli"
             return LlmExecutionConfig(
                 mode = mode,
                 providerToggles = ProviderToggles(
-                    anthropic = parseBool(db("provider_anthropic_enabled"), default = false),
-                    openai    = parseBool(db("provider_openai_enabled"), default = false),
-                    gemini    = parseBool(db("provider_gemini_enabled"), default = false),
+                    anthropic = parseBool(db("provider_anthropic_${modeKey}_enabled") ?: db("provider_anthropic_enabled"), default = false),
+                    openai    = parseBool(db("provider_openai_${modeKey}_enabled")    ?: db("provider_openai_enabled"),    default = false),
+                    gemini    = parseBool(db("provider_gemini_${modeKey}_enabled")    ?: db("provider_gemini_enabled"),    default = false),
                     copilot   = parseBool(db("provider_copilot_enabled"), default = false),
                     custom    = parseBool(db("provider_custom_enabled")
                                     ?: env["ATTRACTOR_CUSTOM_API_ENABLED"], default = false)
                 ),
                 cliCommands = CliCommands(
                     anthropic = db("cli_anthropic_command") ?: "claude --dangerously-skip-permissions -p {prompt}",
-                    openai    = db("cli_openai_command")    ?: "codex exec --full-auto {prompt}",
+                    openai    = db("cli_openai_command")    ?: "codex --full-auto {prompt}",
                     gemini    = db("cli_gemini_command")    ?: "gemini --yolo -p {prompt}",
                     copilot   = db("cli_copilot_command")   ?: "copilot --allow-all-tools -p {prompt}"
                 ),

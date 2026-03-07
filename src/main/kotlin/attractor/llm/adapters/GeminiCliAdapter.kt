@@ -7,7 +7,8 @@ import java.util.UUID
 /**
  * Google Gemini CLI-backed ProviderAdapter.
  * Invokes the `gemini` CLI binary (or a custom command template) via ProcessBuilder.
- * The command template must contain `{prompt}` which is substituted with the full prompt text.
+ * The command template supports `{prompt}` and optionally `{model}` substitution tokens.
+ * By default the model is omitted, letting the CLI tool use its own configured default.
  * Example template: "gemini --yolo -p {prompt}"
  */
 class GeminiCliAdapter(
