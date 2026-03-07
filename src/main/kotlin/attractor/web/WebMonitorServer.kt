@@ -114,6 +114,8 @@ class WebMonitorServer(private val requestedPort: Int, private val registry: Pro
                 val simulate = jsonBool(body, "simulate")
                 val autoApprove = jsonBool(body, "autoApprove", default = true)
                 val originalPrompt = jsonField(body, "originalPrompt")
+                val agentId = jsonField(body, "agentId")
+                val modelId = jsonField(body, "modelId")
 
                 if (dotSource.isEmpty()) {
                     val err = """{"error":"dotSource is required"}""".toByteArray()
@@ -123,7 +125,7 @@ class WebMonitorServer(private val requestedPort: Int, private val registry: Pro
                     return@createContext
                 }
 
-                val options = RunOptions(simulate = simulate, autoApprove = autoApprove)
+                val options = RunOptions(simulate = simulate, autoApprove = autoApprove, agentId = agentId, modelId = modelId)
                 val id = ProjectRunner.submit(dotSource, fileName, options, registry, store, originalPrompt) {
                     broadcastUpdate()
                 }
@@ -492,6 +494,8 @@ class WebMonitorServer(private val requestedPort: Int, private val registry: Pro
             try {
                 val body = ex.requestBody.readBytes().toString(Charsets.UTF_8)
                 val prompt = jsonField(body, "prompt")
+                val agentId = jsonField(body, "agentId")
+                val modelId = jsonField(body, "modelId")
                 if (prompt.isEmpty()) {
                     val err = """{"error":"prompt is required"}""".toByteArray()
                     ex.responseHeaders.add("Content-Type", "application/json")
@@ -499,7 +503,7 @@ class WebMonitorServer(private val requestedPort: Int, private val registry: Pro
                     ex.responseBody.use { it.write(err) }
                     return@createContext
                 }
-                val dotSource = dotGenerator.generate(prompt)
+                val dotSource = dotGenerator.generate(prompt, agentId, modelId)
                 val resp = """{"dotSource":${js(dotSource)}}""".toByteArray()
                 ex.responseHeaders.add("Content-Type", "application/json")
                 ex.sendResponseHeaders(200, resp.size.toLong())
@@ -527,6 +531,8 @@ class WebMonitorServer(private val requestedPort: Int, private val registry: Pro
             try {
                 val body = ex.requestBody.readBytes().toString(Charsets.UTF_8)
                 val prompt = jsonField(body, "prompt")
+                val agentIdStream = jsonField(body, "agentId")
+                val modelIdStream = jsonField(body, "modelId")
                 if (prompt.isEmpty()) {
                     val err = """{"error":"prompt is required"}""".toByteArray()
                     ex.responseHeaders.add("Content-Type", "application/json")
@@ -540,7 +546,7 @@ class WebMonitorServer(private val requestedPort: Int, private val registry: Pro
                 ex.sendResponseHeaders(200, 0)
                 val out = ex.responseBody
                 try {
-                    val cleanDot = dotGenerator.generateStream(prompt) { delta ->
+                    val cleanDot = dotGenerator.generateStream(prompt, agentIdStream, modelIdStream) { delta ->
                         val line = "data: {\"delta\":${js(delta)}}\n\n"
                         out.write(line.toByteArray(Charsets.UTF_8))
                         out.flush()
@@ -579,6 +585,8 @@ class WebMonitorServer(private val requestedPort: Int, private val registry: Pro
             try {
                 val body = ex.requestBody.readBytes().toString(Charsets.UTF_8)
                 val dotSource = jsonField(body, "dotSource")
+                val agentIdDesc = jsonField(body, "agentId")
+                val modelIdDesc = jsonField(body, "modelId")
                 if (dotSource.isEmpty()) {
                     val err = """{"error":"dotSource is required"}""".toByteArray()
                     ex.responseHeaders.add("Content-Type", "application/json")
@@ -592,7 +600,7 @@ class WebMonitorServer(private val requestedPort: Int, private val registry: Pro
                 ex.sendResponseHeaders(200, 0)
                 val out = ex.responseBody
                 try {
-                    dotGenerator.describeStream(dotSource) { delta ->
+                    dotGenerator.describeStream(dotSource, agentIdDesc, modelIdDesc) { delta ->
                         val line = "data: {\"delta\":${js(delta)}}\n\n"
                         out.write(line.toByteArray(Charsets.UTF_8))
                         out.flush()
@@ -632,6 +640,8 @@ class WebMonitorServer(private val requestedPort: Int, private val registry: Pro
                 val body = ex.requestBody.readBytes().toString(Charsets.UTF_8)
                 val dotSource = jsonField(body, "dotSource")
                 val error    = jsonField(body, "error")
+                val agentIdFix = jsonField(body, "agentId")
+                val modelIdFix = jsonField(body, "modelId")
                 if (dotSource.isEmpty()) {
                     val err = """{"error":"dotSource is required"}""".toByteArray()
                     ex.responseHeaders.add("Content-Type", "application/json")
@@ -645,7 +655,7 @@ class WebMonitorServer(private val requestedPort: Int, private val registry: Pro
                 ex.sendResponseHeaders(200, 0)
                 val out = ex.responseBody
                 try {
-                    val cleanDot = dotGenerator.fixStream(dotSource, error) { delta ->
+                    val cleanDot = dotGenerator.fixStream(dotSource, error, agentIdFix, modelIdFix) { delta ->
                         val line = "data: {\"delta\":${js(delta)}}\n\n"
                         out.write(line.toByteArray(Charsets.UTF_8))
                         out.flush()
@@ -685,6 +695,8 @@ class WebMonitorServer(private val requestedPort: Int, private val registry: Pro
                 val body = ex.requestBody.readBytes().toString(Charsets.UTF_8)
                 val baseDot = jsonField(body, "baseDot")
                 val changes = jsonField(body, "changes")
+                val agentIdIter = jsonField(body, "agentId")
+                val modelIdIter = jsonField(body, "modelId")
                 if (baseDot.isEmpty()) {
                     val err = """{"error":"baseDot is required"}""".toByteArray()
                     ex.responseHeaders.add("Content-Type", "application/json")
@@ -705,7 +717,7 @@ class WebMonitorServer(private val requestedPort: Int, private val registry: Pro
                 ex.sendResponseHeaders(200, 0)
                 val out = ex.responseBody
                 try {
-                    val cleanDot = dotGenerator.iterateStream(baseDot, changes) { delta ->
+                    val cleanDot = dotGenerator.iterateStream(baseDot, changes, agentIdIter, modelIdIter) { delta ->
                         val line = "data: {\"delta\":${js(delta)}}\n\n"
                         out.write(line.toByteArray(Charsets.UTF_8))
                         out.flush()
@@ -746,6 +758,8 @@ class WebMonitorServer(private val requestedPort: Int, private val registry: Pro
                 val sourceId = jsonField(body, "id")
                 val dotSource = jsonField(body, "dotSource")
                 val originalPrompt = jsonField(body, "originalPrompt")
+                val agentIdRun = jsonField(body, "agentId")
+                val modelIdRun = jsonField(body, "modelId")
                 val sourceEntry = registry.get(sourceId)
                 if (sourceEntry == null) {
                     val err = """{"error":"Project not found"}""".toByteArray()
@@ -776,10 +790,13 @@ class WebMonitorServer(private val requestedPort: Int, private val registry: Pro
                     registry.setFamilyId(sourceId, sourceId)
                 }
                 // Create a new run for this iteration — source run is preserved untouched
+                val iterOptions = if (agentIdRun.isNotBlank() || modelIdRun.isNotBlank())
+                    sourceEntry.options.copy(agentId = agentIdRun, modelId = modelIdRun)
+                else sourceEntry.options
                 val newId = ProjectRunner.submit(
                     dotSource = dotSource,
                     fileName = sourceEntry.fileName,
-                    options = sourceEntry.options,
+                    options = iterOptions,
                     registry = registry,
                     store = store,
                     originalPrompt = originalPrompt,
@@ -1174,14 +1191,26 @@ class WebMonitorServer(private val requestedPort: Int, private val registry: Pro
                 val gemEnabled  = store.getSetting("provider_gemini_enabled") ?: "false"
                 val copilotEnabled = store.getSetting("provider_copilot_enabled") ?: "false"
                 val customEnabled = store.getSetting("provider_custom_enabled") ?: "false"
+                val anthApiEnabled = store.getSetting("provider_anthropic_api_enabled") ?: anthEnabled
+                val oaiApiEnabled  = store.getSetting("provider_openai_api_enabled")    ?: oaiEnabled
+                val gemApiEnabled  = store.getSetting("provider_gemini_api_enabled")    ?: gemEnabled
+                val anthCliEnabled = store.getSetting("provider_anthropic_cli_enabled") ?: anthEnabled
+                val oaiCliEnabled  = store.getSetting("provider_openai_cli_enabled")    ?: oaiEnabled
+                val gemCliEnabled  = store.getSetting("provider_gemini_cli_enabled")    ?: gemEnabled
                 val anthCmd    = store.getSetting("cli_anthropic_command") ?: "claude --dangerously-skip-permissions -p {prompt}"
-                val oaiCmd     = store.getSetting("cli_openai_command") ?: "codex exec --full-auto {prompt}"
+                val oaiCmd     = store.getSetting("cli_openai_command") ?: "codex --full-auto {prompt}"
                 val gemCmd     = store.getSetting("cli_gemini_command") ?: "gemini --yolo -p {prompt}"
                 val copilotCmd = store.getSetting("cli_copilot_command") ?: "copilot --allow-all-tools -p {prompt}"
                 val customHost  = store.getSetting("custom_api_host")  ?: "http://localhost"
                 val customPort  = store.getSetting("custom_api_port")  ?: "11434"
                 val customKey   = store.getSetting("custom_api_key")   ?: ""
                 val customModel = store.getSetting("custom_api_model") ?: "llama3.2"
+                val anthModelsJson = store.getSetting("models_anthropic_json") ?: ""
+                val oaiModelsJson  = store.getSetting("models_openai_json")    ?: ""
+                val gemModelsJson  = store.getSetting("models_gemini_json")    ?: ""
+                val anthFetchedAt  = store.getSetting("models_anthropic_fetched_at") ?: ""
+                val oaiFetchedAt   = store.getSetting("models_openai_fetched_at")    ?: ""
+                val gemFetchedAt   = store.getSetting("models_gemini_fetched_at")    ?: ""
                 val body = """{
                     "execution_mode":${js(execMode)},
                     "provider_anthropic_enabled":$anthEnabled,
@@ -1189,6 +1218,12 @@ class WebMonitorServer(private val requestedPort: Int, private val registry: Pro
                     "provider_gemini_enabled":$gemEnabled,
                     "provider_copilot_enabled":$copilotEnabled,
                     "provider_custom_enabled":$customEnabled,
+                    "provider_anthropic_api_enabled":$anthApiEnabled,
+                    "provider_openai_api_enabled":$oaiApiEnabled,
+                    "provider_gemini_api_enabled":$gemApiEnabled,
+                    "provider_anthropic_cli_enabled":$anthCliEnabled,
+                    "provider_openai_cli_enabled":$oaiCliEnabled,
+                    "provider_gemini_cli_enabled":$gemCliEnabled,
                     "cli_anthropic_command":${js(anthCmd)},
                     "cli_openai_command":${js(oaiCmd)},
                     "cli_gemini_command":${js(gemCmd)},
@@ -1196,7 +1231,13 @@ class WebMonitorServer(private val requestedPort: Int, private val registry: Pro
                     "custom_api_host":${js(customHost)},
                     "custom_api_port":${js(customPort)},
                     "custom_api_key":${js(customKey)},
-                    "custom_api_model":${js(customModel)}
+                    "custom_api_model":${js(customModel)},
+                    "models_anthropic_json":${js(anthModelsJson)},
+                    "models_openai_json":${js(oaiModelsJson)},
+                    "models_gemini_json":${js(gemModelsJson)},
+                    "models_anthropic_fetched_at":${js(anthFetchedAt)},
+                    "models_openai_fetched_at":${js(oaiFetchedAt)},
+                    "models_gemini_fetched_at":${js(gemFetchedAt)}
                 }""".trimIndent().replace("\n", "").replace("    ", "").toByteArray()
                 ex.responseHeaders.add("Content-Type", "application/json")
                 ex.responseHeaders.add("Access-Control-Allow-Origin", "*")
@@ -1222,7 +1263,7 @@ class WebMonitorServer(private val requestedPort: Int, private val registry: Pro
                 } catch (_: Exception) { false }
             }
             val anthCmd    = store.getSetting("cli_anthropic_command") ?: "claude --dangerously-skip-permissions -p {prompt}"
-            val oaiCmd     = store.getSetting("cli_openai_command") ?: "codex exec --full-auto {prompt}"
+            val oaiCmd     = store.getSetting("cli_openai_command") ?: "codex --full-auto {prompt}"
             val gemCmd     = store.getSetting("cli_gemini_command") ?: "gemini --yolo -p {prompt}"
             val copilotCmd = store.getSetting("cli_copilot_command") ?: "copilot --allow-all-tools -p {prompt}"
             val body = """{
@@ -1328,6 +1369,82 @@ class WebMonitorServer(private val requestedPort: Int, private val registry: Pro
                 ex.sendResponseHeaders(500, err.size.toLong())
                 ex.responseBody.use { it.write(err) }
             }
+        }
+
+        // ── Agent catalog ─────────────────────────────────────────────────────
+        httpServer.createContext("/api/agents") { ex ->
+            ex.responseHeaders.add("Access-Control-Allow-Origin", "*")
+            if (ex.requestMethod != "GET") {
+                ex.sendResponseHeaders(405, 0); ex.responseBody.close(); return@createContext
+            }
+            try {
+                val catalog = attractor.llm.AgentCatalog.buildCatalog(store)
+                val execMode = store.getSetting("execution_mode") ?: "api"
+                val config = attractor.llm.LlmExecutionConfig.from(store)
+                val filtered = catalog.filter { agent ->
+                    val isEnabled = config.isProviderEnabled(agent.id)
+                    val hasModels = if (execMode == "cli") agent.cliModels != null else agent.directApiModels != null
+                    isEnabled && hasModels
+                }
+                val agentsJson = filtered.joinToString(",") { agent ->
+                    val models = if (execMode == "cli") agent.cliModels!! else agent.directApiModels!!
+                    val modelsJson = models.joinToString(",") { m ->
+                        """{"id":${js(m.id)},"displayName":${js(m.displayName)}}"""
+                    }
+                    """{"id":${js(agent.id)},"displayName":${js(agent.displayName)},"models":[$modelsJson]}"""
+                }
+                val resp = """{"executionMode":${js(execMode)},"agents":[$agentsJson]}""".toByteArray()
+                ex.responseHeaders.add("Content-Type", "application/json")
+                ex.sendResponseHeaders(200, resp.size.toLong())
+                ex.responseBody.use { it.write(resp) }
+            } catch (_: Exception) {
+                val resp = """{"executionMode":"api","agents":[]}""".toByteArray()
+                ex.responseHeaders.add("Content-Type", "application/json")
+                ex.sendResponseHeaders(200, resp.size.toLong())
+                ex.responseBody.use { it.write(resp) }
+            }
+        }
+
+        // ── Fetch live model list from provider API ────────────────────────────
+        httpServer.createContext("/api/settings/fetch-models") { ex ->
+            ex.responseHeaders.add("Access-Control-Allow-Origin", "*")
+            ex.responseHeaders.add("Access-Control-Allow-Methods", "POST, OPTIONS")
+            ex.responseHeaders.add("Access-Control-Allow-Headers", "Content-Type")
+            if (ex.requestMethod == "OPTIONS") {
+                ex.sendResponseHeaders(204, -1); return@createContext
+            }
+            if (ex.requestMethod != "POST") {
+                ex.sendResponseHeaders(405, 0); ex.responseBody.close(); return@createContext
+            }
+            val body = ex.requestBody.readBytes().toString(Charsets.UTF_8)
+            val provider = jsonField(body, "provider")
+            val allowed = setOf("anthropic", "openai", "gemini")
+            if (provider !in allowed) {
+                val err = """{"ok":false,"error":"Unknown provider: $provider"}""".toByteArray()
+                ex.responseHeaders.add("Content-Type", "application/json")
+                ex.sendResponseHeaders(200, err.size.toLong())
+                ex.responseBody.use { it.write(err) }
+                return@createContext
+            }
+            val execMode = store.getSetting("execution_mode") ?: "api"
+            if (execMode == "cli") {
+                val err = """{"ok":false,"error":"Model fetch not available in CLI subprocess mode"}""".toByteArray()
+                ex.responseHeaders.add("Content-Type", "application/json")
+                ex.sendResponseHeaders(200, err.size.toLong())
+                ex.responseBody.use { it.write(err) }
+                return@createContext
+            }
+            val result = attractor.llm.ModelFetcher.fetchModels(provider, store)
+            val resp = if (result.error == null) {
+                val fetchedAt = store.getSetting("models_${provider}_fetched_at") ?: ""
+                val modelsJson = store.getSetting("models_${provider}_json") ?: "[]"
+                """{"ok":true,"count":${result.models.size},"fetchedAt":${js(fetchedAt)},"models":$modelsJson}""".toByteArray()
+            } else {
+                """{"ok":false,"error":${js(result.error)}}""".toByteArray()
+            }
+            ex.responseHeaders.add("Content-Type", "application/json")
+            ex.sendResponseHeaders(200, resp.size.toLong())
+            ex.responseBody.use { it.write(resp) }
         }
 
         // ── SSE live event stream ────────────────────────────────────────────
@@ -1526,11 +1643,15 @@ class WebMonitorServer(private val requestedPort: Int, private val registry: Pro
   --badge-paused-fg: #5b21b6;
 }
 * { box-sizing: border-box; margin: 0; padding: 0; }
-body { font-family: 'Figtree', 'Segoe UI', system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; padding-bottom: 28px; }
+html { height: 100%; }
+body { font-family: 'Figtree', 'Segoe UI', system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--text); min-height: 100%; padding-bottom: 28px; }
+body.create-active { height: 100%; overflow: hidden; display: flex; flex-direction: column; padding-bottom: 0; }
+#viewCreate { flex: 1; min-height: 0; overflow: hidden; position: relative; }
+#viewSettings { display: flex; flex-direction: column; gap: 16px; }
 button { font-variant-emoji: text; }
 
 /* Header */
-#topChrome { position: sticky; top: 0; z-index: 100; }
+#topChrome { position: sticky; top: 0; z-index: 100; flex-shrink: 0; }
 header { background: var(--surface); border-bottom: 1px solid var(--border); padding: 12px 20px; display: flex; align-items: center; gap: 12px; }
 #agentWarningBanner, #requiredToolsWarningBanner { display:flex; align-items:center; gap:10px; padding:9px 20px; background:#7c3500; color:#fde8c8; font-size:0.85rem; border-bottom:1px solid #a04800; }
 header h1 { font-size: 1.05rem; font-weight: 600; color: var(--text-strong); flex: 1; }
@@ -1818,7 +1939,7 @@ main { max-width: 1200px; margin: 0 auto; padding: 20px; display: block; }
 
 
 /* Create view */
-.create-layout { max-width: 1440px; margin: 0 auto; padding: 20px; display: grid; grid-template-columns: 1fr 1fr; gap: 20px; height: calc(100vh - 45px); box-sizing: border-box; }
+.create-layout { max-width: 1440px; margin: 0 auto; padding: 16px 16px 44px; display: grid; grid-template-columns: 1fr 1fr; gap: 16px; height: 100%; box-sizing: border-box; }
 .create-col { display: flex; flex-direction: column; gap: 10px; min-height: 0; }
 .create-col h2 { font-size: 0.75rem; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.07em; flex-shrink: 0; }
 .create-section { flex: 1; display: flex; flex-direction: column; gap: 10px; min-height: 0; }
@@ -1976,7 +2097,7 @@ input:checked + .toggle-slider:before { transform:translateX(20px); }
 </div>
 
 <!-- Create view -->
-<div id="viewCreate" style="display:none; position:relative;">
+<div id="viewCreate" style="display:none; position:relative; box-sizing:border-box;">
   <div id="noAgentOverlay" style="display:none; position:absolute; inset:0; z-index:50; background:rgba(0,0,0,0.45); backdrop-filter:blur(2px); align-items:center; justify-content:center;">
     <div style="background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:36px 40px; max-width:440px; width:90%; text-align:center; box-shadow:0 16px 48px rgba(0,0,0,0.3);">
       <div style="font-size:2.4rem; margin-bottom:12px;">⚡</div>
@@ -1995,24 +2116,39 @@ input:checked + .toggle-slider:before { transform:translateX(20px); }
         </div>
         <textarea id="nlInput" class="nl-textarea"
           placeholder="e.g. &quot;Write comprehensive unit tests for a Python web app, run them, fix any failures, then generate a coverage report&quot;&#10;&#10;Describe what you want in plain English, then click Generate."></textarea>
-        <div style="display:flex; justify-content:flex-end; margin-top:6px;">
-          <button id="generateBtn" onclick="triggerGenerate()" disabled style="padding:5px 16px; border-radius:6px; border:1px solid var(--border); background:var(--surface-muted); color:var(--text); font-size:0.82rem; font-weight:500; cursor:pointer;">Generate</button>
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-top:6px; gap:10px; flex-wrap:wrap;">
+          <div id="createAgentModelRow" style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+            <div style="display:flex; align-items:center; gap:6px;">
+              <label style="font-size:0.82rem; color:var(--text-muted); white-space:nowrap;">Agent</label>
+              <select id="createAgentSelect" onchange="onCreateAgentChange()" style="padding:4px 8px; border-radius:6px; border:1px solid var(--border); background:var(--surface-muted); color:var(--text); font-size:0.82rem; cursor:pointer;">
+                <option value="">Auto</option>
+              </select>
+            </div>
+            <div id="createModelSelectWrap" style="display:flex; align-items:center; gap:6px;">
+              <label style="font-size:0.82rem; color:var(--text-muted); white-space:nowrap;">Model</label>
+              <select id="createModelSelect" onchange="saveCreateAgentModel()" style="padding:4px 8px; border-radius:6px; border:1px solid var(--border); background:var(--surface-muted); color:var(--text); font-size:0.82rem; cursor:pointer;">
+                <option value="">Default</option>
+              </select>
+              <span id="cliModelNote" style="display:none; font-size:0.75rem; color:var(--text-muted);">&#8212; set by the CLI tool</span>
+            </div>
+            <div id="autoResolvedDisplay" style="display:none; font-size:0.82rem; color:var(--text-muted);">&#8594; <span id="autoResolvedText" style="color:var(--text);"></span></div>
+          </div>
+          <button id="generateBtn" onclick="triggerGenerate()" disabled style="padding:5px 16px; border-radius:6px; border:1px solid var(--border); background:var(--surface-muted); color:var(--text); font-size:0.82rem; font-weight:500; cursor:pointer; flex-shrink:0;">Generate</button>
         </div>
-        <div class="create-options-row">
-          <label class="checkbox-row"><input type="checkbox" id="createSimulate"> Simulate (no LLM calls)</label>
-          <label class="checkbox-row"><input type="checkbox" id="createAutoApprove" checked> Auto-approve gates</label>
-        </div>
+        <div style="font-size:0.75rem; color:var(--text-muted); margin-top:4px;">Agent and model are used for both generation and project execution.</div>
       </div>
       <div class="create-section">
         <div class="dot-header-row">
           <h2>Generated DOT</h2>
-          <span class="gen-status" id="genStatus">Start typing to generate&hellip;</span>
+          <span class="gen-status" id="genStatus">Describe your project and click Generate&hellip;</span>
         </div>
         <textarea id="dotPreview" class="dot-textarea" spellcheck="false"
           placeholder="Generated project DOT source will appear here&hellip;"></textarea>
         <div class="run-row">
           <span class="gen-hint" id="genHint">You can edit the DOT source before running.</span>
-          <div style="display:flex;gap:8px;align-items:center;">
+          <div style="display:flex;gap:12px;align-items:center;">
+            <label class="checkbox-row" style="font-size:0.82rem;"><input type="checkbox" id="createSimulate"> Simulate</label>
+            <label class="checkbox-row" style="font-size:0.82rem;"><input type="checkbox" id="createAutoApprove" checked> Auto-approve gates</label>
             <button class="btn-cancel-iterate" id="cancelIterateBtn" style="display:none;" onclick="cancelIterate()">&#x2715;&ensp;Cancel</button>
             <button class="run-btn" id="runBtn" disabled onclick="runGenerated()">&#9654;&ensp;Create</button>
           </div>
@@ -2060,11 +2196,11 @@ input:checked + .toggle-slider:before { transform:translateX(20px); }
 </div>
 
 <!-- Settings view -->
-<div id="viewSettings" style="display:none; padding: 24px; max-width: 640px; margin: 0 auto;">
-  <div class="card">
-    <h2>Settings</h2>
+<div id="viewSettings" style="display:none; padding: 24px 24px 52px; max-width: 640px; margin: 0 auto;">
 
-    <!-- Dark Theme -->
+  <!-- Theme -->
+  <div class="card">
+    <h2>Theme</h2>
     <div class="setting-row">
       <div class="setting-info">
         <div class="setting-label">Dark Theme</div>
@@ -2075,6 +2211,11 @@ input:checked + .toggle-slider:before { transform:translateX(20px); }
         <span class="toggle-slider"></span>
       </label>
     </div>
+  </div>
+
+  <!-- Agents -->
+  <div class="card">
+    <h2>Agents</h2>
 
     <!-- Execution Mode -->
     <div class="setting-row" style="flex-direction:column; align-items:flex-start; gap:10px;">
@@ -2116,9 +2257,9 @@ input:checked + .toggle-slider:before { transform:translateX(20px); }
     </div>
 
     <!-- Providers -->
-    <div style="padding: 12px 0 4px 0;">
+    <div style="padding-top:16px; border-top:1px solid var(--border); margin-top:8px;">
       <div class="setting-label" style="margin-bottom:8px;">Providers</div>
-      <div class="setting-desc" style="margin-bottom:12px;">Enable or disable individual AI providers.<span id="cliPromptHint" style="display:none;"> CLI command templates support <code>{prompt}</code> substitution.</span></div>
+      <div class="setting-desc" style="margin-bottom:12px;">Enable or disable individual AI providers.<span id="cliPromptHint" style="display:none;"> Command templates support <code>{prompt}</code> substitution. The model is controlled by the CLI tool itself &mdash; configure it via the tool&rsquo;s own settings or flags. You can optionally add <code>--model {model}</code> to the template to pass the agent&rsquo;s selected model to the CLI.</span></div>
       <div id="apiKeyRestartNote" style="display:none; padding:8px 12px; border-radius:7px; background:var(--surface-muted); border:1px solid var(--border); color:var(--text-muted); font-size:0.8rem; margin-bottom:12px;">&#8505;&#65039; API keys are read from environment variables at startup. Restart the application after setting a key for it to be detected.</div>
 
       <!-- Anthropic -->
@@ -2126,7 +2267,7 @@ input:checked + .toggle-slider:before { transform:translateX(20px); }
         <div style="display:flex; align-items:center; justify-content:space-between; width:100%;">
           <div style="display:flex; align-items:center; gap:10px;">
             <label class="toggle-switch" style="margin:0;">
-              <input type="checkbox" id="settingAnthropicEnabled" onchange="saveSetting('provider_anthropic_enabled', this.checked)">
+              <input type="checkbox" id="settingAnthropicEnabled" onchange="saveProviderEnabled('anthropic', this.checked)">
               <span class="toggle-slider"></span>
             </label>
             <span class="setting-label">Anthropic (claude)</span>
@@ -2137,6 +2278,7 @@ input:checked + .toggle-slider:before { transform:translateX(20px); }
         <input id="cliCmdAnthropic" type="text" placeholder="claude --dangerously-skip-permissions -p {prompt}"
           style="display:none; width:100%; box-sizing:border-box; padding:6px 10px; border:1px solid var(--border); border-radius:6px; background:var(--surface-muted); color:var(--text); font-size:0.85rem; font-family:monospace;"
           onblur="saveSetting('cli_anthropic_command', this.value)">
+        <div id="apiModelPanel_anthropic" style="display:none; width:100%; padding-top:8px; border-top:1px solid var(--border); margin-top:2px;"></div>
       </div>
 
       <!-- OpenAI -->
@@ -2144,7 +2286,7 @@ input:checked + .toggle-slider:before { transform:translateX(20px); }
         <div style="display:flex; align-items:center; justify-content:space-between; width:100%;">
           <div style="display:flex; align-items:center; gap:10px;">
             <label class="toggle-switch" style="margin:0;">
-              <input type="checkbox" id="settingOpenAIEnabled" onchange="saveSetting('provider_openai_enabled', this.checked)">
+              <input type="checkbox" id="settingOpenAIEnabled" onchange="saveProviderEnabled('openai', this.checked)">
               <span class="toggle-slider"></span>
             </label>
             <span class="setting-label">OpenAI (codex)</span>
@@ -2152,9 +2294,10 @@ input:checked + .toggle-slider:before { transform:translateX(20px); }
           <span id="apiBadgeOpenAI" style="font-size:0.78rem; display:none;"></span>
           <span id="cliBadgeOpenAI" style="font-size:0.78rem; display:none;"></span>
         </div>
-        <input id="cliCmdOpenAI" type="text" placeholder="codex exec --full-auto {prompt}"
+        <input id="cliCmdOpenAI" type="text" placeholder="codex --full-auto {prompt}"
           style="display:none; width:100%; box-sizing:border-box; padding:6px 10px; border:1px solid var(--border); border-radius:6px; background:var(--surface-muted); color:var(--text); font-size:0.85rem; font-family:monospace;"
           onblur="saveSetting('cli_openai_command', this.value)">
+        <div id="apiModelPanel_openai" style="display:none; width:100%; padding-top:8px; border-top:1px solid var(--border); margin-top:2px;"></div>
       </div>
 
       <!-- Gemini -->
@@ -2162,7 +2305,7 @@ input:checked + .toggle-slider:before { transform:translateX(20px); }
         <div style="display:flex; align-items:center; justify-content:space-between; width:100%;">
           <div style="display:flex; align-items:center; gap:10px;">
             <label class="toggle-switch" style="margin:0;">
-              <input type="checkbox" id="settingGeminiEnabled" onchange="saveSetting('provider_gemini_enabled', this.checked)">
+              <input type="checkbox" id="settingGeminiEnabled" onchange="saveProviderEnabled('gemini', this.checked)">
               <span class="toggle-slider"></span>
             </label>
             <span class="setting-label">Google (gemini)</span>
@@ -2173,6 +2316,7 @@ input:checked + .toggle-slider:before { transform:translateX(20px); }
         <input id="cliCmdGemini" type="text" placeholder="gemini --yolo -p {prompt}"
           style="display:none; width:100%; box-sizing:border-box; padding:6px 10px; border:1px solid var(--border); border-radius:6px; background:var(--surface-muted); color:var(--text); font-size:0.85rem; font-family:monospace;"
           onblur="saveSetting('cli_gemini_command', this.value)">
+        <div id="apiModelPanel_gemini" style="display:none; width:100%; padding-top:8px; border-top:1px solid var(--border); margin-top:2px;"></div>
       </div>
 
       <!-- Custom OpenAI-compatible endpoint — API-mode only, hidden in CLI mode -->
@@ -2240,9 +2384,9 @@ input:checked + .toggle-slider:before { transform:translateX(20px); }
   </div>
 
   <!-- System Tools -->
-  <div style="margin-top:28px; padding-top:24px; border-top:1px solid var(--border);">
+  <div class="card">
     <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:4px;">
-      <h2 style="margin:0; font-size:1.05rem; font-weight:600; color:var(--text-strong);">System Tools</h2>
+      <h2 style="margin:0;">System Tools</h2>
       <button onclick="loadSystemToolsStatus()" style="padding:3px 12px; border-radius:6px; border:1px solid var(--border); background:var(--surface-muted); color:var(--text); font-size:0.8rem; cursor:pointer;">Re-check</button>
     </div>
     <div class="setting-desc" style="margin-bottom:16px;">Tools detected on the system. Required tools must be present for core features to work.</div>
@@ -2253,8 +2397,8 @@ input:checked + .toggle-slider:before { transform:translateX(20px); }
   </div>
 
   <!-- Info -->
-  <div style="margin-top:28px; padding-top:24px; border-top:1px solid var(--border);">
-    <h2 style="margin:0 0 16px; font-size:1.05rem; font-weight:600; color:var(--text-strong);">Info</h2>
+  <div class="card">
+    <h2>Info</h2>
     <div class="setting-row">
       <div class="setting-info">
         <div class="setting-label">Application Version</div>
@@ -3532,13 +3676,23 @@ var sseDelay = 500;
 var appSettings = {};
 var agentApiKeyStatus = { anthropic: false, openai: false, gemini: false };
 var agentCliStatus    = { anthropic: false, openai: false, gemini: false, copilot: false };
+var agentCatalog = [];
+var autoResolvedAgentId = '';
+var autoResolvedModelId = '';
 
 function hasUsableAgent() {
   var isTrue = function(v) { return v === true || v === 'true'; };
-  return isTrue(appSettings.provider_anthropic_enabled) ||
-         isTrue(appSettings.provider_openai_enabled)    ||
-         isTrue(appSettings.provider_gemini_enabled)    ||
-         isTrue(appSettings.provider_copilot_enabled);
+  var mode = (appSettings && appSettings.execution_mode) || 'api';
+  if (mode === 'cli') {
+    return isTrue(appSettings.provider_anthropic_cli_enabled) ||
+           isTrue(appSettings.provider_openai_cli_enabled)    ||
+           isTrue(appSettings.provider_gemini_cli_enabled)    ||
+           isTrue(appSettings.provider_copilot_enabled);
+  }
+  return isTrue(appSettings.provider_anthropic_api_enabled) ||
+         isTrue(appSettings.provider_openai_api_enabled)    ||
+         isTrue(appSettings.provider_gemini_api_enabled)    ||
+         isTrue(appSettings.provider_custom_enabled);
 }
 
 function applyCreatePageAgentState() {
@@ -3552,6 +3706,113 @@ function applyCreatePageAgentState() {
   });
   var uploadLink = document.querySelector('.dot-upload-link');
   if (uploadLink) uploadLink.style.pointerEvents = usable ? '' : 'none';
+  loadAgentCatalog();
+}
+
+function loadAgentCatalog() {
+  fetch('/api/agents')
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      agentCatalog = data.agents || [];
+      populateCreateAgentDropdown(data.executionMode || 'api');
+    })
+    .catch(function() {});
+}
+
+function populateCreateAgentDropdown(mode) {
+  var agentSel = document.getElementById('createAgentSelect');
+  if (!agentSel) return;
+  var savedAgent = localStorage.getItem('create_agent_' + mode) || '';
+  agentSel.innerHTML = '<option value="">Auto</option>';
+  agentCatalog.forEach(function(agent) {
+    var opt = document.createElement('option');
+    opt.value = agent.id;
+    opt.textContent = agent.displayName;
+    agentSel.appendChild(opt);
+  });
+  agentSel.value = savedAgent;
+  onCreateAgentChange();
+}
+
+function resolveAutoAgent() {
+  if (agentCatalog.length === 0) return;
+  var mode = (appSettings && appSettings.execution_mode) || 'api';
+  var agent = agentCatalog[Math.floor(Math.random() * agentCatalog.length)];
+  autoResolvedAgentId = agent.id;
+  autoResolvedModelId = '';
+  var label = agent.displayName;
+  if (mode === 'api' && agent.models && agent.models.length > 0) {
+    var randModel = agent.models[Math.floor(Math.random() * agent.models.length)];
+    autoResolvedModelId = randModel.id;
+    label += ' \u2014 ' + (randModel.displayName || randModel.id);
+  }
+  var display = document.getElementById('autoResolvedDisplay');
+  var text    = document.getElementById('autoResolvedText');
+  var wrap    = document.getElementById('createModelSelectWrap');
+  if (display) display.style.display = 'flex';
+  if (text)    text.textContent = label;
+  if (wrap)    wrap.style.display = 'none';
+}
+
+function onCreateAgentChange() {
+  var agentSel = document.getElementById('createAgentSelect');
+  var modelSel = document.getElementById('createModelSelect');
+  if (!agentSel || !modelSel) return;
+  var agentId = agentSel.value;
+  var mode = (appSettings && appSettings.execution_mode) || 'api';
+  var display = document.getElementById('autoResolvedDisplay');
+  var wrap    = document.getElementById('createModelSelectWrap');
+  if (!agentId) {
+    localStorage.removeItem('create_agent_' + mode);
+    resolveAutoAgent();
+    return;
+  }
+  // Specific agent selected — hide auto display, show model select
+  autoResolvedAgentId = '';
+  autoResolvedModelId = '';
+  if (display) display.style.display = 'none';
+  if (wrap)    wrap.style.display = 'flex';
+  localStorage.setItem('create_agent_' + mode, agentId);
+  modelSel.innerHTML = '<option value="">' + (mode === 'cli' ? 'Tool default' : 'Default') + '</option>';
+  if (mode === 'api') {
+    var agent = null;
+    for (var i = 0; i < agentCatalog.length; i++) { if (agentCatalog[i].id === agentId) { agent = agentCatalog[i]; break; } }
+    if (agent && agent.models && agent.models.length > 0) {
+      agent.models.forEach(function(m) {
+        var opt = document.createElement('option');
+        opt.value = m.id;
+        opt.textContent = m.displayName || m.id;
+        modelSel.appendChild(opt);
+      });
+    }
+    var savedModel = localStorage.getItem('create_model_' + agentId + '_api') || '';
+    if (savedModel) modelSel.value = savedModel;
+  }
+}
+
+function saveCreateAgentModel() {
+  var agentSel = document.getElementById('createAgentSelect');
+  var modelSel = document.getElementById('createModelSelect');
+  if (!agentSel || !modelSel) return;
+  var agentId = agentSel.value;
+  var modelId = modelSel.value;
+  var mode = (appSettings && appSettings.execution_mode) || 'api';
+  if (modelId) localStorage.setItem('create_model_' + agentId + '_' + mode, modelId);
+  else localStorage.removeItem('create_model_' + agentId + '_' + mode);
+}
+
+function getCreateAgentId() {
+  var sel = document.getElementById('createAgentSelect');
+  if (!sel) return '';
+  return sel.value === '' ? autoResolvedAgentId : sel.value;
+}
+
+function getCreateModelId() {
+  var sel = document.getElementById('createModelSelect');
+  if (!sel) return '';
+  var agentSel = document.getElementById('createAgentSelect');
+  if (agentSel && agentSel.value === '') return autoResolvedModelId;
+  return sel.value;
 }
 
 function updateAgentWarning() {
@@ -3574,12 +3835,14 @@ function loadSettings() {
     .then(function(r) { return r.json(); })
     .then(function(s) {
       appSettings = s;
+      var isTrue = function(v) { return v === true || v === 'true'; };
+      var mode = s.execution_mode || 'api';
       var anthEl = document.getElementById('settingAnthropicEnabled');
-      if (anthEl) anthEl.checked = s.provider_anthropic_enabled !== false;
+      if (anthEl) anthEl.checked = mode === 'api' ? isTrue(s.provider_anthropic_api_enabled) : isTrue(s.provider_anthropic_cli_enabled);
       var oaiEl = document.getElementById('settingOpenAIEnabled');
-      if (oaiEl) oaiEl.checked = s.provider_openai_enabled !== false;
+      if (oaiEl) oaiEl.checked = mode === 'api' ? isTrue(s.provider_openai_api_enabled) : isTrue(s.provider_openai_cli_enabled);
       var gemEl = document.getElementById('settingGeminiEnabled');
-      if (gemEl) gemEl.checked = s.provider_gemini_enabled !== false;
+      if (gemEl) gemEl.checked = mode === 'api' ? isTrue(s.provider_gemini_api_enabled) : isTrue(s.provider_gemini_cli_enabled);
       var copilotEl = document.getElementById('settingCopilotEnabled');
       if (copilotEl) copilotEl.checked = s.provider_copilot_enabled === true || s.provider_copilot_enabled === 'true';
       var customEl = document.getElementById('settingCustomEnabled');
@@ -3595,7 +3858,7 @@ function loadSettings() {
       var anthCmd = document.getElementById('cliCmdAnthropic');
       if (anthCmd) anthCmd.value = s.cli_anthropic_command || 'claude --dangerously-skip-permissions -p {prompt}';
       var oaiCmd = document.getElementById('cliCmdOpenAI');
-      if (oaiCmd) oaiCmd.value = s.cli_openai_command || 'codex exec --full-auto {prompt}';
+      if (oaiCmd) oaiCmd.value = s.cli_openai_command || 'codex --full-auto {prompt}';
       var gemCmd = document.getElementById('cliCmdGemini');
       if (gemCmd) gemCmd.value = s.cli_gemini_command || 'gemini --yolo -p {prompt}';
       var copilotCmd = document.getElementById('cliCmdCopilot');
@@ -3607,13 +3870,82 @@ function loadSettings() {
       if (mode === 'api') loadApiKeyStatus();
       if (mode === 'cli') loadCliStatus();
       loadSystemToolsStatus();
+      renderModelCatalogRows();
     })
     .catch(function() {});
+}
+
+function renderModelCatalogRows() {
+  var mode = (appSettings && appSettings.execution_mode) || 'api';
+  var isTrue = function(v) { return v === true || v === 'true'; };
+  ['anthropic', 'openai', 'gemini'].forEach(function(id) {
+    var panel = document.getElementById('apiModelPanel_' + id);
+    if (!panel) return;
+    var enabled = isTrue(appSettings['provider_' + id + '_api_enabled']);
+    var show = mode === 'api' && enabled;
+    panel.style.display = show ? 'block' : 'none';
+    if (!show) { panel.innerHTML = ''; return; }
+    var fetchedAt = appSettings && appSettings['models_' + id + '_fetched_at'];
+    var json = appSettings && appSettings['models_' + id + '_json'];
+    var models = [];
+    var isFetched = false;
+    if (json) { try { models = JSON.parse(json); isFetched = models.length > 0; } catch(e) {} }
+    if (!isFetched) {
+      var catalogEntry = agentCatalog.filter(function(a) { return a.id === id; })[0];
+      if (catalogEntry && catalogEntry.models) models = catalogEntry.models;
+    }
+    var lastFetched = (isFetched && fetchedAt) ? new Date(fetchedAt).toLocaleString() : null;
+    var descText = isFetched
+      ? models.length + ' models &mdash; fetched ' + lastFetched
+      : models.length + ' models (built-in list)';
+    var chips = models.map(function(m) {
+      return '<span style="font-size:0.74rem; font-family:monospace; padding:2px 8px; background:var(--surface-muted); border:1px solid var(--border); border-radius:4px; color:var(--text-muted); white-space:nowrap;">'
+        + escHtml(m.displayName || m.id) + '</span>';
+    }).join('');
+    panel.innerHTML = '<div style="display:flex; align-items:center; justify-content:space-between; gap:12px;">'
+      + '<div class="setting-desc" id="modelCatalogDesc_' + id + '">' + descText + '</div>'
+      + '<button onclick="refreshModels(\'' + id + '\')" id="refreshBtn_' + id + '" style="padding:3px 12px; border-radius:6px; border:1px solid var(--border); background:var(--surface-muted); color:var(--text); font-size:0.8rem; cursor:pointer; white-space:nowrap; flex-shrink:0;">Refresh</button>'
+      + '</div>'
+      + (chips ? '<div style="display:flex; flex-wrap:wrap; gap:4px; margin-top:8px; max-height:116px; overflow-y:auto;">' + chips + '</div>' : '');
+  });
+}
+
+function escHtml(str) {
+  return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function refreshModels(provider) {
+  var btn = document.getElementById('refreshBtn_' + provider);
+  if (btn) { btn.disabled = true; btn.textContent = 'Fetching\u2026'; }
+  var labels = { anthropic: 'Anthropic', openai: 'OpenAI', gemini: 'Gemini' };
+  var label = labels[provider] || provider;
+  fetch('/api/settings/fetch-models', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ provider: provider })
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(result) {
+    if (result.ok) {
+      if (result.models) appSettings['models_' + provider + '_json'] = JSON.stringify(result.models);
+      if (result.fetchedAt) appSettings['models_' + provider + '_fetched_at'] = result.fetchedAt;
+      renderModelCatalogRows();
+      showToast(label + ' models fetched \u2014 ' + (result.count || 0) + ' models available', 'success');
+    } else {
+      renderModelCatalogRows();
+      showToast(label + ' fetch failed: ' + (result.error || 'unknown error'), 'error');
+    }
+  })
+  .catch(function(e) {
+    renderModelCatalogRows();
+    showToast(label + ' fetch failed: ' + (e.message || 'network error'), 'error');
+  });
 }
 
 function setExecutionMode(mode) {
   saveSetting('execution_mode', mode);
   applyExecutionModeUi(mode);
+  renderModelCatalogRows();
   if (mode === 'cli') loadCliStatus();
   if (mode === 'api') loadApiKeyStatus();
 }
@@ -3672,6 +4004,17 @@ function applyExecutionModeUi(mode) {
   if (apiKeyNote) apiKeyNote.style.display = mode === 'api' ? 'block' : 'none';
   var cliPromptHint = document.getElementById('cliPromptHint');
   if (cliPromptHint) cliPromptHint.style.display = mode === 'cli' ? 'inline' : 'none';
+  // Restore per-mode enabled state for the shared provider checkboxes
+  var _isTrue = function(v) { return v === true || v === 'true'; };
+  var anthEl2 = document.getElementById('settingAnthropicEnabled');
+  if (anthEl2) { anthEl2.disabled = false; anthEl2.checked = mode === 'api' ? _isTrue(appSettings.provider_anthropic_api_enabled) : _isTrue(appSettings.provider_anthropic_cli_enabled); }
+  var oaiEl2 = document.getElementById('settingOpenAIEnabled');
+  if (oaiEl2) { oaiEl2.disabled = false; oaiEl2.checked = mode === 'api' ? _isTrue(appSettings.provider_openai_api_enabled) : _isTrue(appSettings.provider_openai_cli_enabled); }
+  var gemEl2 = document.getElementById('settingGeminiEnabled');
+  if (gemEl2) { gemEl2.disabled = false; gemEl2.checked = mode === 'api' ? _isTrue(appSettings.provider_gemini_api_enabled) : _isTrue(appSettings.provider_gemini_cli_enabled); }
+  var cliModelNote = document.getElementById('cliModelNote');
+  if (cliModelNote) cliModelNote.style.display = mode === 'cli' ? 'inline' : 'none';
+  renderModelCatalogRows();
 }
 
 function applyCustomApiFieldsVisibility() {
@@ -3846,6 +4189,15 @@ function loadSystemToolsStatus() {
     });
 }
 
+function saveProviderEnabled(provider, enabled) {
+  var mode = (appSettings && appSettings.execution_mode) || 'api';
+  saveSetting('provider_' + provider + '_' + mode + '_enabled', enabled);
+  renderModelCatalogRows();
+  if (enabled && mode === 'api' && (provider === 'anthropic' || provider === 'openai' || provider === 'gemini')) {
+    refreshModels(provider);
+  }
+}
+
 function saveSetting(key, value) {
   appSettings[key] = value;
   if (key.startsWith('provider_')) updateAgentWarning();
@@ -3935,7 +4287,7 @@ function exitIterateMode() {
   if (genHint) genHint.textContent = 'You can edit the DOT source before running.';
   if (cancelBtn) cancelBtn.style.display = 'none';
   if (runBtn) runBtn.innerHTML = '&#9654;&ensp;Create';
-  setGenStatus('', 'Start typing to generate\u2026');
+  setGenStatus('', 'Describe your project and click Generate\u2026');
 }
 
 function cancelIterate() {
@@ -3970,7 +4322,7 @@ function modifyDot(changes, baseDot) {
   fetch('/api/iterate/stream', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ baseDot: baseDot, changes: changes })
+    body: JSON.stringify({ baseDot: baseDot, changes: changes, agentId: getCreateAgentId(), modelId: getCreateModelId() })
   }).then(function(resp) {
     var reader = resp.body.getReader();
     var decoder = new TextDecoder();
@@ -4025,7 +4377,7 @@ function runIterated() {
   fetch('/api/iterate', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ id: id, dotSource: dotSource, originalPrompt: originalPrompt })
+    body: JSON.stringify({ id: id, dotSource: dotSource, originalPrompt: originalPrompt, agentId: getCreateAgentId(), modelId: getCreateModelId() })
   }).then(function(r) { return r.json(); })
     .then(function(data) {
       if (data.error) {
@@ -4089,7 +4441,7 @@ function clearCreateForm() {
   if (createDownloadBtn) createDownloadBtn.style.display = 'none';
   if (dotFileInput) { dotFileInput.value = ''; }
   uploadedFileName = null;
-  setGenStatus('', 'Start typing to generate\u2026');
+  setGenStatus('', 'Describe your project and click Generate\u2026');
 }
 
 function showView(name) {
@@ -4100,6 +4452,7 @@ function showView(name) {
   if (!isCreate && iterateSourceId) exitIterateMode();
   if (isCreate && !iterateSourceId) clearCreateForm();
   try { localStorage.setItem('activeView', name); } catch(e) {}
+  document.body.classList.toggle('create-active', isCreate);
   document.getElementById('viewMonitor').style.display  = isMonitor  ? '' : 'none';
   document.getElementById('viewCreate').style.display   = isCreate   ? '' : 'none';
   document.getElementById('viewArchived').style.display = isArchived ? '' : 'none';
@@ -4386,7 +4739,7 @@ function generateDot(prompt) {
   fetch('/api/generate/stream', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ prompt: prompt })
+    body: JSON.stringify({ prompt: prompt, agentId: getCreateAgentId(), modelId: getCreateModelId() })
   })
   .then(function(resp) {
     if (!resp.ok) {
@@ -5043,7 +5396,7 @@ function runGenerated() {
   fetch('/api/run', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ dotSource: dotSource, fileName: uploadedFileName || 'generated.dot', simulate: simulate, autoApprove: autoApprove, originalPrompt: originalPrompt })
+    body: JSON.stringify({ dotSource: dotSource, fileName: uploadedFileName || 'generated.dot', simulate: simulate, autoApprove: autoApprove, originalPrompt: originalPrompt, agentId: getCreateAgentId(), modelId: getCreateModelId() })
   })
   .then(function(r) { return r.json(); })
   .then(function(resp) {
@@ -5077,7 +5430,7 @@ function resetCreatePage() {
   document.getElementById('dotPreview').value = '';
   document.getElementById('runBtn').disabled = true;
   document.getElementById('runBtn').textContent = '\u25B6\u2002Create';
-  setGenStatus('', 'Start typing to generate\u2026');
+  setGenStatus('', 'Describe your project and click Generate\u2026');
   document.getElementById('graphContent').innerHTML = '<div class="graph-placeholder">Generate a project first to see the graph.</div>';
   var createDownloadBtn = document.getElementById('createDownloadBtn');
   if (createDownloadBtn) createDownloadBtn.style.display = 'none';
