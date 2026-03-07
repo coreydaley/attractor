@@ -15,7 +15,11 @@ import java.util.concurrent.TimeUnit
  * Provides workspace tools so the LLM can write files, run commands, and verify output.
  * Writes a live.log to stageDir in real time for each tool call and result.
  */
-class LlmCodergenBackend(private val client: Client) : CodergenBackend {
+class LlmCodergenBackend(
+    private val client: Client,
+    private val runAgentId: String = "",
+    private val runModelId: String = ""
+) : CodergenBackend {
 
     companion object {
         const val DEFAULT_MODEL = "claude-sonnet-4-6"
@@ -26,8 +30,8 @@ class LlmCodergenBackend(private val client: Client) : CodergenBackend {
     }
 
     override fun run(node: DotNode, prompt: String, context: Context, workspaceDir: File, stageDir: File): Any {
-        val model = node.llmModel.ifEmpty { DEFAULT_MODEL }
-        val provider = node.llmProvider.ifEmpty { null }
+        val model = node.llmModel.ifEmpty { runModelId }.ifEmpty { DEFAULT_MODEL }
+        val provider = node.llmProvider.ifEmpty { runAgentId }.ifEmpty { null }
         val reasoningEffort = node.reasoningEffort.ifEmpty { null }
         // Per-node override: max_tool_rounds=N in the .dot file
         val maxToolRounds = node.attrLong("max_tool_rounds", MAX_TOOL_ROUNDS.toLong()).toInt()

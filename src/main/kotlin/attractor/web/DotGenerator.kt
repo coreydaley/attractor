@@ -113,10 +113,10 @@ digraph ContentReview {
      * Calls [onDelta] for each text chunk as it arrives.
      * Returns the final cleaned DOT source (markdown fences stripped).
      */
-    fun generateStream(prompt: String, onDelta: (String) -> Unit): String {
+    fun generateStream(prompt: String, agentId: String = "", modelId: String = "", onDelta: (String) -> Unit): String {
         val cfg = config()
         val client = ClientProvider.getClient(cfg)
-        val (provider, model) = ModelSelection.selectModel(cfg)
+        val (provider, model) = ModelSelection.selectModel(cfg, agentId = agentId, modelId = modelId)
 
         val msgs = mutableListOf<Message>()
         msgs.add(Message.system(SYSTEM_PROMPT))
@@ -151,10 +151,10 @@ digraph ContentReview {
      * Generate an Attractor DOT project file from a natural language description.
      * Returns the raw DOT source string.
      */
-    fun generate(prompt: String): String {
+    fun generate(prompt: String, agentId: String = "", modelId: String = ""): String {
         val cfg = config()
         val client = ClientProvider.getClient(cfg)
-        val (provider, model) = ModelSelection.selectModel(cfg)
+        val (provider, model) = ModelSelection.selectModel(cfg, agentId = agentId, modelId = modelId)
 
         val result = generate(
             model = model,
@@ -175,7 +175,7 @@ digraph ContentReview {
      * Calls [onDelta] for each text chunk as it arrives.
      * Returns the final cleaned DOT source.
      */
-    fun iterateStream(baseDot: String, changes: String, onDelta: (String) -> Unit): String {
+    fun iterateStream(baseDot: String, changes: String, agentId: String = "", modelId: String = "", onDelta: (String) -> Unit): String {
         val iteratePrompt = """Given the following existing Attractor project DOT source:
 
 $baseDot
@@ -185,17 +185,17 @@ Modify it according to these instructions: $changes
 Output ONLY the modified raw DOT source — no markdown fences, no explanations.
 Keep all existing nodes and edges unless explicitly told to remove them.""".trimIndent()
 
-        return generateStream(iteratePrompt, onDelta)
+        return generateStream(iteratePrompt, agentId, modelId, onDelta)
     }
 
     /**
      * Ask the LLM to fix a broken DOT source given the graphviz error.
      * Calls [onDelta] for each text chunk. Returns the cleaned DOT source.
      */
-    fun fixStream(brokenDot: String, error: String, onDelta: (String) -> Unit): String {
+    fun fixStream(brokenDot: String, error: String, agentId: String = "", modelId: String = "", onDelta: (String) -> Unit): String {
         val cfg = config()
         val client = ClientProvider.getClient(cfg)
-        val (provider, model) = ModelSelection.selectModel(cfg)
+        val (provider, model) = ModelSelection.selectModel(cfg, agentId = agentId, modelId = modelId)
 
         val msgs = mutableListOf<Message>()
         msgs.add(Message.system(SYSTEM_PROMPT))
@@ -237,10 +237,10 @@ Output ONLY the corrected raw DOT source — no markdown fences, no explanations
      * Calls [onDelta] for each text chunk as it arrives.
      * Returns the final description string.
      */
-    fun describeStream(dotSource: String, onDelta: (String) -> Unit): String {
+    fun describeStream(dotSource: String, agentId: String = "", modelId: String = "", onDelta: (String) -> Unit): String {
         val cfg = config()
         val client = ClientProvider.getClient(cfg)
-        val (provider, model) = ModelSelection.selectModel(cfg)
+        val (provider, model) = ModelSelection.selectModel(cfg, agentId = agentId, modelId = modelId)
 
         val msgs = mutableListOf<Message>()
         msgs.add(Message.user("""Given the following Attractor project DOT source, write a concise natural language description of what this project does. The description should be 1-3 sentences, specific about the workflow steps and overall goal, and suitable as a prompt to regenerate a similar project.

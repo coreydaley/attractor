@@ -23,7 +23,9 @@ import java.util.concurrent.atomic.AtomicLong
 
 data class RunOptions(
     val simulate: Boolean = false,
-    val autoApprove: Boolean = true
+    val autoApprove: Boolean = true,
+    val agentId: String = "",
+    val modelId: String = ""
 )
 
 object ProjectRunner {
@@ -112,7 +114,7 @@ object ProjectRunner {
             val backend = if (options.simulate) {
                 SimulationBackend
             } else {
-                if (client != null) LlmCodergenBackend(client) else SimulationBackend
+                if (client != null) LlmCodergenBackend(client, options.agentId, options.modelId) else SimulationBackend
             }
 
             val diagnoser: FailureDiagnoser = when {
