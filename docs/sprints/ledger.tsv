@@ -24,3 +24,4 @@ sprint_id	title	status	created_at	updated_at
 023	Split Docker Build into Base and Server Images	completed	2026-03-05T04:51:04Z	2026-03-05T04:52:41Z
 024	Documentation Audit and Update	completed	2026-03-05T21:59:20Z	2026-03-05T22:08:22Z
 025	Custom 'attractor' Hugo Theme for Docs-Site	completed	2026-03-05T22:02:32Z	2026-03-05T22:12:59Z
+026	Agent & Model Selection UI with Dynamic Model Catalog	completed	2026-03-07T02:53:27Z	2026-03-07T03:08:50Z
