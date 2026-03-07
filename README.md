@@ -180,21 +180,25 @@ Full documentation: https://attractor.coreydaley.dev/docker/
 
 ## LLM Providers
 
-Attractor supports two execution modes, selectable in **Settings → Execution Mode**:
+Attractor supports two execution modes, selectable in **Settings → Agents → Execution Mode**:
 
 - **Direct API** — makes HTTP calls directly to provider APIs using environment variable keys
 - **CLI subprocess** — shells out to installed CLI tools (`claude`, `codex`, `gemini`, `copilot`)
 
+Provider toggles are **independent per execution mode** — enabling a provider in Direct API mode does not enable it in CLI Subprocess mode, and vice versa.
+
 ### Direct API providers
 
-| Provider | Toggle key | Credential |
-|----------|-----------|------------|
-| Anthropic Claude | `provider_anthropic_enabled` | `ATTRACTOR_ANTHROPIC_API_KEY` env var |
-| OpenAI GPT | `provider_openai_enabled` | `ATTRACTOR_OPENAI_API_KEY` env var |
-| Google Gemini | `provider_gemini_enabled` | `ATTRACTOR_GEMINI_API_KEY` or `ATTRACTOR_GOOGLE_API_KEY` env var |
-| Custom (OpenAI-compatible) | `provider_custom_enabled` | Configurable API key (optional) |
+| Provider | Credential |
+|----------|------------|
+| Anthropic Claude | `ATTRACTOR_ANTHROPIC_API_KEY` env var |
+| OpenAI GPT | `ATTRACTOR_OPENAI_API_KEY` env var |
+| Google Gemini | `ATTRACTOR_GEMINI_API_KEY` or `ATTRACTOR_GOOGLE_API_KEY` env var |
+| Custom (OpenAI-compatible) | Configurable API key (optional) |
 
-The **Custom** provider works with any endpoint that implements the OpenAI `/v1/chat/completions` format — including [Ollama](https://ollama.com), [LM Studio](https://lmstudio.ai), [vLLM](https://docs.vllm.ai), and similar local or self-hosted inference servers. Configure it in Settings with a host URL, port, optional API key, and model name. The badge shows whether the endpoint is reachable rather than whether a key is set.
+When a Direct API provider is enabled, its model list is fetched from the provider's API and cached. The **Model** dropdown on the Create/Iterate page lets you pick a specific model, or leave it on the provider default. In **Auto** agent mode, a random enabled agent and model are selected and shown in the UI before generation starts.
+
+The **Custom** provider works with any endpoint that implements the OpenAI `/v1/chat/completions` format — including [Ollama](https://ollama.com), [LM Studio](https://lmstudio.ai), [vLLM](https://docs.vllm.ai), and similar local or self-hosted inference servers. Configure it in Settings with a host URL, port, optional API key, and model name.
 
 **Ollama quick start:**
 ```bash
@@ -212,7 +216,7 @@ ollama pull llama3.2
 | Google Gemini | `gemini` | [Gemini CLI](https://github.com/google-gemini/gemini-cli) |
 | GitHub Copilot | `copilot` | `gh extension install github/gh-copilot` |
 
-CLI mode does not require environment variable API keys — authentication is handled by the installed tool. Command templates are configurable per provider in Settings and support `{prompt}` substitution.
+CLI mode does not require environment variable API keys — authentication is handled by the installed tool. No Model dropdown is shown; the model is controlled by the CLI tool's own configuration. Command templates are configurable per provider in Settings and support `{prompt}` substitution. Add `--model {model}` to a template to have Attractor pass a specific model ID to the tool.
 
 ### System tool warnings
 

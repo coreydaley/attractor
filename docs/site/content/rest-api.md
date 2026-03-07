@@ -65,7 +65,7 @@ curl http://localhost:7070/api/v1/projects
 
 Create and immediately run a new project. Returns 201 with the new project ID.
 
-Body: `{"dotSource":"...","fileName":"","simulate":false,"autoApprove":true,"originalPrompt":""}` (`dotSource` required)
+Body: `{"dotSource":"...","fileName":"","simulate":false,"autoApprove":true,"originalPrompt":"","agentId":"","modelId":""}` (`dotSource` required; `agentId` and `modelId` are optional overrides for LLM provider and model)
 
 ```bash
 curl -X POST http://localhost:7070/api/v1/projects \
@@ -421,6 +421,48 @@ List all available LLM models from the model catalog.
 
 ```bash
 curl http://localhost:7070/api/v1/models
+```
+
+---
+
+**GET** `/api/v1/agents`
+
+List all agents and their available models, filtered by which providers are currently enabled and the active execution mode. Returns:
+
+```json
+{
+  "executionMode": "api",
+  "agents": [
+    {
+      "id": "anthropic",
+      "displayName": "Anthropic",
+      "directApiModels": [{"id": "claude-sonnet-4-6", "displayName": "Claude Sonnet 4.6"}, ...],
+      "cliModels": [...]
+    }
+  ]
+}
+```
+
+`directApiModels` is `null` for CLI-only providers (Copilot). `cliModels` is `null` for API-only providers (Custom). Model lists come from the DB cache (populated by the Refresh action); if not yet cached, the built-in catalog is used as fallback.
+
+```bash
+curl http://localhost:7070/api/v1/agents
+```
+
+---
+
+**POST** `/api/v1/settings/fetch-models`
+
+Fetch the live model list from a provider's API and cache it in the database. Only supported in Direct API mode for `anthropic`, `openai`, and `gemini`.
+
+Body: `{"provider": "anthropic"}`
+
+Response: `{"ok": true, "models": [...]}` on success, or `{"ok": false, "error": "..."}` on failure (always 200).
+
+```bash
+curl -X POST http://localhost:7070/api/v1/settings/fetch-models \
+  -H 'Content-Type: application/json' \
+  -d '{"provider":"anthropic"}'
 ```
 
 ### Events / SSE

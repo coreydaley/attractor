@@ -38,10 +38,25 @@ There are three ways to create a project:
 ### Option A — Generate from natural language
 
 1. Type a description in the natural language input (e.g., *"Build a Go application and run its tests"*)
-2. Click **Generate** — the LLM produces a DOT graph
-3. Review the graph in the preview pane (toggle between Source and Graph views)
-4. Optionally click **Iterate** to refine the project via LLM
-5. Click **Create**
+2. Select an **Agent** from the dropdown next to the Generate button — or leave it on **Auto**
+3. Click **Generate** — the LLM produces a DOT graph
+4. Review the graph in the preview pane (toggle between Source and Graph views)
+5. Optionally click **Iterate** to refine the project via LLM
+6. Click **Create**
+
+The selected Agent and Model are used for both DOT generation and project execution.
+
+#### Agent and Model selection
+
+The Agent dropdown always includes an **Auto** option. When Auto is selected, Attractor immediately picks a random enabled agent and model and displays the resolved choice inline next to the dropdown (e.g., `→ Claude — claude-opus-4-5`). You can re-select Auto at any time to re-randomize, or pick a specific agent to override.
+
+**Direct API mode**
+
+When a specific agent is selected, a Model dropdown appears showing all models fetched from that provider's API. Selecting a model pins it for both generation and execution. Leaving it on the default uses the provider's recommended model. The resolved agent and model are remembered per provider across browser sessions.
+
+**CLI Subprocess mode**
+
+No Model dropdown is shown. The model is controlled entirely by the CLI tool's own configuration — the label "Tool default" indicates this. To change the model used, configure it via the CLI tool's own settings (environment variable, config file, or flags). You can optionally add `--model {model}` to the command template in Settings if you want Attractor to pass a specific model ID to the tool.
 
 ### Option B — Write DOT directly
 
@@ -206,23 +221,74 @@ Attractor creates the database schema automatically on first start. A misconfigu
 
 ## Settings
 
-### Execution Mode
+The Settings page is organised into four cards: **Theme**, **Agents**, **System Tools**, and **Info**.
+
+### Theme
+
+Toggle between dark and light appearance.
+
+### Agents
+
+#### Execution Mode
 
 **Direct API** (default) — Attractor makes HTTP calls directly to provider REST APIs. Requires the corresponding API key environment variable to be set before startup.
 
 **CLI subprocess** — Attractor shells out to installed CLI tools. No environment-variable API keys are needed; authentication is handled by the tool itself.
 
-### Providers
+#### Providers
+
+Provider toggles are **independent per execution mode** — enabling a provider in Direct API mode does not enable it in CLI Subprocess mode, and vice versa.
 
 | Provider | Modes | Notes |
 |----------|-------|-------|
 | Anthropic (claude) | API, CLI | API: requires `ATTRACTOR_ANTHROPIC_API_KEY`. CLI: requires the `claude` binary. |
 | OpenAI (codex) | API, CLI | API: requires `ATTRACTOR_OPENAI_API_KEY`. CLI: requires the `codex` binary. |
 | Google (gemini) | API, CLI | API: requires `ATTRACTOR_GEMINI_API_KEY` or `ATTRACTOR_GOOGLE_API_KEY`. CLI: requires the `gemini` binary. |
-| GitHub Copilot | CLI only | Requires `gh copilot` extension. Hidden in Direct API mode. |
+| GitHub Copilot | CLI only | Requires the `copilot` CLI. Hidden in Direct API mode. |
 | Custom (OpenAI-compatible) | API only | Any endpoint implementing `/v1/chat/completions` — Ollama, LM Studio, vLLM, etc. Configure host, port, optional API key, and model name. The badge shows endpoint reachability. |
 
 > **Custom provider tip:** For Ollama, set host to `http://localhost`, port to `11434`, leave API key blank, and set model to the name of a pulled model (e.g. `llama3.2`). The endpoint must be running before Attractor attempts to reach it.
+
+#### Model list (Direct API)
+
+When a provider is enabled in Direct API mode, its available models are shown inline below the provider toggle. Models are fetched live from the provider's API and cached in the database.
+
+- **Auto-fetch** — models are fetched automatically when you first enable a provider.
+- **Refresh** — click the Refresh button to pull the current model list from the provider's API at any time.
+- **Fallback** — if no models have been fetched yet, Attractor shows a built-in list of well-known models.
+
+The model list drives the **Model** dropdown on the Create and Iterate pages.
+
+#### Model selection (CLI Subprocess)
+
+In CLI Subprocess mode no Model dropdown is shown on the Create and Iterate pages — the label reads **Tool default**. The actual model is determined entirely by the CLI tool's own configuration:
+
+| CLI tool | How to configure the model |
+|----------|-----------------------------|
+| `claude` | `ANTHROPIC_MODEL` env var, or `~/.claude/settings.json`. See the [Claude CLI docs](https://docs.anthropic.com/en/docs/claude-code/settings). |
+| `codex` | `OPENAI_MODEL` env var, or `~/.codex/config.toml`. See the [Codex CLI docs](https://github.com/openai/codex). |
+| `gemini` | `GEMINI_MODEL` env var, or `~/.gemini/settings.json`. See the [Gemini CLI docs](https://github.com/google-gemini/gemini-cli). |
+| `copilot` | Model is selected automatically by GitHub based on your Copilot subscription. |
+
+To have Attractor pass a specific model ID to the CLI tool, add `--model {model}` to the command template in Settings. The `{model}` token is substituted with the model ID at call time.
+
+#### CLI command templates
+
+Each CLI provider has an editable command template. Supported substitution tokens:
+
+| Token | Substituted with |
+|-------|-----------------|
+| `{prompt}` | The full prompt text sent to the agent |
+| `{model}` | The model ID (optional — omit to let the CLI tool use its own default) |
+
+Default templates:
+
+| Provider | Default template |
+|----------|-----------------|
+| Anthropic | `claude --dangerously-skip-permissions -p {prompt}` |
+| OpenAI | `codex --full-auto {prompt}` |
+| Gemini | `gemini --yolo -p {prompt}` |
+| Copilot | `copilot --allow-all-tools -p {prompt}` |
 
 ### Direct API — Advanced Options
 
@@ -247,10 +313,6 @@ These environment variables seed the Custom provider's Settings UI on first star
 | `ATTRACTOR_CUSTOM_API_PORT` | `11434` | Port number (leave blank to omit from URL) |
 | `ATTRACTOR_CUSTOM_API_KEY` | — | API key (optional — Ollama does not require one) |
 | `ATTRACTOR_CUSTOM_API_MODEL` | `llama3.2` | Model name to use for requests |
-
-### CLI command templates
-
-In CLI mode, each provider has an editable command template. Use `{prompt}` as the substitution placeholder for the generated prompt text.
 
 ### System Tools
 
