@@ -72,7 +72,7 @@ data class LlmExecutionConfig(
                 ),
                 cliCommands = CliCommands(
                     anthropic = db("cli_anthropic_command") ?: "claude --dangerously-skip-permissions -p {prompt}",
-                    openai    = db("cli_openai_command")    ?: "codex --full-auto {prompt}",
+                    openai    = db("cli_openai_command")    ?: "codex exec --full-auto {prompt}",
                     gemini    = db("cli_gemini_command")    ?: "gemini --yolo -p {prompt}",
                     copilot   = db("cli_copilot_command")   ?: "copilot --allow-all-tools -p {prompt}"
                 ),
