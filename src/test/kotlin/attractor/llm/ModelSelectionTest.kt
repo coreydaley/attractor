@@ -38,21 +38,21 @@ class ModelSelectionTest : FunSpec({
         val env = mapOf("ATTRACTOR_OPENAI_API_KEY" to "sk-oai", "ATTRACTOR_GEMINI_API_KEY" to "gem-key")
         val (provider, model) = ModelSelection.selectModel(config(mode = ExecutionMode.API), env)
         provider shouldBe "openai"
-        model shouldBe "gpt-5.2-mini"
+        model shouldBe "gpt-4o-mini"
     }
 
     test("API mode: gemini wins when only gemini key present") {
         val env = mapOf("ATTRACTOR_GEMINI_API_KEY" to "gem-key")
         val (provider, model) = ModelSelection.selectModel(config(mode = ExecutionMode.API), env)
         provider shouldBe "gemini"
-        model shouldBe "gemini-3-flash-preview"
+        model shouldBe "gemini-2.0-flash"
     }
 
     test("API mode: ATTRACTOR_GOOGLE_API_KEY used as gemini fallback") {
         val env = mapOf("ATTRACTOR_GOOGLE_API_KEY" to "google-key")
         val (provider, model) = ModelSelection.selectModel(config(mode = ExecutionMode.API), env)
         provider shouldBe "gemini"
-        model shouldBe "gemini-3-flash-preview"
+        model shouldBe "gemini-2.0-flash"
     }
 
     test("API mode: anthropic disabled, openai selected despite anthropic key") {
@@ -98,7 +98,7 @@ class ModelSelectionTest : FunSpec({
         val cfg = config(mode = ExecutionMode.CLI, anthropic = false, openai = false)
         val (provider, model) = ModelSelection.selectModel(cfg, env)
         provider shouldBe "gemini"
-        model shouldBe "gemini-3-flash-preview"
+        model shouldBe "gemini-2.0-flash"
     }
 
     test("CLI mode: all disabled throws ConfigurationError") {
@@ -107,5 +107,66 @@ class ModelSelectionTest : FunSpec({
         shouldThrow<ConfigurationError> {
             ModelSelection.selectModel(cfg, env)
         }
+    }
+
+    // ── Explicit agentId override ─────────────────────────────────────────────
+
+    test("explicit agentId selects that provider in API mode with key") {
+        val env = mapOf("ATTRACTOR_ANTHROPIC_API_KEY" to "sk-anth", "ATTRACTOR_OPENAI_API_KEY" to "sk-oai")
+        val (provider, model) = ModelSelection.selectModel(config(mode = ExecutionMode.API), env, agentId = "openai")
+        provider shouldBe "openai"
+        model shouldBe "gpt-4o-mini"
+    }
+
+    test("explicit agentId + modelId uses provided model") {
+        val env = mapOf("ATTRACTOR_ANTHROPIC_API_KEY" to "sk-anth")
+        val (provider, model) = ModelSelection.selectModel(config(mode = ExecutionMode.API), env, agentId = "anthropic", modelId = "claude-opus-4-6")
+        provider shouldBe "anthropic"
+        model shouldBe "claude-opus-4-6"
+    }
+
+    test("explicit agentId for disabled provider throws ConfigurationError") {
+        val env = mapOf("ATTRACTOR_OPENAI_API_KEY" to "sk-oai")
+        val cfg = config(mode = ExecutionMode.API, openai = false)
+        shouldThrow<ConfigurationError> {
+            ModelSelection.selectModel(cfg, env, agentId = "openai")
+        }
+    }
+
+    test("explicit agentId in API mode with no key throws ConfigurationError") {
+        val env = emptyMap<String, String>()
+        shouldThrow<ConfigurationError> {
+            ModelSelection.selectModel(config(mode = ExecutionMode.API), env, agentId = "anthropic")
+        }
+    }
+
+    test("explicit agentId in CLI mode does not require API key") {
+        val env = emptyMap<String, String>()
+        val (provider, model) = ModelSelection.selectModel(config(mode = ExecutionMode.CLI), env, agentId = "gemini")
+        provider shouldBe "gemini"
+        model shouldBe "gemini-2.0-flash"
+    }
+
+    test("explicit copilot agentId in CLI mode returns copilot model") {
+        val env = emptyMap<String, String>()
+        val (provider, model) = ModelSelection.selectModel(config(mode = ExecutionMode.CLI, copilot = true), env, agentId = "copilot")
+        provider shouldBe "copilot"
+        model shouldBe "copilot"
+    }
+
+    // ── Auto-select with modelId hint ─────────────────────────────────────────
+
+    test("auto-select with modelId hint uses that model for winning provider") {
+        val env = mapOf("ATTRACTOR_ANTHROPIC_API_KEY" to "sk-anth")
+        val (provider, model) = ModelSelection.selectModel(config(mode = ExecutionMode.API), env, modelId = "claude-haiku-4-5-20251001")
+        provider shouldBe "anthropic"
+        model shouldBe "claude-haiku-4-5-20251001"
+    }
+
+    test("auto-select with empty modelId uses default model") {
+        val env = mapOf("ATTRACTOR_ANTHROPIC_API_KEY" to "sk-anth")
+        val (provider, model) = ModelSelection.selectModel(config(mode = ExecutionMode.API), env, modelId = "")
+        provider shouldBe "anthropic"
+        model shouldBe "claude-sonnet-4-6"
     }
 })

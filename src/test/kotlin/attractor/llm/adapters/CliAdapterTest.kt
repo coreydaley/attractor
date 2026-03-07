@@ -77,6 +77,24 @@ class CliAdapterTest : FunSpec({
         args[2] shouldContain "user message"
     }
 
+    test("buildArgs substitutes {model} token") {
+        val req = makeRequest("hello")
+        val args = buildArgs("claude --model {model} -p {prompt}", req)
+        args shouldBe listOf("claude", "--model", "test-model", "-p", "hello")
+    }
+
+    test("buildArgs handles {model} without {prompt}") {
+        val req = makeRequest("hello")
+        val args = buildArgs("claude --model {model}", req)
+        args shouldBe listOf("claude", "--model", "test-model", "hello")
+    }
+
+    test("buildArgs ignores missing {model} token gracefully") {
+        val req = makeRequest("hello")
+        val args = buildArgs("claude -p {prompt}", req)
+        args shouldBe listOf("claude", "-p", "hello")
+    }
+
     // ── stream: success ───────────────────────────────────────────────────────
 
     test("AnthropicCliAdapter stream emits TEXT_DELTA events") {
