@@ -1,0 +1,50 @@
+name: PR Labeler
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  size-label:
+    name: Label PR by size
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: codelytv/pr-size-labeler@v1
+        with:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          xs_max_size: 10
+          s_max_size: 50
+          m_max_size: 200
+          l_max_size: 500
+          fail_if_xl: false
+          message_if_xl: >
+            This PR is very large (XL). Consider splitting it into smaller PRs
+            for easier review.
+
+  conventional-commit:
+    name: Validate PR title
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: amannn/action-semantic-pull-request@v5
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          types: |
+            feat
+            fix
+            docs
+            chore
+            refactor
+            test
+            style
+            ci
+          requireScope: false
+          subjectPattern: ^[a-z].+[^.]$
+          subjectPatternError: >
+            PR title must start with lowercase and not end with a period.
