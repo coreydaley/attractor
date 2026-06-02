@@ -62,7 +62,7 @@ jobs:
 
       - name: Build and push base image
         if: steps.detect.outputs.rebuild == 'true'
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: docker/Dockerfile.base
@@ -163,7 +163,7 @@ jobs:
             type=raw,value=latest
 
       - name: Build and push Docker image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: docker/Dockerfile
